@@ -42,6 +42,7 @@
         ".aios/roles.json",
         ".claude/settings.json",
         ".claude/hooks/**",
+        ".codex/hooks.json",
         "scripts/aios/**",
         "templates/governance/**"
       ]

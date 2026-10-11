@@ -27,6 +27,7 @@ Type `/` to see them. What each one does: `.claude/skills/README.md`. Run `/star
 - **Keep the workspace healthy:** workspace_health · file_audit · security_check · changelog
 - **Working as a team:** review-queue · resolve-conflict · pr_review (your guardian, runs on every change)
 - **Money:** financial_teardown
+- **Sounds (Mac):** pause · play (quiet or restore the finished / needs-you sounds for Claude and Codex)
 - **Documents:** Word, PDF, PowerPoint and Excel come from Anthropic's `document-skills` plugin, which `/onboard_wizard` installs. They are Anthropic's, not copied here (`THIRD_PARTY_NOTICES.md`).
 
 Add your own (see `docs/UNSTUCK_PROTOCOL.md` and the skills folder for how). Never run skills from sources you don't trust.
