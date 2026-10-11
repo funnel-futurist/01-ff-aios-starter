@@ -138,8 +138,11 @@ class TheRealManifest(Sandbox):
     def test_claude_code_is_the_only_tool_with_anything_shipped_or_verified(self):
         tools = self.manifest()["tools"]
         self.assertEqual(tools["claude-code"]["status"], "verified")
+        # The one exception: Codex gets the sound hook, and only that one file.
+        self.assertEqual(tools["codex"]["status"], "verified")
+        self.assertEqual(tools["codex"]["files"], [".codex/hooks.json"])
         for name, tool in tools.items():
-            if name != "claude-code":
+            if name not in ("claude-code", "codex"):
                 self.assertEqual(tool["status"], "not verified", name)
                 self.assertEqual(tool["files"], [], "%s ships files nobody has verified" % name)
                 self.assertFalse(tool.get("evidence"), name)

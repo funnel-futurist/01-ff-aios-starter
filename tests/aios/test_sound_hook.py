@@ -1,8 +1,12 @@
-"""The sound hook: Stop, SubagentStop and Notification each play a sound, and one file pauses all.
+"""The sound hook: finished, helper finished and needs-you each play a sound; one file pauses all.
 
-The real hook command from the shipped settings runs here the way Claude Code runs it: through a
-shell, with hook JSON on stdin. A stand-in `afplay` on PATH records what it was asked to play, so a
-test never makes a real sound, and a throwaway home folder holds the pause switch.
+Claude Code runs it on Stop, SubagentStop and Notification (.claude/settings.json). Codex runs the
+same script on Stop, SubagentStop and PermissionRequest (.codex/hooks.json); Codex sets no project
+directory variable and may start in a subfolder, so its command finds the script from the git root.
+
+The real hook commands run here the way the tools run them: through a shell, with hook JSON on
+stdin. A stand-in `afplay` on PATH records what it was asked to play, so a test never makes a real
+sound, and a throwaway home folder holds the pause switch.
 """
 
 import json
@@ -16,14 +20,24 @@ import unittest
 
 import harness
 
+sys.path.insert(0, harness.AIOS_DIR)
+
+from aioslib import util  # noqa: E402
+
 REAL_ROOT = harness.REPO_ROOT
 HOOK = os.path.join(REAL_ROOT, ".claude", "hooks", "notify-sound.js")
 WIRED = {"Stop": "done", "SubagentStop": "subagent", "Notification": "needs-you"}
+CODEX_WIRED = {"Stop": "done", "SubagentStop": "subagent", "PermissionRequest": "needs-you"}
 SOUND_FILE = {"done": "Glass.aiff", "subagent": "Hero.aiff", "needs-you": "Pop.aiff"}
 
 
 def settings_hooks():
     with open(os.path.join(REAL_ROOT, ".claude", "settings.json")) as fh:
+        return json.load(fh)["hooks"]
+
+
+def codex_hooks():
+    with open(os.path.join(REAL_ROOT, ".codex", "hooks.json")) as fh:
         return json.load(fh)["hooks"]
 
 
@@ -44,6 +58,23 @@ class Wiring(unittest.TestCase):
             self.assertEqual(
                 commands, ['node "$CLAUDE_PROJECT_DIR/.claude/hooks/notify-sound.js" ' + arg],
                 event)
+
+    def test_codex_runs_the_same_sound_hook_from_the_repo_root(self):
+        hooks = codex_hooks()
+        self.assertEqual(set(hooks), set(CODEX_WIRED), "Codex gets the sound hook and nothing else")
+        for event, arg in CODEX_WIRED.items():
+            commands = [h["command"] for group in hooks[event] for h in group["hooks"]]
+            self.assertEqual(
+                commands,
+                ['node "$(git rev-parse --show-toplevel)/.claude/hooks/notify-sound.js" ' + arg],
+                event)
+
+    def test_both_hook_files_and_the_script_are_founder_lane(self):
+        # A command that runs on its own every turn: an operator's PR may not change it alone.
+        with open(os.path.join(REAL_ROOT, ".aios", "roles.json")) as fh:
+            denied = json.load(fh)["roles"]["operator"]["paths_denied"]
+        for path in (".claude/settings.json", ".claude/hooks/notify-sound.js", ".codex/hooks.json"):
+            self.assertTrue(util.match_any(denied, path), path)
 
 
 class Plan(unittest.TestCase):
@@ -98,10 +129,20 @@ class RealHook(unittest.TestCase):
                         PATH=bin_dir + os.pathsep + os.environ.get("PATH", ""))
 
     def run_hook(self, event):
-        command = settings_hooks()[event][0]["hooks"][0]["command"]
-        payload = json.dumps({"hook_event_name": event, "session_id": "test"})
+        return self.run_command(settings_hooks()[event][0]["hooks"][0]["command"], event,
+                                REAL_ROOT, self.env)
+
+    def run_codex_hook(self, event):
+        # Codex sets no project directory variable, and may start in a subfolder.
+        env = dict(self.env)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        return self.run_command(codex_hooks()[event][0]["hooks"][0]["command"], event,
+                                os.path.join(REAL_ROOT, "docs"), env)
+
+    def run_command(self, command, event, cwd, env):
+        payload = json.dumps({"hook_event_name": event, "session_id": "test", "cwd": cwd})
         started = time.time()
-        done = subprocess.run(["sh", "-c", command], input=payload.encode(), env=self.env,
+        done = subprocess.run(["sh", "-c", command], input=payload.encode(), env=env, cwd=cwd,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
         return done, time.time() - started
 
@@ -125,6 +166,20 @@ class RealHook(unittest.TestCase):
         open(os.path.join(self.home, ".claude", "sounds-paused"), "w").close()
         for event in WIRED:
             done, _ = self.run_hook(event)
+            self.assertEqual((done.returncode, done.stdout, done.stderr), (0, b"", b""), event)
+        self.assertEqual(self.played(1), "")
+
+    @unittest.skipUnless(sys.platform == "darwin", "the sound plays on macOS only")
+    def test_the_real_codex_command_plays_its_sound_from_a_subfolder(self):
+        done, took = self.run_codex_hook("PermissionRequest")
+        self.assertEqual((done.returncode, done.stdout, done.stderr), (0, b"", b""))
+        self.assertLess(took, 2.5, "the hook waited for the player")
+        self.assertEqual(self.played(5).strip(), "/System/Library/Sounds/Pop.aiff")
+
+    def test_the_real_codex_command_is_silent_and_exits_0_while_paused_from_a_subfolder(self):
+        open(os.path.join(self.home, ".claude", "sounds-paused"), "w").close()
+        for event in CODEX_WIRED:
+            done, _ = self.run_codex_hook(event)
             self.assertEqual((done.returncode, done.stdout, done.stderr), (0, b"", b""), event)
         self.assertEqual(self.played(1), "")
 

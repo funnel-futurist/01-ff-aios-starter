@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /*
- * Stop / SubagentStop / Notification hook — a short sound, so you can look away while Claude works.
- *   done      → Claude finished its reply          (Glass)
+ * Stop / SubagentStop / Notification hook — a short sound, so you can look away while the AI works.
+ *   done      → the AI finished its reply          (Glass)
  *   subagent  → a helper agent finished            (Hero)
- *   needs-you → Claude is waiting on you to answer (Pop)
+ *   needs-you → the AI is waiting on you           (Pop)
+ *
+ * One script, two tools: Claude Code runs it from .claude/settings.json (Notification = needs-you),
+ * Codex from .codex/hooks.json (PermissionRequest = needs-you; Codex has no Notification event).
  *
  * Pause switch, one per computer: the file ~/.claude/sounds-paused.
  *   pause:  touch ~/.claude/sounds-paused

@@ -1,6 +1,6 @@
 {
   "schema": "ff-aios-starter/adapters@1",
-  "_comment": "Which shipped files work with only one AI tool, and which work with any. The Starter's instructions, skills, hooks, safety settings and AI reviewer are built on Claude Code. No other tool is supported or verified: nothing here claims otherwise. `signatures` are the places a tool's files live: any tracked file matching them must be listed under that tool's `files`, so a new tool-specific file cannot arrive undeclared (tests/aios/test_adapters.py). `verified` needs evidence, and each piece of evidence must resolve to a real test. Verified here means the named tests exercise the file layout and the hook contract with simulated hook input and the real hook command; it is not a recording of a live session. Declared in the Starter's own repository only: release/** is not shipped to client workspaces.",
+  "_comment": "Which shipped files work with only one AI tool, and which work with any. The Starter's instructions, skills, hooks, safety settings and AI reviewer are built on Claude Code. The one exception is Codex, which gets the sound hook and nothing else (see its `scope`). No other tool is supported or verified: nothing here claims otherwise. `signatures` are the places a tool's files live: any tracked file matching them must be listed under that tool's `files`, so a new tool-specific file cannot arrive undeclared (tests/aios/test_adapters.py). `verified` needs evidence, and each piece of evidence must resolve to a real test. Verified here means the named tests exercise the file layout and the hook contract with simulated hook input and the real hook command; it is not a recording of a live session. Declared in the Starter's own repository only: release/** is not shipped to client workspaces.",
   "tools": {
     "claude-code": {
       "status": "verified",
@@ -53,13 +53,19 @@
       ]
     },
     "codex": {
-      "status": "not verified",
-      "note": "nothing shipped; AGENTS.md and a Codex hook layer do not exist in this package",
+      "status": "verified",
+      "scope": "the sound hook only: .codex/hooks.json runs the shared .claude/hooks/notify-sound.js on Stop, SubagentStop and PermissionRequest, tested with simulated hook input and the real hook command. Nothing else ships for Codex: no AGENTS.md, no safety hooks, no founder-lane guard (the pull-request boundary check still holds that lane server-side for any tool). Codex loads it only in a project the user trusts, after they trust the hooks once",
+      "evidence": [
+        "tests/aios/test_sound_hook.py::Wiring::test_codex_runs_the_same_sound_hook_from_the_repo_root",
+        "tests/aios/test_sound_hook.py::RealHook::test_the_real_codex_command_is_silent_and_exits_0_while_paused_from_a_subfolder"
+      ],
       "signatures": [
         "AGENTS.md",
         ".codex/**"
       ],
-      "files": []
+      "files": [
+        ".codex/hooks.json"
+      ]
     },
     "cursor": {
       "status": "not verified",

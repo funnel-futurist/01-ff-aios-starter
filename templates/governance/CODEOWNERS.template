@@ -35,6 +35,7 @@
 /.claude/skills/            [REPO_OWNER] [PRIMARY_REVIEWER]
 /.claude/settings.json      [REPO_OWNER] [PRIMARY_REVIEWER]
 /.claude/hooks/             [REPO_OWNER] [PRIMARY_REVIEWER]
+/.codex/hooks.json          [REPO_OWNER] [PRIMARY_REVIEWER]
 
 # Who may operate this workspace, and which release it runs - the install contract's own gate
 /.aios/config.json          [REPO_OWNER] [PRIMARY_REVIEWER]
