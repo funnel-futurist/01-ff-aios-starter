@@ -34,6 +34,8 @@
         ".claude/skills/grill_me/SKILL.md",
         ".claude/skills/humanize/SKILL.md",
         ".claude/skills/onboard_wizard/SKILL.md",
+        ".claude/skills/pause/SKILL.md",
+        ".claude/skills/play/SKILL.md",
         ".claude/skills/pr_review/SKILL.md",
         ".claude/skills/project_management/SKILL.md",
         ".claude/skills/qc_review/SKILL.md",

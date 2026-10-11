@@ -11,6 +11,7 @@ sound, and a throwaway home folder holds the pause switch.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -108,6 +109,41 @@ class Plan(unittest.TestCase):
             self.assertIsNone(plan("done", platform, self.home), platform)
         for event in ("", "Stop", "toString", "constructor"):
             self.assertIsNone(plan(event, "darwin", self.home), event)
+
+
+class Switch(unittest.TestCase):
+    """/pause and /play: the shell line each skill runs when typed, against a throwaway home."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home, True)
+        os.makedirs(os.path.join(self.home, ".claude"))
+
+    def skill(self, name):
+        with open(os.path.join(REAL_ROOT, ".claude", "skills", name, "SKILL.md")) as fh:
+            return fh.read()
+
+    def flip(self, name):
+        lines = re.findall(r"!`([^`]+)`", self.skill(name))
+        self.assertEqual(len(lines), 1, "one shell line, so the check runs after the change")
+        done = subprocess.run(["sh", "-c", lines[0]], env=dict(os.environ, HOME=self.home),
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+        self.assertEqual((done.returncode, done.stderr), (0, b""), name)
+        return done.stdout.decode().strip()
+
+    def test_pause_and_play_flip_the_file_the_sound_hook_reads(self):
+        self.assertEqual(self.flip("pause"), "PAUSED")
+        self.assertIsNone(plan("done", "darwin", self.home))
+        self.assertEqual(self.flip("play"), "PLAYING")
+        self.assertIsNotNone(plan("done", "darwin", self.home))
+
+    def test_both_are_safe_to_repeat(self):
+        self.assertEqual([self.flip("pause"), self.flip("pause")], ["PAUSED", "PAUSED"])
+        self.assertEqual([self.flip("play"), self.flip("play")], ["PLAYING", "PLAYING"])
+
+    def test_neither_runs_unless_typed(self):
+        for name in ("pause", "play"):
+            self.assertIn("\ndisable-model-invocation: true\n", self.skill(name), name)
 
 
 class RealHook(unittest.TestCase):

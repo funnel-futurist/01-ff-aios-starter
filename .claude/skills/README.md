@@ -2,7 +2,7 @@
 
 Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to see them live. Here's the full list with a one-line description and how to trigger each.
 
-## The core set (20 ship in this repo, plus Anthropic's four document skills)
+## The core set (22 ship in this repo, plus Anthropic's four document skills)
 
 | Skill | What it does | Trigger |
 |---|---|---|
@@ -25,6 +25,8 @@ Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to
 | **file_audit** | Audits filenames + structure against your naming rules. | `/file_audit` |
 | **changelog** | Generates a clean changelog entry from your recent changes. | `/changelog` |
 | **humanize** | Strips AI-tells from copy (em-dashes, filler, robotic phrasing) so it reads like you. | `/humanize` |
+| **pause** | Quiets the sounds Claude Code and Codex play when they finish or need you, on this computer. | `/pause` |
+| **play** | Turns those sounds back on (Mac only). | `/play` |
 | **financial_teardown** | Runs a full subscription/software teardown: AI reads your bank statements to inventory every recurring charge, sorts each tool by "would anything break?", cancels dead weight, claws back refunds with proven templates, and sets up prevention (dedicated card + limits). Cuts monthly burn, recovers cash, frees bandwidth. | `/financial_teardown` |
 | **docx** · **pdf** · **xlsx** · **pptx** | Your document factory: create and edit Word docs, PDFs, Excel sheets, and PowerPoint decks. **Made by Anthropic, installed from Anthropic** as the `document-skills` plugin, not copied into this repo (see `THIRD_PARTY_NOTICES.md`). `/onboard_wizard` installs it; after that Claude reaches for these automatically when you ask for a document. | automatic, once installed |
 
