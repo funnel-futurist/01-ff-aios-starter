@@ -8,10 +8,12 @@
  * One script, two tools: Claude Code runs it from .claude/settings.json (Notification = needs-you),
  * Codex from .codex/hooks.json (PermissionRequest = needs-you; Codex has no Notification event).
  *
- * Pause switch, one per computer: the file ~/.claude/sounds-paused.
- *   pause:  touch ~/.claude/sounds-paused
- *   resume: rm ~/.claude/sounds-paused
- * It is checked before every sound, so switching needs no restart.
+ * Pause switch, one per computer: the file ~/.ai-sounds-paused.
+ *   pause:  touch ~/.ai-sounds-paused
+ *   resume: rm ~/.ai-sounds-paused
+ * It is checked before every sound, so switching needs no restart. /pause and /play flip it.
+ * It lives outside ~/.claude on purpose: Claude Code protects that folder, so /pause could not
+ * write there without a prompt every time.
  *
  * macOS only for now (the built-in `afplay` and system sounds). Anywhere else it stays silent.
  * The player is started detached, so the hook returns at once and never holds up Claude.
@@ -26,7 +28,7 @@ const { spawn } = require('child_process');
 const SOUNDS = { done: 'Glass', subagent: 'Hero', 'needs-you': 'Pop' };
 
 function pauseFile(home) {
-  return path.join(home, '.claude', 'sounds-paused');
+  return path.join(home, '.ai-sounds-paused');
 }
 
 // (event, platform, home) → the player to run, or null for silence.

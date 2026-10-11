@@ -2,18 +2,18 @@
 name: play
 description: Turn the Claude Code and Codex sounds back on for this computer after /pause. Runs only when the user types /play. NOT for pausing them (that is /pause) and NOT for changing which sounds play.
 disable-model-invocation: true
-allowed-tools: Bash(rm -f ~/.claude/sounds-paused), Bash(test:*), Bash(echo:*)
+allowed-tools: Bash(rm -f ~/.ai-sounds-paused), Bash(test:*), Bash(echo:*), Edit(~/.ai-sounds-paused)
 ---
 
 # /play - turn the sounds back on
 
-Sound switch now reads: !`rm -f ~/.claude/sounds-paused; test -f ~/.claude/sounds-paused && echo PAUSED || echo PLAYING`
+Sound switch now reads: !`rm -f ~/.ai-sounds-paused; test -f ~/.ai-sounds-paused && echo PAUSED || echo PLAYING`
 
-The line above ran the moment /play was typed. It removes the pause file `~/.claude/sounds-paused`, which `.claude/hooks/notify-sound.js` checks before every sound, for Claude Code and Codex alike. One file per computer, so this turns sounds on in every workspace on it. On a Mac the Glass sound plays when this reply finishes; Windows and Linux stay silent either way.
+The line above ran the moment /play was typed. It removes the pause file `~/.ai-sounds-paused`, which `.claude/hooks/notify-sound.js` checks before every sound, for Claude Code and Codex alike. One file per computer, so this turns sounds on in every workspace on it. On a Mac the Glass sound plays when this reply finishes; Windows and Linux stay silent either way.
 
 Reply with exactly one line and nothing else:
 - If it reads PLAYING: `Sounds on for Claude and Codex - you'll hear Glass when this reply finishes. /pause stops them.`
-- Otherwise: `Couldn't turn sounds on: ~/.claude/sounds-paused is still there.`
+- Otherwise: `Couldn't turn sounds on: ~/.ai-sounds-paused is still there.`
 
 ## Boundaries
 | Ask | Skill |

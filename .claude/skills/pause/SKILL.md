@@ -2,18 +2,18 @@
 name: pause
 description: Pause the sounds Claude Code and Codex play on this computer (finished, helper finished, needs you). Runs only when the user types /pause. NOT for turning them back on (that is /play) and NOT for changing which sounds play.
 disable-model-invocation: true
-allowed-tools: Bash(touch:*), Bash(test:*), Bash(echo:*)
+allowed-tools: Bash(touch:*), Bash(test:*), Bash(echo:*), Edit(~/.ai-sounds-paused)
 ---
 
 # /pause - quiet the sounds on this computer
 
-Sound switch now reads: !`touch ~/.claude/sounds-paused; test -f ~/.claude/sounds-paused && echo PAUSED || echo PLAYING`
+Sound switch now reads: !`touch ~/.ai-sounds-paused; test -f ~/.ai-sounds-paused && echo PAUSED || echo PLAYING`
 
-The line above ran the moment /pause was typed. It creates the pause file `~/.claude/sounds-paused`, which `.claude/hooks/notify-sound.js` checks before every sound, for Claude Code and Codex alike. One file per computer, so this pauses every workspace on it. Nothing else changes.
+The line above ran the moment /pause was typed. It creates the pause file `~/.ai-sounds-paused`, which `.claude/hooks/notify-sound.js` checks before every sound, for Claude Code and Codex alike. One file per computer, so this pauses every workspace on it. Nothing else changes.
 
 Reply with exactly one line and nothing else:
 - If it reads PAUSED: `Sounds paused for Claude and Codex. /play turns them back on.`
-- Otherwise: `Couldn't pause: ~/.claude/sounds-paused wasn't created.`
+- Otherwise: `Couldn't pause: ~/.ai-sounds-paused wasn't created.`
 
 ## Boundaries
 | Ask | Skill |

@@ -86,7 +86,7 @@ class Plan(unittest.TestCase):
 
     def pause(self):
         os.makedirs(os.path.join(self.home, ".claude"), exist_ok=True)
-        open(os.path.join(self.home, ".claude", "sounds-paused"), "w").close()
+        open(os.path.join(self.home, ".ai-sounds-paused"), "w").close()
 
     def test_each_event_plays_its_system_sound_on_macos(self):
         for event, sound in SOUND_FILE.items():
@@ -101,7 +101,7 @@ class Plan(unittest.TestCase):
 
     def test_removing_the_pause_file_turns_sound_back_on(self):
         self.pause()
-        os.remove(os.path.join(self.home, ".claude", "sounds-paused"))
+        os.remove(os.path.join(self.home, ".ai-sounds-paused"))
         self.assertIsNotNone(plan("done", "darwin", self.home))
 
     def test_other_systems_and_unknown_events_are_silent(self):
@@ -144,6 +144,14 @@ class Switch(unittest.TestCase):
     def test_neither_runs_unless_typed(self):
         for name in ("pause", "play"):
             self.assertIn("\ndisable-model-invocation: true\n", self.skill(name), name)
+
+    def test_the_switch_works_without_a_permission_prompt(self):
+        # Claude Code refuses skill writes inside ~/.claude (a protected folder), and asks before
+        # any write outside the project unless the skill grants that one file. Seen live, 10-11.
+        for name in ("pause", "play"):
+            text = self.skill(name)
+            self.assertNotIn("~/.claude/", re.findall(r"!`([^`]+)`", text)[0], name)
+            self.assertIn("Edit(~/.ai-sounds-paused)", text, name)
 
 
 class RealHook(unittest.TestCase):
@@ -199,7 +207,7 @@ class RealHook(unittest.TestCase):
         self.assertEqual(self.played(5).strip(), "/System/Library/Sounds/Glass.aiff")
 
     def test_the_real_command_is_silent_and_exits_0_while_paused(self):
-        open(os.path.join(self.home, ".claude", "sounds-paused"), "w").close()
+        open(os.path.join(self.home, ".ai-sounds-paused"), "w").close()
         for event in WIRED:
             done, _ = self.run_hook(event)
             self.assertEqual((done.returncode, done.stdout, done.stderr), (0, b"", b""), event)
@@ -213,7 +221,7 @@ class RealHook(unittest.TestCase):
         self.assertEqual(self.played(5).strip(), "/System/Library/Sounds/Pop.aiff")
 
     def test_the_real_codex_command_is_silent_and_exits_0_while_paused_from_a_subfolder(self):
-        open(os.path.join(self.home, ".claude", "sounds-paused"), "w").close()
+        open(os.path.join(self.home, ".ai-sounds-paused"), "w").close()
         for event in CODEX_WIRED:
             done, _ = self.run_codex_hook(event)
             self.assertEqual((done.returncode, done.stdout, done.stderr), (0, b"", b""), event)
