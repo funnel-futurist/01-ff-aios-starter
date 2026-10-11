@@ -68,6 +68,8 @@ It checks protection + required checks + CODEOWNERS, so the promise can't silent
 ## Want to understand the automatic stuff (hooks)?
 A tiny program runs automatically when you open the repo: a **staleness nudge** that tells you if you're on `main` or behind the latest. It only *reads* — it never changes your files. Your `.claude/settings.json` also **denies** the most dangerous commands outright (`rm -rf`, `git push --force`, `git reset --hard`, …). You never configure these; they exist to protect you. (Covered in the AIOS training + certification.)
 
+**Sounds (Mac).** Claude plays a short sound when it finishes a reply (Glass), when a helper agent finishes (Hero), and when it's waiting on you (Pop), so you can look away while it works. To pause them on your computer, run `touch ~/.claude/sounds-paused` in a terminal. To turn them back on, run `rm ~/.claude/sounds-paused`. Both take effect on the next sound, no restart. On Windows and Linux the hook stays silent.
+
 ## Recommended GitHub settings (one-time, by the repo owner)
 - Protect `main`: require a PR before merge, block force-pushes and deletions.
 - Require **code-owner review** so the `CODEOWNERS` paths can't merge without a human.

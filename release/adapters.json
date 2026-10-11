@@ -10,6 +10,8 @@
         "tests/aios/test_boundary_and_inventory.py::SessionHook::test_the_real_hook_command_prints_a_deny_decision_for_an_operator",
         "tests/aios/test_boundary_and_inventory.py::Inventory::test_claude_md_names_every_skill",
         "tests/aios/test_boundary_and_inventory.py::Inventory::test_the_document_skills_are_installed_from_anthropic_and_credited",
+        "tests/aios/test_sound_hook.py::Wiring::test_each_event_runs_the_sound_hook_with_its_own_sound",
+        "tests/aios/test_sound_hook.py::RealHook::test_the_real_command_is_silent_and_exits_0_while_paused",
         "scripts/team/guard-dangerous-git.test.js"
       ],
       "signatures": [
@@ -20,6 +22,7 @@
       "files": [
         ".claude/hooks/git-staleness-check.js",
         ".claude/hooks/guard-dangerous-git.js",
+        ".claude/hooks/notify-sound.js",
         ".claude/settings.json",
         ".claude/skills/README.md",
         ".claude/skills/changelog/SKILL.md",
