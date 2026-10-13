@@ -13,6 +13,7 @@ Exit codes: 0 report saved, 2 refused by the service, 3 transport/response failu
 """
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -35,6 +36,13 @@ class ClientError(Exception):
         self.code = code
         self.message = message
         self.exit_code = exit_code
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects so a bearer credential is never forwarded."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def _read_json_response(response):
@@ -64,9 +72,16 @@ def _load_instance(path):
     if not ENV_RE.fullmatch(inst["key_env"]):
         raise ClientError("INVALID_INSTANCE", "key_env must name an uppercase environment variable", 4)
     parsed = urllib.parse.urlsplit(inst["endpoint"])
-    loopback = parsed.hostname in ("127.0.0.1", "localhost", "::1")
-    if parsed.scheme != "https" and not (parsed.scheme == "http" and loopback):
-        raise ClientError("INVALID_INSTANCE", "endpoint must use HTTPS (HTTP is allowed only on loopback)", 4)
+    try:
+        loopback = ipaddress.ip_address(parsed.hostname or "").is_loopback
+    except ValueError:
+        loopback = False
+    if not parsed.hostname or (parsed.scheme != "https" and not (parsed.scheme == "http" and loopback)):
+        raise ClientError(
+            "INVALID_INSTANCE",
+            "endpoint must use HTTPS (HTTP is allowed only for a literal loopback IP)",
+            4,
+        )
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise ClientError("INVALID_INSTANCE", "endpoint may not contain credentials, a query, or a fragment", 4)
     reports_dir = inst.get("reports_dir", "reports")
@@ -118,16 +133,26 @@ def main(argv=None):
                            "repo": a.repo or inst["default_repo"], "ref": a.ref}).encode()
         req = urllib.request.Request(inst["endpoint"].rstrip("/") + "/v1/invoke", data=body, method="POST",
                                      headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
-        with urllib.request.urlopen(req, timeout=300) as resp:
+        opener = urllib.request.build_opener(_NoRedirectHandler())
+        with opener.open(req, timeout=300) as resp:
             out = _read_json_response(resp)
     except urllib.error.HTTPError as e:
+        if 300 <= e.code < 400:
+            error = ClientError(
+                "SERVICE_REDIRECT_REFUSED",
+                "the service redirected the credential-bearing request",
+                3,
+            )
+            print(json.dumps({"ok": False, "error": {"code": error.code, "message": error.message}}))
+            return error.exit_code
         try:
             out = _read_json_response(e)
         except ClientError as error:
             print(json.dumps({"ok": False, "error": {"code": error.code, "message": error.message}}))
             return error.exit_code
-    except urllib.error.URLError as e:
-        print(json.dumps({"ok": False, "error": {"code": "SERVICE_UNREACHABLE", "message": str(e.reason)}}))
+    except (urllib.error.URLError, OSError) as e:
+        reason = getattr(e, "reason", e)
+        print(json.dumps({"ok": False, "error": {"code": "SERVICE_UNREACHABLE", "message": str(reason)}}))
         return 3
     except ClientError as e:
         print(json.dumps({"ok": False, "error": {"code": e.code, "message": e.message}}))
@@ -140,6 +165,16 @@ def main(argv=None):
         findings = len(out["report"]["findings"])
         resolved_commit = out["provenance"]["resolved_commit"]
         path = _write_report(inst["report_root"], a.capability, out.get("request_id", ""), out)
+        with open(path, "rb") as fh:
+            report_sha256 = hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        error = ClientError(
+            "REPORT_WRITE_FAILED",
+            "the client-owned report could not be persisted and verified",
+            4,
+        )
+        print(json.dumps({"ok": False, "error": {"code": error.code, "message": error.message}}))
+        return error.exit_code
     except (ClientError, KeyError, TypeError) as exc:
         if isinstance(exc, ClientError):
             error = exc
@@ -147,8 +182,6 @@ def main(argv=None):
             error = ClientError("INVALID_SERVICE_RESPONSE", "the successful response omitted required fields", 3)
         print(json.dumps({"ok": False, "error": {"code": error.code, "message": error.message}}))
         return error.exit_code
-    with open(path, "rb") as fh:
-        report_sha256 = hashlib.sha256(fh.read()).hexdigest()
     print(json.dumps({"ok": True, "saved": path, "request_id": out["request_id"],
                       "totals": totals, "findings": findings,
                       "resolved_commit": resolved_commit,
