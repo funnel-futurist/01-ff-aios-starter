@@ -107,6 +107,17 @@ A missing **required** credential fails the install loudly and writes nothing. A
 **optional** one installs and says so on every `start` and `verify`. Neither one leaves you
 with a workspace that looks fine and quietly does half its job.
 
+### Optional FF Intelligence capability
+
+An entitled workspace can use the managed thin client at `.aios/core_bridge/core_call.py`.
+The private method stays on FF's side. Copy its example configuration to the ignored,
+client-owned `instance.json`, store the issued key as `FF_CORE_KEY`, and run the capability
+named by FF. The client keeps the returned reports even if future access is withdrawn.
+
+The Starter does not imply entitlement or a live endpoint. A missing optional key remains an
+explicit not-configured state, and the caller refuses insecure remote endpoints, oversized
+responses and output paths that escape the instance.
+
 ## Already have a workspace from "Use this template"?
 
 That button copies whatever was on the default branch that day, so nothing records which

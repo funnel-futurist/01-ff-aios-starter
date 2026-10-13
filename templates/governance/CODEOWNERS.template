@@ -39,6 +39,7 @@
 
 # Who may operate this workspace, and which release it runs - the install contract's own gate
 /.aios/config.json          [REPO_OWNER] [PRIMARY_REVIEWER]
+/.aios/core_bridge/instance.json [REPO_OWNER] [PRIMARY_REVIEWER]
 /.aios/roles.json           [REPO_OWNER] [PRIMARY_REVIEWER]
 /releases/                  [REPO_OWNER] [PRIMARY_REVIEWER]
 /release/                   [REPO_OWNER] [PRIMARY_REVIEWER]

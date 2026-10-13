@@ -1,0 +1,12 @@
+{
+  "schema": "ff-core-bridge-client/1",
+  "version": "0.1.0",
+  "source": {
+    "repository": "funnel-futurist/ai-os",
+    "revision": "ab6011e65849430820368042b935a1df3498eb63",
+    "path": "11_Operations/core_bridge/thin_caller/core_call.py",
+    "sha256": "19046b52c42132f6656e24fd0b2a73d616cc6ad532ea9a4cc2a3d8064eab8638"
+  },
+  "installed_path": ".aios/core_bridge/core_call.py",
+  "private_method_included": false
+}

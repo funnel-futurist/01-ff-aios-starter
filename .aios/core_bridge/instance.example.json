@@ -1,0 +1,7 @@
+{
+  "org": "your-org-id",
+  "endpoint": "https://core.example.invalid",
+  "key_env": "FF_CORE_KEY",
+  "default_repo": "owner/your-aios-repository",
+  "reports_dir": "reports"
+}

@@ -137,6 +137,7 @@
     "release/package_spec.json",
     "releases/*.json",
     ".aios/operator_core/**",
+    ".aios/core_bridge/**",
     "01_Foundations/**",
     "02_Deliverables/**",
     "03_Quality_Control/**",
