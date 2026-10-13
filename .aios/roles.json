@@ -39,6 +39,7 @@
         "01_Foundations/offer_economics/**",
         ".github/**",
         ".aios/config.json",
+        ".aios/core_bridge/instance.json",
         ".aios/roles.json",
         ".claude/settings.json",
         ".claude/hooks/**",

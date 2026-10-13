@@ -163,8 +163,10 @@ class TheRealStarter(Sandbox):
         return util.read_json(os.path.join(self.REPO, "release", "package_spec.json"))
 
     def test_the_real_spec_declares_the_override_client_owned(self):
-        self.assertEqual(self.spec()["client_owned"], [OVERRIDE])
+        core_instance = ".aios/core_bridge/instance.json"
+        self.assertEqual(self.spec()["client_owned"], [OVERRIDE, core_instance])
         self.assertIsNone(release_mod.classify(self.spec(), OVERRIDE))
+        self.assertIsNone(release_mod.classify(self.spec(), core_instance))
         self.assertEqual(release_mod.classify(self.spec(), ".claude/settings.json"), "managed")
 
     def test_the_real_tree_does_not_track_it_and_the_gitignore_keeps_it_personal(self):
@@ -172,6 +174,13 @@ class TheRealStarter(Sandbox):
         self.assertNotIn(OVERRIDE, tracked)
         with open(os.path.join(self.REPO, ".gitignore")) as fh:
             self.assertIn(OVERRIDE, fh.read().split("\n"))
+
+    def test_core_bridge_instance_config_is_untracked_and_locally_ignored(self):
+        core_instance = ".aios/core_bridge/instance.json"
+        tracked = util.git(self.REPO, ["ls-files"]).split("\n")
+        self.assertNotIn(core_instance, tracked)
+        with open(os.path.join(self.REPO, ".aios", ".gitignore")) as fh:
+            self.assertIn("core_bridge/instance.json", fh.read().split("\n"))
 
     def test_the_real_release_file_set_cannot_contain_it(self):
         files = release_mod.select_files(self.REPO, "HEAD", self.spec())

@@ -36,6 +36,7 @@
 
 # Who may operate this workspace, and which release it runs - the install contract's own gate
 /.aios/config.json          @phoenix-ship-it @Joburn-ai
+/.aios/core_bridge/instance.json @phoenix-ship-it @Joburn-ai
 /.aios/roles.json           @phoenix-ship-it @Joburn-ai
 /releases/                  @phoenix-ship-it @Joburn-ai
 /release/                   @phoenix-ship-it @Joburn-ai
