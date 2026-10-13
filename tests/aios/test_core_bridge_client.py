@@ -10,6 +10,8 @@ import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from unittest import mock
 
 import harness
 
@@ -25,16 +27,37 @@ class Handler(BaseHTTPRequestHandler):
     response = None
     status = 200
     seen = []
+    redirect_to = None
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         type(self).seen.append({
+            "method": "POST",
             "path": self.path,
             "authorization": self.headers.get("Authorization"),
             "body": json.loads(self.rfile.read(length)),
         })
+        if type(self).redirect_to:
+            self.send_response(302)
+            self.send_header("Location", type(self).redirect_to)
+            self.end_headers()
+            return
         body = json.dumps(type(self).response).encode()
         self.send_response(type(self).status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        type(self).seen.append({
+            "method": "GET",
+            "path": self.path,
+            "authorization": self.headers.get("Authorization"),
+            "body": None,
+        })
+        body = b'{"ok": true}'
+        self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -50,6 +73,7 @@ class CoreBridgeClient(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         Handler.seen = []
         Handler.status = 200
+        Handler.redirect_to = None
         Handler.response = {
             "ok": True,
             "request_id": "req_0123456789ab",
@@ -107,6 +131,81 @@ class CoreBridgeClient(unittest.TestCase):
         self.assertEqual(result.returncode, 4)
         self.assertEqual(json.loads(result.stdout)["error"]["code"], "MISSING_CREDENTIAL")
         self.assertEqual(Handler.seen, [])
+
+    def test_redirect_is_refused_without_forwarding_the_bearer_credential(self):
+        Handler.redirect_to = "/credential-sink"
+        result = self.call()
+        self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["error"]["code"], "SERVICE_REDIRECT_REFUSED")
+        self.assertEqual(len(Handler.seen), 1)
+        self.assertEqual(Handler.seen[0]["method"], "POST")
+        self.assertEqual(Handler.seen[0]["path"], "/v1/invoke")
+        self.assertEqual(Handler.seen[0]["authorization"], "Bearer fixture-key")
+
+    def test_plain_http_requires_a_literal_loopback_ip_not_a_hostname(self):
+        config = json.loads(Path(self.config).read_text(encoding="utf-8"))
+        config["endpoint"] = "http://localhost:%d" % self.httpd.server_port
+        Path(self.config).write_text(json.dumps(config), encoding="utf-8")
+        result = self.call()
+        self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["error"]["code"], "INVALID_INSTANCE")
+        self.assertEqual(Handler.seen, [])
+
+    def test_https_endpoint_requires_a_hostname(self):
+        config = json.loads(Path(self.config).read_text(encoding="utf-8"))
+        config["endpoint"] = "https://"
+        Path(self.config).write_text(json.dumps(config), encoding="utf-8")
+        result = self.call()
+        self.assertEqual(result.returncode, 4, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["error"]["code"], "INVALID_INSTANCE")
+        self.assertEqual(Handler.seen, [])
+
+    def test_socket_timeout_is_a_structured_transport_failure(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("starter_core_call_timeout", CLIENT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        opener = mock.Mock()
+        opener.open.side_effect = TimeoutError("timed out while reading")
+        with mock.patch.object(module.urllib.request, "build_opener", return_value=opener):
+            with mock.patch.dict(os.environ, {"FF_CORE_KEY": "fixture-key"}, clear=False):
+                output = io.StringIO()
+                with mock.patch("sys.stdout", new=output):
+                    code = module.main(["repository-health", "--instance", self.config])
+        self.assertEqual(code, 3)
+        self.assertEqual(json.loads(output.getvalue())["error"]["code"], "SERVICE_UNREACHABLE")
+
+    def test_report_write_failure_is_a_structured_local_failure(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("starter_core_call_write_failure", CLIENT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with mock.patch.object(module, "_write_report", side_effect=OSError("disk full /private/path")):
+            with mock.patch.dict(os.environ, {"FF_CORE_KEY": "fixture-key"}, clear=False):
+                output = io.StringIO()
+                with mock.patch("sys.stdout", new=output):
+                    code = module.main(["repository-health", "--instance", self.config])
+        result = json.loads(output.getvalue())
+        self.assertEqual(code, 4)
+        self.assertEqual(result["error"]["code"], "REPORT_WRITE_FAILED")
+        self.assertNotIn("private/path", result["error"]["message"])
+
+    def test_report_hash_read_failure_is_a_structured_local_failure(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("starter_core_call_hash_failure", CLIENT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        missing = os.path.join(self.tmp.name, "report-disappeared.json")
+        with mock.patch.object(module, "_write_report", return_value=missing):
+            with mock.patch.dict(os.environ, {"FF_CORE_KEY": "fixture-key"}, clear=False):
+                output = io.StringIO()
+                with mock.patch("sys.stdout", new=output):
+                    code = module.main(["repository-health", "--instance", self.config])
+        self.assertEqual(code, 4)
+        self.assertEqual(json.loads(output.getvalue())["error"]["code"], "REPORT_WRITE_FAILED")
 
 
 class PackageBoundary(unittest.TestCase):
