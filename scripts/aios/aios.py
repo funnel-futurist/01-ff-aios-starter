@@ -458,6 +458,15 @@ def cmd_adapters_check(args):
     return EXIT_OK
 
 
+def cmd_adapters_render(args):
+    repo = os.path.abspath(args.repo)
+    text = adapters.render_agents_md(repo)
+    with open(os.path.join(repo, adapters.AGENTS_PATH), "w", encoding="utf-8") as fh:
+        fh.write(text)
+    _say("wrote %s (%d bytes) from CLAUDE.md and its imports" % (adapters.AGENTS_PATH, len(text.encode("utf-8"))))
+    return EXIT_OK
+
+
 def cmd_governance_check(args):
     root = os.path.abspath(args.root)
     config = None
@@ -667,6 +676,9 @@ def build_parser():
     adc = adsub.add_parser("check", help="the manifest and the tree must agree")
     adc.add_argument("--repo", default=_repo_root())
     adc.set_defaults(func=cmd_adapters_check)
+    adr = adsub.add_parser("render", help="write AGENTS.md from CLAUDE.md and the files it imports")
+    adr.add_argument("--repo", default=_repo_root())
+    adr.set_defaults(func=cmd_adapters_render)
 
     pr = sub.add_parser("protected", help="protected-text scan of the public tree")
     prsub = pr.add_subparsers(dest="subcommand")

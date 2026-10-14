@@ -140,7 +140,10 @@ local changes to the system layer - that is information, not a failure.
    file it prints the diff and the two ways forward: revert it, or keep your change by moving
    it into a file the release doesn't manage. For `.claude/settings.json` that file is
    `.claude/settings.local.json` (see "Your own settings" below).
-3. Refuses if the new release ships a path that already exists as your own file.
+3. Refuses if the new release ships a path that already exists as your own file. The likeliest
+   one is `AGENTS.md`, which the Starter generates for Codex from `CLAUDE.md` and the operator
+   core. If you wrote your own, move your rules to `~/.codex/AGENTS.md` (Codex reads it in every
+   project) or to an `AGENTS.md` inside one of your folders, delete the root one, then upgrade.
 4. Snapshots every managed file and writes a journal **before** changing anything.
 5. Replaces managed files. Adds new seed files only where they do not already exist.
    **Seed files are never upgraded:** `CLAUDE.md` and the foundation folders are written once and
