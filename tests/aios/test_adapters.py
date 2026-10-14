@@ -67,7 +67,8 @@ class FixtureTree(Sandbox):
         self.assertIn(".codex/hooks/x.js", found)
 
     def test_declaring_a_file_for_a_tool_makes_it_pass_but_never_makes_the_tool_verified(self):
-        harness.write(self.repo, "AGENTS.md", "# agents\n")
+        # The real rendering: a placeholder AGENTS.md is now (rightly) reported as stale.
+        harness.write(self.repo, "AGENTS.md", adapters.render_agents_md(self.repo))
         m = _manifest()
         m["tools"]["codex"]["files"] = ["AGENTS.md"]
         self.put(m)
@@ -138,9 +139,9 @@ class TheRealManifest(Sandbox):
     def test_claude_code_is_the_only_tool_with_anything_shipped_or_verified(self):
         tools = self.manifest()["tools"]
         self.assertEqual(tools["claude-code"]["status"], "verified")
-        # The one exception: Codex gets the sound hook, and only that one file.
+        # The one exception: Codex gets the sound hook and the generated AGENTS.md, and nothing else.
         self.assertEqual(tools["codex"]["status"], "verified")
-        self.assertEqual(tools["codex"]["files"], [".codex/hooks.json"])
+        self.assertEqual(tools["codex"]["files"], [".codex/hooks.json", "AGENTS.md"])
         for name, tool in tools.items():
             if name not in ("claude-code", "codex"):
                 self.assertEqual(tool["status"], "not verified", name)

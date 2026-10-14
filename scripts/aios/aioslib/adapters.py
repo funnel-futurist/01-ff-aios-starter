@@ -79,8 +79,12 @@ def agents_md_problem(repo):
     path = os.path.join(repo, AGENTS_PATH)
     if not os.path.isfile(path):
         return "%s is missing: run `python3 scripts/aios/aios.py adapters render`" % AGENTS_PATH
+    try:
+        expected = render_agents_md(repo)
+    except Refusal as exc:
+        return "%s can't be rendered: %s" % (AGENTS_PATH, exc.message)
     with open(path, encoding="utf-8") as fh:
-        if fh.read() != render_agents_md(repo):
+        if fh.read() != expected:
             return ("%s is not the rendering of CLAUDE.md and its imports: run "
                     "`python3 scripts/aios/aios.py adapters render`" % AGENTS_PATH)
     return None

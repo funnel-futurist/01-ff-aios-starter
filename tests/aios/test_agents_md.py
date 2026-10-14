@@ -71,6 +71,11 @@ class Drift(unittest.TestCase):
             fh.write("- one more rule\n")
         self.assertIn("not the rendering", adapters.agents_md_problem(self.tmp))
 
+    def test_a_broken_import_is_reported_not_raised_by_the_check(self):
+        with open(os.path.join(self.tmp, "CLAUDE.md"), "a", encoding="utf-8") as fh:
+            fh.write("\n@missing.md\n")
+        self.assertIn("can't be rendered", adapters.agents_md_problem(self.tmp))
+
     def test_an_import_outside_the_tree_is_refused(self):
         with open(os.path.join(self.tmp, "CLAUDE.md"), "a", encoding="utf-8") as fh:
             fh.write("\n@../outside.md\n")
