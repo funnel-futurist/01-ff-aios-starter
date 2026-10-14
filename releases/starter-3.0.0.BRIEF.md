@@ -41,12 +41,12 @@
   - rollback equals the actual pre-upgrade snapshot, field for field, and the upgrade then runs again;
   - an existing destination and a case-insensitive collision are each refused with nothing changed;
   - hard kills at 7 points in the upgrade and 3 in the rollback each recover to the exact snapshot.
-- **The heavy run:** a 120 MB file and 6,000 git-ignored dependency files, with real SIGKILLs at five moments. Each recovered exactly; the full upgrade took 3.8 s.
+- **The heavy run:** a 120 MB file and 6,000 git-ignored dependency files, with real SIGKILLs at five moments. Each recovered exactly; the full upgrade took 4.4 s.
 - **A case-sensitive disk image:** `Plan.md` and `plan.md` side by side are refused, and rollback is exact.
 - **R-A against Vercel's real API:** a throwaway project still building the old folder made the upgrade refuse with nothing changed. Once corrected, the upgrade verified and moved the site, a production deployment built from the new folder and served the page, and the project was deleted.
 - **R-C:** an operator's edit at the new founder path is held; `instance check` fails and `start` says NOT RESTORED while `CODEOWNERS` names the old path.
 - **Fresh Claude Code and Codex sessions,** in a fresh 3.0 install and in an upgraded workspace whose `CLAUDE.md` still lists the old folders, all name `00_AIOS/company/` and Operator Core v1.2.0.
-- **Tests from a fresh clone of the candidate:** 459 unit and contract tests, 60/0 end-to-end on the real content, 17/17 PR floor, 49/49 hooks, and the allow-list in order.
+- **GitHub CI on Linux is green** on the candidate's branch head, and so are the tests from a fresh clone of it: 468 unit and contract tests, 60/0 end-to-end on the real content, 17/17 PR floor, 49/49 hooks, and the allow-list in order.
 - **Client names:** none in anything 3.0 adds. The whole-tree scan finds only the 14 ordinary-word matches `main` already has.
 - **Protected text:** FF's private scan compared every one of its 15,595 protected files, the five over 25 MB included, and 0 were left unscanned. It found four overlaps, all generic: Python standard-library imports, `urllib` and `http.server` boilerplate, and GitHub documentation addresses.
 
@@ -65,7 +65,7 @@
 - **`verify --repo` and `adopt`:** `verify --repo` trusted the workspace's own list of release files, so a file dropped from both still verified; `adopt` ignored the executable bit. Both now check against the release itself.
 
 ## Recommendation
-**Approve.** It's the layout you ruled on, rebuilt on the released 2.10.0. Your three release requirements are enforced in code and proven, and so is the proof bar you set: every starting version, previously upgraded and client-edited workspaces, existing destinations, case-insensitive collisions, interrupted moves, and exact rollback against the actual pre-upgrade snapshot. Two independent reviewers from different model families checked the move engine and the installer over many rounds (Gemini 10, Codex 9), and every real finding was fixed with a test (from round 5 on, each shown to fail without its fix).
+**Approve.** It's the layout you ruled on, rebuilt on the released 2.10.0. Your three release requirements are enforced in code and proven, and so is the proof bar you set: every starting version, previously upgraded and client-edited workspaces, existing destinations, case-insensitive collisions, interrupted moves, and exact rollback against the actual pre-upgrade snapshot. Two independent reviewers from different model families checked the move engine and the installer over many rounds (Gemini 14, Codex 13), and every real finding was fixed with a test (from round 5 on, each shown to fail without its fix).
 
 ## Consequence
 - **If approved:**
@@ -94,7 +94,7 @@
 **Success:** `main` equals the `starter-3.0.0` tag.
 
 ## What is not claimed
-- **No run on Windows.** Case-insensitive behaviour was proven on macOS's default disk and on a case-sensitive disk image, and the planner folds case and Unicode the way Windows does. A Windows disk itself wasn't used.
+- **No run on Windows.** Case-insensitive behaviour was proven on macOS's default disk and on a case-sensitive disk image, and the planner folds case and Unicode the way Windows does. A Windows disk itself wasn't used, and the Windows file lock is tested with a stand-in only.
 - **The Vercel check can only see what the client's token can see.** If it can't read a scope it knows about, it refuses. It can't find a project in an account the token doesn't belong to.
 - **References to old folders inside the client's own files are reported, not fixed.**
 - **The protected-text scan is a copy-and-paste tripwire.** It doesn't catch paraphrase or text in images. A clean scan is evidence, not a guarantee.

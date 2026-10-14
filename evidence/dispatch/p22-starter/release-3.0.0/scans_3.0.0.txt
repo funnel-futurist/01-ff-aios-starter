@@ -1,0 +1,31 @@
+Scans of the Starter 3.0.0 candidate: code pin 896a750bdd01e672cb753d4477e2cf1fc7cab0e6, branch head 7e0f7e2 (2026-10-14).
+Counts only: no protected text, no protected paths and no client names appear here.
+
+## Protected text (STR-7): FF's private full-coverage reverse scan
+scanner reverse_scan.py sha256  ffe2094cd598c6383b22d33eed3a77b708f6fd7d4da79f1473384e035715279e
+  (this cut added streaming for files over 25 MB, with a self-check; the previous version is kept beside it)
+protected layer declaration      ai-os 7bd6ed6d4f36:00_Foundations/control_plane/intelligence_layer.json, sha256 6da3ca57fcf48cdfd041f6b4dbcfe0742f3f764c6037ab10931186ce1bf71a20
+protected fingerprint list       fingerprints.json sha256 43266d9df359be133db759061a68a1497dd8675307a76d7ecf21fecf86152e41
+public tree scanned              cand = 896a750bdd01e672cb753d4477e2cf1fc7cab0e6
+already public, not counted      starter-2.7.0, starter-2.7.2, starter-2.8.0, starter-2.9.0, starter-2.10.0, main 57a2b93
+protected files compared         15595
+over 25 MB, streamed             5 (self-check first: streaming produced exactly the window set on 60 real files, 397778 windows)
+unscanned                        0
+pairs with any shared window     7
+pairs at or over the rule (3+)   4
+  docs/human_steps/restore_founder_review.md                      8 windows  generic: a docs.github.com address (managing protected branches)
+  evidence/dispatch/p22-starter/release-3.0.0/vercel_live_300.py  3 windows  generic: Python standard-library imports and urllib request boilerplate (an evidence script, not shipped)
+  evidence/dispatch/p22-starter/release-3.0.0/vercel_live_300.py  3 windows  generic: Python standard-library imports and urllib request boilerplate (an evidence script, not shipped)
+  tests/aios/test_layout_3_0.py                                   8 windows  generic: http.server response-header boilerplate (send_header, Content-Type, Content-Length)
+pairs under the rule             3, all in evidence/dispatch/p22-starter/release-3.0.0/vercel_live_300.py
+FF method found                  none
+carried over unchanged           .claude/skills/pr_review/SKILL.md, byte-identical to 2.10.0 (blob 3454048b4f):
+                                 the one overlap at the 2.10.0 cut, shared tooling governed by ai-os #507
+independent check                Chat Zero's own full-coverage run of #41 head 7ad22b3 (pin 20ffb36) found the same
+                                 counts: 15,595 files, 5 streamed, 0 unscanned, 7 pairs, the same 4 at or over the rule
+
+## Client names
+denylist sha256                  8ad1ffae9678e314fde8122cfc4cd0af4fbe4c08acad050b41ac18b1bc69bb90 (24 terms, supplied at run time, never printed)
+lines 3.0 adds (57a2b93..7e0f7e2)  7544
+matches in those lines           2: one ordinary English word in a Google Cloud console menu label, on a line main already has
+whole tree, release mode         14 findings at the pin, 14 on main 57a2b93: the same files and kinds (ordinary-word matches)

@@ -2,14 +2,14 @@
 Python 3.9.6 | git version 2.50.1 (Apple Git-155)
 
 ### R1 fresh clone of the candidate
-662c904 release(3.0.0): draft record re-cut at 20ffb36 (after Codex round 8)
-record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'managed': 98, 'seed': 59, 'skills': 22}
+7e0f7e2 release(3.0.0): draft record re-cut at 896a750 (after Codex round 12)
+record: draft, pin 896a750bdd01e672cb753d4477e2cf1fc7cab0e6, {'files': 157, 'managed': 98, 'seed': 59, 'skills': 22}
 
 ### H from-2.6.0: 2.6.0 -> 3.0.0
   PASS  from-2.6.0: install 2.6.0 with its own installer
   PASS  from-2.6.0: without a Vercel token or --no-vercel the dry run is BLOCKED, writing nothing
   PASS  from-2.6.0: dry run lists 48 move(s) and shows the exact map line, writing nothing
-  PASS  from-2.6.0: upgrade to 3.0.0 (0.4s)
+  PASS  from-2.6.0: upgrade to 3.0.0 (0.3s)
   PASS  from-2.6.0: independent proof: every client file at its mapped path, same bytes/size/mode; nothing else of theirs changed (48 moved)
   PASS  from-2.6.0: CLAUDE.md gained the map line exactly once
   PASS  from-2.6.0: no old folder left
@@ -66,7 +66,7 @@ record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'man
   PASS  from-2.7.1: install 2.7.1 with its own installer
   PASS  from-2.7.1: without a Vercel token or --no-vercel the dry run is BLOCKED, writing nothing
   PASS  from-2.7.1: dry run lists 48 move(s) and shows the exact map line, writing nothing
-  PASS  from-2.7.1: upgrade to 3.0.0 (0.3s)
+  PASS  from-2.7.1: upgrade to 3.0.0 (0.4s)
   PASS  from-2.7.1: independent proof: every client file at its mapped path, same bytes/size/mode; nothing else of theirs changed (48 moved)
   PASS  from-2.7.1: CLAUDE.md gained the map line exactly once
   PASS  from-2.7.1: no old folder left
@@ -85,7 +85,7 @@ record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'man
   PASS  from-2.7.2: install 2.7.2 with its own installer
   PASS  from-2.7.2: without a Vercel token or --no-vercel the dry run is BLOCKED, writing nothing
   PASS  from-2.7.2: dry run lists 48 move(s) and shows the exact map line, writing nothing
-  PASS  from-2.7.2: upgrade to 3.0.0 (0.3s)
+  PASS  from-2.7.2: upgrade to 3.0.0 (0.4s)
   PASS  from-2.7.2: independent proof: every client file at its mapped path, same bytes/size/mode; nothing else of theirs changed (48 moved)
   PASS  from-2.7.2: CLAUDE.md gained the map line exactly once
   PASS  from-2.7.2: no old folder left
@@ -104,7 +104,7 @@ record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'man
   PASS  from-2.8.0: install 2.8.0 with its own installer
   PASS  from-2.8.0: without a Vercel token or --no-vercel the dry run is BLOCKED, writing nothing
   PASS  from-2.8.0: dry run lists 48 move(s) and shows the exact map line, writing nothing
-  PASS  from-2.8.0: upgrade to 3.0.0 (0.4s)
+  PASS  from-2.8.0: upgrade to 3.0.0 (0.3s)
   PASS  from-2.8.0: independent proof: every client file at its mapped path, same bytes/size/mode; nothing else of theirs changed (48 moved)
   PASS  from-2.8.0: CLAUDE.md gained the map line exactly once
   PASS  from-2.8.0: no old folder left
@@ -123,7 +123,7 @@ record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'man
   PASS  from-2.9.0: install 2.9.0 with its own installer
   PASS  from-2.9.0: without a Vercel token or --no-vercel the dry run is BLOCKED, writing nothing
   PASS  from-2.9.0: dry run lists 48 move(s) and shows the exact map line, writing nothing
-  PASS  from-2.9.0: upgrade to 3.0.0 (0.3s)
+  PASS  from-2.9.0: upgrade to 3.0.0 (0.7s)
   PASS  from-2.9.0: independent proof: every client file at its mapped path, same bytes/size/mode; nothing else of theirs changed (48 moved)
   PASS  from-2.9.0: CLAUDE.md gained the map line exactly once
   PASS  from-2.9.0: no old folder left
@@ -183,7 +183,7 @@ record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'man
   PASS  chain-2.7.0-2.9.0: upgrade to 2.9.0 with 2.9.0's own tool
   PASS  chain-2.7.0-2.9.0: without a Vercel token or --no-vercel the dry run is BLOCKED, writing nothing
   PASS  chain-2.7.0-2.9.0: dry run lists 48 move(s) and shows the exact map line, writing nothing
-  PASS  chain-2.7.0-2.9.0: upgrade to 3.0.0 (0.5s)
+  PASS  chain-2.7.0-2.9.0: upgrade to 3.0.0 (0.3s)
   PASS  chain-2.7.0-2.9.0: independent proof: every client file at its mapped path, same bytes/size/mode; nothing else of theirs changed (48 moved)
   PASS  chain-2.7.0-2.9.0: CLAUDE.md gained the map line exactly once
   PASS  chain-2.7.0-2.9.0: no old folder left
@@ -227,12 +227,12 @@ record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'man
 
 ### HEAVY workspace (2.9.0 upgraded to 2.10.0): a 120 MB file, 6,000 ignored dependency files, real SIGKILLs
   pre-upgrade snapshot: 6469 entries
-  PASS  heavy: SIGKILL after 0.05s (before the lock was taken): nothing changed
+  PASS  heavy: SIGKILL after 0.05s (killed, journal not yet written): rollback touches nothing, still 2.10.0, exact snapshot:   managed:  95/95 files re-hashed from disk
   PASS  heavy: SIGKILL after 0.30s (killed, journal not yet written): rollback touches nothing, still 2.10.0, exact snapshot:   managed:  95/95 files re-hashed from disk
   PASS  heavy: SIGKILL after 0.80s (killed, journal not yet written): rollback touches nothing, still 2.10.0, exact snapshot:   managed:  95/95 files re-hashed from disk
   PASS  heavy: SIGKILL after 1.50s (killed, journal on disk): rollback recovers, still 2.10.0, exact snapshot:   managed:  95/95 files re-hashed from disk
   PASS  heavy: SIGKILL after 3.00s (killed, journal on disk): rollback recovers, still 2.10.0, exact snapshot:   managed:  95/95 files re-hashed from disk
-  PASS  heavy: full upgrade (4.1s)
+  PASS  heavy: full upgrade (4.4s)
   PASS  heavy: the 120 MB file kept its bytes at its new path
   PASS  heavy: all 6,000 ignored dependency files moved (6000)
   PASS  heavy: rollback exact
@@ -246,5 +246,5 @@ record: draft, pin 20ffb362a196e06f2a39caa53f9ee3eea4a7aa77, {'files': 157, 'man
   PASS  case-sensitive: rollback exact
 
 ------------------------------------------------------------
-RESULT: 208 passed, 0 failed (131s)
+RESULT: 208 passed, 0 failed (130s)
 exit 0
