@@ -1,0 +1,97 @@
+
+### R0 tools
+Python 3.9.6
+git version 2.50.1 (Apple Git-155)
+v25.8.1
+
+### R1 fresh clone of the candidate branch from GitHub
+d711e6c release(starter-2.9.0): draft record pinned at e5646ae
+record status: draft | pin: e5646ae1691b8aee267fc0308d7ca321ca4917af
+2.8.0 record status: approved
+
+### R2 the real draft record is refused (no approval inferred)
+install exit=2 (expect 2)
+
+### R3 fresh install of the exact candidate
+installed starter-2.9.0 into <scratch>/r290/fresh
+  by:       rehearsal-founder (founder)
+  pinned:   e5646ae1691b8aee267fc0308d7ca321ca4917af
+install exit=0
+checked:   workspace files AND the install record, against the pinned release in <scratch>/r290/starter
+verdict:   matches the installed release
+# AIOS Operator Core v1.2.0
+import lines in CLAUDE.md: 1
+installed core sha256 = manifest pin: True | version 1.2.0 | source 003506ac4
+not shipped (releases/tests/evidence present): 0
+private canon or company-update text in the installed tree: 0
+
+### R4 upgrade: approved 2.8.0 workspace with the client's own work -> 2.9.0 candidate
+installed starter-2.8.0 into <scratch>/r290/up
+# AIOS Operator Core v1.1.1
+import lines in CLAUDE.md: 1
+120 files
+dry run: <scratch>/r290/up 2.8.0 -> 2.9.0, nothing written
+  by:        rehearsal-founder (founder)
+  changed:   .aios/.gitignore
+  changed:   .aios/operator_core/OPERATOR_CORE.md
+  changed:   .aios/operator_core/manifest.json
+  changed:   .aios/roles.json
+  changed:   .claude/settings.json
+  changed:   .claude/skills/README.md
+  changed:   .env.example
+  changed:   .template_version.json
+  changed:   CONTRIBUTING.md
+  changed:   docs/INSTALL_AND_UPGRADE.md
+  changed:   templates/governance/CODEOWNERS.template
+  added:     .aios/core_bridge/README.md
+  added:     .aios/core_bridge/core_call.py
+  added:     .aios/core_bridge/instance.example.json
+  added:     .aios/core_bridge/manifest.json
+  added:     .claude/hooks/notify-sound.js
+  added:     .claude/skills/pause/SKILL.md
+  added:     .claude/skills/play/SKILL.md
+  added:     .codex/hooks.json
+  run it again without --dry-run to upgrade
+  managed:  86 files, verified by readback
+  state:    untouched (seed and unmanaged files were not written)
+  rollback: available (.aios/backups/20261014T011521Z-2.8.0-to-2.9.0)
+upgrade exit=0
+checked:   workspace files AND the install record, against the pinned release in <scratch>/r290/starter
+verdict:   matches the installed release
+# AIOS Operator Core v1.2.0
+import lines in CLAUDE.md: 1
+client files (installer state_fingerprint) after upgrade: IDENTICAL
+client rule kept: 1
+git history before -> after: 2 -> 2
+git status after upgrade (porcelain lines, managed changes expected): 17
+
+### R5 rollback to 2.8.0: the whole workspace comes back byte for byte
+  release:  starter-2.8.0 (2.8.0)
+  managed:  78/78 files re-hashed from disk
+rollback exit=0
+120 files
+whole workspace vs before the upgrade: IDENTICAL
+git status after rollback (porcelain lines): 0
+# AIOS Operator Core v1.1.1
+import lines in CLAUDE.md: 1
+
+### R6 upgrade from a 2.7.2 workspace (installed while 2.7.2 was approved)
+installed starter-2.7.2 into <scratch>/r290/old
+  rollback: available (.aios/backups/20261014T011521Z-2.7.2-to-2.9.0)
+upgrade exit=0
+client files after 2.7.2 -> 2.9.0: IDENTICAL
+# AIOS Operator Core v1.2.0
+import lines in CLAUDE.md: 1
+
+### R7 a hand-edited managed core is refused, not overwritten
+REFUSED: workspace does not match its installed release
+  - modified managed file: .aios/operator_core/OPERATOR_CORE.md (on disk 290d3974f13a, release 2a938ffc459a)
+upgrade exit=6
+client edit still there: 1
+
+### R8 release tag route (local clone only): tag on the approval commit passes, tag on the pin fails
+verdict:  the tag carries the approval and installs the pinned files byte for byte
+verdict:  a checkout of this tag is NOT the approved release
+  - the tag's commit e5646ae1691b has no releases/starter-2.9.0.json
+
+rehearsal done
