@@ -17,6 +17,7 @@ source, the same way P01 enforces it, because a generator that can approve its o
 the approval boundary decorative.
 """
 
+import json
 import os
 import re
 
@@ -127,6 +128,13 @@ def build(repo, rev, version, spec=None, branch=None, credentials=None, min_upgr
         problems = check_layout(layout)
         if problems:
             raise Refusal(EXIT_PACKAGE, "the package spec's folder layout is not releasable", problems)
+    # A file any earlier release seeded is the client's. A workspace that skipped the release that
+    # stopped shipping it would see it taken over and overwritten (independent review).
+    ever_seeded = seeds_ever_released(repo, rev, layout)
+    taken = sorted(p for p, c, _m, _s in files if c == "managed" and p in ever_seeded)
+    if taken:
+        raise Refusal(EXIT_PACKAGE, "the package would make %d earlier seed file(s) its own" % len(taken),
+                      taken[:20] + ["a seed is the client's for good: ship it under a new path"])
 
     manifest = {
         "schema": SCHEMA,
@@ -163,6 +171,28 @@ def build(repo, rev, version, spec=None, branch=None, credentials=None, min_upgr
             "with its bytes unchanged (layout.moves); hosting settings and CODEOWNERS that name an "
             "old folder must be updated" % layout.get("version")]
     return manifest
+
+
+def seeds_ever_released(repo, rev, layout=None):
+    """Every path a release recorded in `releases/` at `rev` shipped as a seed, under its old name
+    and, when `layout` moves it, its new one."""
+    from . import layout as layout_mod  # layout imports nothing of ours but util
+    rules = (layout or {}).get("moves") or []
+    names = util.git(repo, ["ls-tree", "--name-only", rev, "releases/"], check=False) or ""
+    out = set()
+    for name in names.splitlines():
+        if not re.match(r"^releases/starter-[0-9][^/]*\.json$", name):
+            continue
+        try:
+            man = json.loads(util.git(repo, ["show", "%s:%s" % (rev, name)]))
+        except ValueError:
+            continue
+        for e in man.get("files") or []:
+            if e.get("class") == "seed":
+                out.add(e["path"])
+                if rules:
+                    out.add(layout_mod.destination(e["path"], rules) or e["path"])
+    return out
 
 
 def check_layout(layout):

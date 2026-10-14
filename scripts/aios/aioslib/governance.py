@@ -75,14 +75,18 @@ def parse(text):
 
 def check(root, expected_slug=None, config=None):
     """Return a list of problems. Empty means the file names real, in-scope owners."""
-    problems = []
     rel, path = find_file(root)
     if not path:
         return ["no CODEOWNERS file (looked in %s)" % ", ".join(LOCATIONS)]
 
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         text = fh.read()
+    return check_text(text, rel, root, expected_slug, config)
 
+
+def check_text(text, rel, root, expected_slug=None, config=None):
+    """`check` on CODEOWNERS text, so install can check what it rendered before it writes."""
+    problems = []
     rules = parse(text)
     if not rules:
         problems.append("%s defines no rules, so it protects nothing" % rel)

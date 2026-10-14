@@ -112,6 +112,18 @@ verifies the result by **re-hashing what landed on disk**, and writes `.aios/ins
 recording exactly what you have. If the readback disagrees with the manifest, the install fails
 - "the installer said it worked" is not evidence.
 
+It checks everything before it writes the first file, and refuses with nothing changed if:
+- a release file is already in the target;
+- you already have a `CODEOWNERS` file (in `.github/`, the top folder or `docs/`). Yours is never
+  replaced, and never shadowed by one GitHub would read first;
+- `.aios/config.json` holds a different config;
+- a folder it would write into is a link;
+- an owner in `code_owners` isn't `@user`, `@org/team` or an email, or isn't one of your `people`.
+  GitHub silently ignores such an owner, so the rule would protect nothing.
+
+A starter file you already have, such as your own `README.md`, stays exactly as it is and is
+recorded as yours.
+
 Anything you have to do by hand along the way (2FA, a scoped token, a backup, connecting Vercel, removing someone, running a command Claude gives you) has a click-by-click card in [`docs/human_steps/`](human_steps/README.md).
 
 ### Your organization config
@@ -158,7 +170,7 @@ version you have. `start` will say `UNPINNED`. To put it on the contract:
 python3 scripts/aios/aios.py adopt --release releases/starter-X.Y.Z.json --target . --config .aios/config.json
 ```
 
-Adopt succeeds only if your files match that release byte for byte. If it refuses, you have
+Adopt succeeds only if your files match that release byte for byte, executable bits included. If it refuses, you have
 local changes to the system layer - that is information, not a failure.
 
 ## What upgrade actually does

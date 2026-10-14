@@ -1255,6 +1255,151 @@ class InstallRefusesBeforeWriting(Sandbox):
         self.assertEqual(os.listdir(self.target), [])
 
 
+class FifthCodexRegressions(Sandbox):
+    """Codex round 5: install writes nothing of the client's, owner tokens GitHub would ignore are
+    refused, a seed stays the client's across releases, and adopt pins the executable bit."""
+
+    OWNERS = {"REPO_OWNER": ["@acme-founder"], "PRIMARY_REVIEWER": ["@acme-va"]}
+
+    def v(self, rev, version, **kw):
+        return harness.approve(harness.build_manifest(self.source, rev, version, **kw))
+
+    def commit_target(self, msg):
+        if not os.path.isdir(os.path.join(self.target, ".git")):
+            run_git(self.target, "init", "-q", "-b", "main")
+            run_git(self.target, "config", "user.email", "client@example.com")
+            run_git(self.target, "config", "user.name", "client")
+        run_git(self.target, "add", "-A")
+        run_git(self.target, "commit", "-qm", msg)
+
+    def refuses_leaving(self, cfg, before):
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.install(self.target, self.v(self.rev, "2.10.0"), self.source, cfg)
+        self.assertEqual(diff(before, snapshot(self.target)), [], "a refused install changed the target")
+        return ctx.exception
+
+    def test_r5_1_the_clients_codeowners_is_never_replaced_or_shadowed(self):
+        for rel in (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"):
+            shutil.rmtree(self.target, True)
+            write(self.target, rel, "* @someone-of-theirs\n")
+            exc = self.refuses_leaving(harness.config(code_owners=self.OWNERS), snapshot(self.target))
+            self.assertIn("already has a CODEOWNERS", exc.message)
+
+    def test_r5_1_a_different_org_config_is_refused_and_the_same_one_is_fine(self):
+        cfg = harness.config(code_owners=self.OWNERS)
+        write(self.target, ".aios/config.json", json.dumps(dict(cfg, org_id="someone-else")))
+        exc = self.refuses_leaving(cfg, snapshot(self.target))
+        self.assertIn("different organization config", exc.message)
+        write(self.target, ".aios/config.json", json.dumps(cfg))
+        install_mod.install(self.target, self.v(self.rev, "2.10.0"), self.source, cfg)
+
+    def test_r5_1_install_never_writes_through_a_linked_folder(self):
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        os.makedirs(self.target)
+        os.symlink(outside, os.path.join(self.target, ".claude"))
+        exc = self.refuses_leaving(harness.config(), snapshot(self.target))
+        self.assertIn("through a link", exc.message)
+        self.assertEqual(os.listdir(outside), [])
+
+    def test_r5_1_a_seed_the_client_already_had_is_theirs_and_the_next_upgrade_keeps_it(self):
+        write(self.target, "README.md", "# my own readme\n")
+        record, _creds = install_mod.install(self.target, self.v(self.rev, "2.10.0"), self.source,
+                                             harness.config())
+        self.assertIn("README.md", [e["path"] for e in record["seeded"]])
+        self.commit_target("2.10.0")
+        rev2 = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnext.\n"})
+        install_mod.upgrade(self.target, self.v(rev2, "2.10.1"), self.source)  # once: a "collision"
+        with open(os.path.join(self.target, "README.md")) as fh:
+            self.assertEqual(fh.read(), "# my own readme\n")
+
+    def test_r5_2_an_owner_github_would_ignore_is_refused_before_any_write(self):
+        bad = dict(self.OWNERS, REPO_OWNER=["not-a-handle"])
+        self.assertTrue(any("not-a-handle" in p for p in
+                            __import__("aioslib.orgconfig").orgconfig.validate(harness.config(code_owners=bad))))
+        exc = self.refuses_leaving(harness.config(code_owners=bad), snapshot(self.target))
+        self.assertIn("not usable", exc.message)
+        # Well-formed, but nobody in this workspace: the rendered file is checked as instance check
+        # would check it, before the first write.
+        stranger = dict(self.OWNERS, REPO_OWNER=["@a-stranger"])
+        exc = self.refuses_leaving(harness.config(code_owners=stranger), snapshot(self.target))
+        self.assertIn("would not enforce", exc.message)
+        self.assertTrue(any("a-stranger" in d for d in exc.details), exc.details)
+
+    def _seed_dropped_then_deleted(self):
+        spec = dict(harness.PACKAGE_SPEC, seed=harness.PACKAGE_SPEC["seed"] + ["notes/x.md"])
+        rev1 = harness.bump_source(self.source, {"notes/x.md": "a seed\n",
+                                                 "release/package_spec.json": json.dumps(spec)})
+        install_mod.install(self.target, self.v(rev1, "2.10.0"), self.source, harness.config())
+        self.commit_target("2.10.0")
+        run_git(self.source, "rm", "-q", "notes/x.md")  # 2.10.1 stops shipping it
+        rev2 = harness.bump_source(self.source, {}, "2.10.1")
+        record = install_mod.upgrade(self.target, self.v(rev2, "2.10.1"), self.source)
+        self.assertNotIn("notes/x.md", [e["path"] for e in record["seeded"]])
+        self.assertIn("notes/x.md", record["seed_history"])
+        os.remove(os.path.join(self.target, "notes/x.md"))  # and the client deletes it
+        self.commit_target("I deleted it")
+        # 2.10.2 ships the same path as its own.
+        return harness.bump_source(self.source, {"notes/x.md": "the release's now\n",
+                                                 "release/package_spec.json": json.dumps(harness.PACKAGE_SPEC)})
+
+    def test_r5_3_a_seed_dropped_and_deleted_is_never_taken_over(self):
+        rev3 = self._seed_dropped_then_deleted()
+        before = snapshot(self.target)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.upgrade(self.target, self.v(rev3, "2.10.2"), self.source)
+        self.assertIn("would take over", ctx.exception.message)
+        self.assertIn("notes/x.md", ctx.exception.details)
+        self.assertEqual(diff(before, snapshot(self.target)), [])
+
+    def test_r5_3_release_build_refuses_a_managed_file_any_earlier_release_seeded(self):
+        rev3 = self._seed_dropped_then_deleted()
+        old = harness.build_manifest(self.source, self.rev, "2.10.0")
+        old["files"].append({"path": "notes/x.md", "class": "seed", "mode": "100644", "sha256": "0" * 64})
+        rev4 = harness.bump_source(self.source, {"releases/starter-2.10.0.json": json.dumps(old)})
+        with self.assertRaises(Refusal) as ctx:
+            harness.build_manifest(self.source, rev4, "2.10.2")
+        self.assertIn("earlier seed", ctx.exception.message)
+        self.assertIn("notes/x.md", ctx.exception.details)
+        self.assertTrue(rev3)
+        # Under its new name too, when the release moves folders.
+        moved = release.seeds_ever_released(self.source, rev4, LAYOUT)
+        self.assertIn("00_AIOS/company/market_analysis/_workspace.md", moved)
+
+    def _exec_release(self):
+        write(self.source, "scripts/hook.sh", "#!/bin/sh\necho hook\n")
+        os.chmod(os.path.join(self.source, "scripts/hook.sh"), 0o755)
+        rev = harness.bump_source(self.source, {}, "a hook")
+        return self.v(rev, "2.10.0")
+
+    def test_r5_4_adopt_refuses_a_hook_without_its_executable_bit(self):
+        v = self._exec_release()
+        install_mod.install(self.target, v, self.source, harness.config())
+        os.remove(install_mod.install_record_path(self.target))
+        os.chmod(os.path.join(self.target, "scripts/hook.sh"), 0o644)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.adopt(self.target, v, self.source, harness.config())
+        self.assertIn("permissions differ: scripts/hook.sh", ctx.exception.details)
+
+    def test_r5_4_adopt_pins_the_bit_and_verify_against_the_release_catches_an_edited_record(self):
+        v = self._exec_release()
+        install_mod.install(self.target, v, self.source, harness.config())
+        os.remove(install_mod.install_record_path(self.target))
+        record = install_mod.adopt(self.target, v, self.source, harness.config())
+        self.assertTrue([e for e in record["managed"] if e["path"] == "scripts/hook.sh"][0]["exec"])
+        os.chmod(os.path.join(self.target, "scripts/hook.sh"), 0o644)
+        problems, _ = install_mod.verify(self.target)
+        self.assertTrue(any("executable permission" in p for p in problems), problems)
+        # The record is the operator's to edit; the pinned release is not.
+        for e in record["managed"]:
+            if e["path"] == "scripts/hook.sh":
+                e["exec"] = False
+        util.write_json(install_mod.install_record_path(self.target), record)
+        self.assertEqual(install_mod.verify(self.target)[0], [])
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertTrue(any("does not match the pinned release" in p for p in problems), problems)
+
+
 class SecondReviewFounder(FounderReview):
 
     def test_r2_5_github_enforces_the_default_branchs_file_not_the_local_one(self):

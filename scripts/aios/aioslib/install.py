@@ -27,7 +27,8 @@ import shutil
 import stat
 
 from . import governance, hosting, layout as layout_mod, orgconfig, release as release_mod, roles, util
-from .util import (EXIT_PACKAGE, EXIT_STATE, EXIT_VERIFY, Refusal, sha256_bytes, sha256_file)
+from .util import (EXIT_GOVERNANCE, EXIT_PACKAGE, EXIT_STATE, EXIT_VERIFY, Refusal, sha256_bytes,
+                   sha256_file)
 
 INSTALL_SCHEMA = "ff-aios-starter/install@1"
 AIOS_DIR = ".aios"
@@ -123,6 +124,9 @@ def load_journal(target):
 
 # ─── verification ───────────────────────────────────────────────────────────
 
+# Windows keeps no executable bit (git there doesn't either), so it is only compared where it exists.
+_EXEC_BITS = os.name != "nt"
+
 def verify(target, record=None, source_repo=None):
     """Readback. Returns (problems, summary).
 
@@ -147,9 +151,10 @@ def verify(target, record=None, source_repo=None):
         if not rev or not util.rev_exists(source_repo, rev):
             problems.append("cannot cross-check: commit %s is not in %s" % (rev, source_repo))
         else:
-            pinned = {}
-            for path, _mode, data in util.read_tree(source_repo, rev):
+            pinned, pinned_exec = {}, {}
+            for path, mode, data in util.read_tree(source_repo, rev):
                 pinned[path] = sha256_bytes(data)
+                pinned_exec[path] = mode == "100755"
             for entry in record.get("managed") or []:
                 want = pinned.get(entry["path"])
                 if want is None:
@@ -159,6 +164,16 @@ def verify(target, record=None, source_repo=None):
                     problems.append("install record for %s does not match the pinned release "
                                     "(record %s, release %s)"
                                     % (entry["path"], entry["sha256"][:12], want[:12]))
+                elif _EXEC_BITS:
+                    # The record's own exec field is the operator's to edit, like its hashes; the
+                    # pinned tree is not (independent review).
+                    full = os.path.join(target, entry["path"])
+                    on_disk = (os.path.isfile(full) and not os.path.islink(full)
+                               and bool(os.lstat(full).st_mode & 0o100))
+                    if ("exec" in entry and entry["exec"] != pinned_exec[entry["path"]]) or (
+                            os.path.isfile(full) and on_disk != pinned_exec[entry["path"]]):
+                        problems.append("executable permission of %s does not match the pinned "
+                                        "release" % entry["path"])
     for entry in record.get("managed") or []:
         path = os.path.join(target, entry["path"])
         if not os.path.isfile(path):
@@ -177,7 +192,7 @@ def verify(target, record=None, source_repo=None):
         # another umask still verifies; and never setuid, setgid or sticky (independent review).
         if st.st_mode & 0o7000:
             problems.append("managed file gained setuid, setgid or sticky permissions: %s" % entry["path"])
-        elif "exec" in entry and bool(st.st_mode & 0o100) != entry["exec"]:
+        elif _EXEC_BITS and "exec" in entry and bool(st.st_mode & 0o100) != entry["exec"]:
             problems.append("managed file's executable permission changed: %s" % entry["path"])
     for entry in record.get("rendered") or []:
         if not os.path.isfile(os.path.join(target, entry["path"])):
@@ -403,7 +418,7 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
     release_mod.require_consumable(manifest, source_repo, aios_lookup)
     orgconfig.require_valid(config)
 
-    if os.path.isfile(install_record_path(target)):
+    if os.path.lexists(install_record_path(target)):
         raise Refusal(EXIT_STATE, "this workspace already has an install record; use upgrade",
                       [install_record_path(target)])
     if load_journal(target):
@@ -412,7 +427,7 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
 
     files = {e["path"]: e for e in manifest.get("files") or []}
     managed_paths = [p for p, e in files.items() if e["class"] == "managed"]
-    occupied = [p for p in managed_paths if os.path.exists(os.path.join(target, p))]
+    occupied = [p for p in managed_paths if os.path.lexists(os.path.join(target, p))]
     if occupied:
         raise Refusal(
             EXIT_STATE,
@@ -435,6 +450,39 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
                 owners_text = governance.render(data.decode("utf-8"), config["repository"],
                                                 config["code_owners"])
                 break
+    if owners_text is not None:
+        # What GitHub would ignore must not install "successfully" (independent review).
+        problems = governance.check_text(owners_text, ".github/CODEOWNERS", target,
+                                         config["repository"], config)
+        if problems:
+            raise Refusal(EXIT_GOVERNANCE, "the rendered CODEOWNERS would not enforce anything",
+                          problems)
+        # The client's own CODEOWNERS is theirs: replacing it, or shadowing it from a location
+        # GitHub reads first, would change who reviews what without a word.
+        theirs = [rel for rel in governance.LOCATIONS if os.path.lexists(os.path.join(target, rel))]
+        if theirs:
+            raise Refusal(EXIT_STATE, "this workspace already has a CODEOWNERS file",
+                          theirs + ["move it aside and install again, or install without "
+                                    "code_owners in the config and keep yours"])
+    config_path = orgconfig.default_config_path(target)
+    if os.path.lexists(config_path):
+        same = False
+        if os.path.isfile(config_path) and not os.path.islink(config_path):
+            try:
+                same = util.read_json(config_path) == config
+            except (ValueError, OSError, Refusal):
+                same = False
+        if not same:
+            raise Refusal(EXIT_STATE, "this workspace already has a different organization config",
+                          [config_path, "install with --config pointing at it, or move it aside"])
+    written = [p for p, e in files.items() if e["class"] == "managed"
+               or not os.path.lexists(os.path.join(target, p))]
+    written += [".github/CODEOWNERS"] if owners_text is not None else []
+    written += [os.path.relpath(config_path, target), os.path.relpath(install_record_path(target), target)]
+    linked = _linked_paths(target, written)
+    if linked:
+        raise Refusal(EXIT_STATE, "install would write through a link or a file in a folder's place",
+                      linked[:20])
     for path, mode, data in util.read_tree(source_repo,
                                            manifest["created_from"]["git_rev"]):
         entry = files.get(path)
@@ -444,9 +492,13 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
             raise Refusal(EXIT_PACKAGE, "content at the pin does not match the manifest: %s" % path)
         if path == template_path:
             template_text = data.decode("utf-8")
-        dest_exists = os.path.exists(os.path.join(target, path))
-        if entry["class"] == "seed" and dest_exists:
-            continue  # yours already; never overwritten
+        dest = os.path.join(target, path)
+        if entry["class"] == "seed" and os.path.lexists(dest):
+            # Yours already; never overwritten. Recorded as a seed, as an upgrade records one, so
+            # the next upgrade knows it's yours rather than refusing it as a collision.
+            seeded.append({"path": path, "sha256": sha256_file(dest)
+                           if os.path.isfile(dest) and not os.path.islink(dest) else ""})
+            continue
         sha = util.write_file(target, path, data, entry.get("mode", "100644"))
         rec = {"path": path, "sha256": sha}
         if entry["class"] == "managed":
@@ -753,6 +805,15 @@ def _moved_from(the_plan):
     return {m["to"]: m["from"] for m in (the_plan or {}).get("moves") or []}
 
 
+def _seed_history(record, manifest):
+    """Every path a release has seeded into this workspace, under its old and its new name."""
+    paths = {e["path"] for e in record.get("seeded") or []} | set(record.get("seed_history") or [])
+    rules = (manifest.get("layout") or {}).get("moves") or []
+    if rules:
+        paths |= {layout_mod.destination(p, rules) or p for p in paths}
+    return paths
+
+
 def _old_seeds_at_new_paths(old_seeded, manifest):
     """The installed release's seed paths, as the new layout names them. A seed the client
     deleted under its old name must not come back under its new one."""
@@ -811,16 +872,14 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     old_managed = {e["path"]: e for e in record.get("managed") or []}
     old_seeded = {e["path"] for e in record.get("seeded") or []}
 
-    # A path that was the client's seed can't become the release's: the upgrade would overwrite it,
-    # and only release files are backed up (independent review).
-    rules = (manifest.get("layout") or {}).get("moves") or []
-    seed_paths = set(old_seeded)
-    if rules:
-        seed_paths |= {layout_mod.destination(p, rules) or p for p in old_seeded}
+    # A path that was ever the client's seed can't become the release's: the upgrade would overwrite
+    # it, and only release files are backed up. "Ever": a seed an older release stopped shipping
+    # and the client then deleted is still theirs to recreate (independent review).
+    seed_paths = _seed_history(record, manifest)
     reclassified = sorted(p for p, e in files.items() if e["class"] == "managed" and p in seed_paths)
     if reclassified:
         raise Refusal(EXIT_PACKAGE, "release %s would take over %d file(s) that are yours (seeded "
-                      "by the installed release)" % (manifest["version"], len(reclassified)),
+                      "by a release this workspace has had)" % (manifest["version"], len(reclassified)),
                       reclassified[:20] + ["a release must never make a seed file its own"])
     # A newly shipped path that already exists as something of yours is a collision. Refuse:
     # the alternative is silently eating a file the release never owned.
@@ -976,6 +1035,8 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         }
         new_record["managed"] = sorted(new_managed, key=lambda e: e["path"])
         new_record["seeded"] = sorted(new_seeded, key=lambda e: e["path"])
+        new_record["seed_history"] = sorted(_seed_history(record, manifest)
+                                            | {p for p, e in files.items() if e["class"] == "seed"})
         if seed_lines_kept or seed_lines_add or seed_lines_settled:
             new_record["seed_lines"] = seed_lines_kept + seed_lines_settled + seed_lines_add
         new_record["credentials"] = [{"name": c["name"], "ref": c["ref"],
@@ -1355,14 +1416,24 @@ def adopt(target, manifest, source_repo, config, aios_lookup=None):
             if os.path.isfile(path):
                 seeded.append({"path": entry["path"], "sha256": sha256_file(path)})
             continue
-        if not os.path.isfile(path):
+        if not os.path.lexists(path):
             mismatches.append("missing: %s" % entry["path"])
+            continue
+        st = os.lstat(path)
+        if not stat.S_ISREG(st.st_mode):
+            mismatches.append("not a regular file: %s" % entry["path"])
             continue
         actual = sha256_file(path)
         if actual != entry["sha256"]:
             mismatches.append("differs: %s" % entry["path"])
             continue
-        managed.append({"path": entry["path"], "sha256": actual})
+        # The bytes are not the whole file: a hook without its executable bit never runs
+        # (independent review). Pinned like an install pins it, so verify keeps checking it.
+        want_exec = entry.get("mode") == "100755"
+        if st.st_mode & 0o7000 or (_EXEC_BITS and bool(st.st_mode & 0o100) != want_exec):
+            mismatches.append("permissions differ: %s" % entry["path"])
+            continue
+        managed.append({"path": entry["path"], "sha256": actual, "exec": want_exec})
     if mismatches:
         raise Refusal(
             EXIT_VERIFY,

@@ -12,7 +12,7 @@ silently does half its job because a key was never wired up.
 import os
 import re
 
-from . import util
+from . import governance, util
 from .util import EXIT_CREDENTIAL, Refusal
 
 SCHEMA = "ff-aios-starter/org-config@1"
@@ -57,6 +57,21 @@ def validate(config):
             founders += 1
     if people and not founders:
         problems.append("config names no founder; somebody must own upgrades and governance")
+
+    # Owner tokens go straight into CODEOWNERS, where GitHub ignores a malformed one without a
+    # word: the rule then protects nothing (independent review).
+    code_owners = config.get("code_owners") or {}
+    if not isinstance(code_owners, dict):
+        problems.append("code_owners must be a map of ROLE -> list of owners")
+        code_owners = {}
+    for role_name, owners in sorted(code_owners.items()):
+        if not isinstance(owners, list):
+            problems.append("code_owners %s must be a list of owners" % role_name)
+            continue
+        for owner in owners:
+            if not isinstance(owner, str) or not governance.OWNER_RE.match(owner):
+                problems.append("code_owners %s: %r is not @user, @org/team or an email"
+                                % (role_name, owner))
 
     creds = config.get("credentials") or {}
     if not isinstance(creds, dict):
