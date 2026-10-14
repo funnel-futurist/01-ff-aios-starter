@@ -1517,6 +1517,30 @@ class SeventhCodexRegressions(InstallerReview):
         self.assertIn(layout_mod.key("NOTES/CAFÉ.md"), keys)
 
 
+class EighthCodexRegressions(Layout3):
+    """Codex round 8: a record written by a 2.x installer can leave a seed out (one the client already
+    had at install, one absent at adopt). The installed release's own seed list fills the gap."""
+
+    def legacy_record_without(self, rel):
+        record = install_mod.load_record(self.target)
+        record["seeded"] = [e for e in record["seeded"] if e["path"] != rel]
+        record.pop("seed_history", None)
+        util.write_json(install_mod.install_record_path(self.target), record)
+        self.git_commit("a 2.x-style record")
+
+    def test_r8_a_deleted_seed_the_record_never_listed_stays_deleted_under_its_new_name(self):
+        self.legacy_record_without("06_Communication/decisions_log.md")  # and the client deleted it
+        plan = install_mod.upgrade_plan(self.target, self.v3, self.source, no_vercel=True)
+        self.assertNotIn("00_AIOS/decisions_log.md", plan["new_seeds"])
+        record = self.up()
+        self.assertFalse(os.path.lexists(os.path.join(self.target, "00_AIOS/decisions_log.md")))
+        self.assertIn("06_Communication/decisions_log.md", record["seed_history"])
+
+    def test_r8_without_the_old_pin_in_the_source_nothing_is_backfilled(self):
+        record = {"release": {"git_rev": "0" * 40}, "seeded": []}
+        self.assertEqual(install_mod._seed_history(record, self.v3, self.source), set())
+
+
 class SecondReviewFounder(FounderReview):
 
     def test_r2_5_github_enforces_the_default_branchs_file_not_the_local_one(self):

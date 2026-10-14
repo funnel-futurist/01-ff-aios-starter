@@ -657,7 +657,7 @@ def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=Fals
     the_plan, site_rows, blocked = _layout_preflight(target, record, manifest, files, old_managed,
                                                      no_vercel)
     move_keys = layout_mod.destinations(the_plan)
-    seed_keys = _seed_keys(record, manifest)
+    seed_keys = _seed_keys(record, manifest, source_repo)
     return {
         "layout": None if not the_plan else {
             "from": the_plan["from"], "to": the_plan["to"],
@@ -846,20 +846,45 @@ def _moved_from(the_plan):
     return {m["to"]: m["from"] for m in (the_plan or {}).get("moves") or []}
 
 
-def _seed_history(record, manifest):
+_PINNED_SEEDS = {}
+
+
+def _installed_release_seeds(record, source_repo):
+    """Every seed of the installed release, from its pinned tree. A record written by a 2.x
+    installer can leave some out (one the client already had at install, one absent at adopt),
+    and those are the client's all the same (independent review). Empty when the source doesn't
+    have the pin."""
+    rev = (record.get("release") or {}).get("git_rev")
+    if not source_repo or not rev or not util.FULL_SHA1_RE.match(rev):
+        return set()
+    cache_key = (os.path.abspath(source_repo), rev)
+    if cache_key not in _PINNED_SEEDS:
+        seeds = set()
+        if util.rev_exists(source_repo, rev):
+            try:
+                seeds = {p for p, c, _m, _s in release_mod.select_files(
+                    source_repo, rev, release_mod.load_spec(source_repo, rev)) if c == "seed"}
+            except Refusal:
+                seeds = set()
+        _PINNED_SEEDS[cache_key] = seeds
+    return _PINNED_SEEDS[cache_key]
+
+
+def _seed_history(record, manifest, source_repo=None):
     """Every path a release has seeded into this workspace, under its old and its new name."""
-    paths = {e["path"] for e in record.get("seeded") or []} | set(record.get("seed_history") or [])
+    paths = ({e["path"] for e in record.get("seeded") or []} | set(record.get("seed_history") or [])
+             | _installed_release_seeds(record, source_repo))
     rules = (manifest.get("layout") or {}).get("moves") or []
     if rules:
         paths |= {layout_mod.destination(p, rules) or p for p in paths}
     return paths
 
 
-def _seed_keys(record, manifest):
+def _seed_keys(record, manifest, source_repo=None):
     """Every name a release has seeded into this workspace, as a Mac or Windows disk compares names.
     A seed the client deleted, under its old name or its new one, in this release or an earlier one,
     must not come back (independent review)."""
-    return {layout_mod.key(p) for p in _seed_history(record, manifest)}
+    return {layout_mod.key(p) for p in _seed_history(record, manifest, source_repo)}
 
 
 def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
@@ -909,7 +934,7 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # it, and only release files are backed up. "Ever": a seed an older release stopped shipping
     # and the client then deleted is still theirs to recreate (independent review).
     # Compared as a Mac or Windows disk sees names: `Notes/Plan.md` and `notes/plan.md` are one file.
-    seed_keys = _seed_keys(record, manifest)
+    seed_keys = _seed_keys(record, manifest, source_repo)
     reclassified = sorted(p for p, e in files.items()
                           if e["class"] == "managed" and layout_mod.key(p) in seed_keys)
     if reclassified:
@@ -945,7 +970,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         raise Refusal(EXIT_STATE, "the folder move needs Vercel checked first (R-A); nothing was "
                                   "changed", blocked)
     move_keys = layout_mod.destinations(the_plan)
-    seed_keys = _seed_keys(record, manifest)
+    seed_keys = _seed_keys(record, manifest, source_repo)
     seed_lines_kept, seed_lines_add, seed_lines_settled = _seed_line_plan(
         target, record, manifest, _moved_from(the_plan))
 
@@ -1072,7 +1097,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         }
         new_record["managed"] = sorted(new_managed, key=lambda e: e["path"])
         new_record["seeded"] = sorted(new_seeded, key=lambda e: e["path"])
-        new_record["seed_history"] = sorted(_seed_history(record, manifest)
+        new_record["seed_history"] = sorted(_seed_history(record, manifest, source_repo)
                                             | {p for p, e in files.items() if e["class"] == "seed"})
         if seed_lines_kept or seed_lines_add or seed_lines_settled:
             new_record["seed_lines"] = seed_lines_kept + seed_lines_settled + seed_lines_add
