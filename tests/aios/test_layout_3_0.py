@@ -1124,24 +1124,57 @@ class ThirdCodexRegressions(Layout3):
     def test_r3_3_a_stale_lock_is_cleared_only_if_it_is_still_the_one_judged(self):
         path = os.path.join(self.target, ".aios", "lock")
         write(self.target, ".aios/lock", "upgrade pid=999999 at then\n")
-        real_stat = os.stat
-        calls = []
+        real_alive = install_mod._holder_alive
 
-        def swapped(p, *a, **k):  # someone replaces the lock between our read and our removal
-            if p == path:
-                calls.append(1)
-                if len(calls) == 2:  # the check right before removal, after the lock was judged dead
-                    os.remove(path)
-                    with open(path, "w") as fh:
-                        fh.write("rollback pid=%d at now\n" % os.getpid())
-            return real_stat(p, *a, **k)
-        os.stat = swapped
+        def judged_then_replaced(text):  # someone takes the lock between our verdict and our removal
+            dead = real_alive(text)
+            os.remove(path)
+            with open(path, "w") as fh:
+                fh.write("rollback pid=%d at now\n" % os.getpid())
+            return dead
+        install_mod._holder_alive = judged_then_replaced
         try:
             self.assertFalse(install_mod._reclaim_stale_lock(path))
         finally:
-            os.stat = real_stat
+            install_mod._holder_alive = real_alive
         with open(path) as fh:
             self.assertIn("rollback pid=%d" % os.getpid(), fh.read())
+
+    def test_r3_3_and_when_the_new_lock_reuses_the_old_inode(self):
+        # Linux gives a freed inode number to the next new file at once (CI caught it); rewriting
+        # the file in place makes the same inode certain on every system.
+        path = os.path.join(self.target, ".aios", "lock")
+        write(self.target, ".aios/lock", "upgrade pid=999999 at then\n")
+        real_alive = install_mod._holder_alive
+        inode = os.stat(path).st_ino
+
+        def judged_then_reused(text):
+            dead = real_alive(text)
+            with open(path, "w") as fh:  # same inode, another holder's words
+                fh.write("rollback pid=%d at now\n" % os.getpid())
+            return dead
+        install_mod._holder_alive = judged_then_reused
+        try:
+            self.assertFalse(install_mod._reclaim_stale_lock(path))
+        finally:
+            install_mod._holder_alive = real_alive
+        self.assertEqual(os.stat(path).st_ino, inode)
+        with open(path) as fh:
+            self.assertIn("rollback pid=%d" % os.getpid(), fh.read())
+
+    def test_r3_3_a_lock_never_removes_a_successor_on_its_reused_inode(self):
+        lock = install_mod._Lock(self.target, "upgrade")
+        lock.__enter__()
+        with open(lock.path, "w") as fh:  # ours was taken over in place: same inode, other words
+            fh.write("rollback pid=1 at now\n")
+        lock.__exit__(None, None, None)
+        self.assertTrue(os.path.exists(lock.path))
+
+    def test_r3_3_an_untouched_dead_lock_is_still_cleared(self):
+        path = os.path.join(self.target, ".aios", "lock")
+        write(self.target, ".aios/lock", "upgrade pid=999999 at then\n")
+        self.assertTrue(install_mod._reclaim_stale_lock(path))
+        self.assertFalse(os.path.lexists(path))
 
     def test_r3_7_a_setuid_bit_counts_as_a_change(self):
         self.up()

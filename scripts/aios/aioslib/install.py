@@ -96,10 +96,10 @@ class _Lock(object):
                  "if nothing is running, the previous attempt was killed: run `aios rollback`, "
                  "or delete %s once you are sure" % LOCK_PATH],
             )
-        os.write(self.fd, ("%s pid=%d at %s\n"
-                           % (self.op, os.getpid(), util.now_iso())).encode("utf-8"))
+        words = ("%s pid=%d at %s\n" % (self.op, os.getpid(), util.now_iso())).encode("utf-8")
+        os.write(self.fd, words)
         st = os.fstat(self.fd)
-        self.ident = (st.st_dev, st.st_ino)
+        self.ident = (st.st_dev, st.st_ino, words)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -108,12 +108,30 @@ class _Lock(object):
                 os.close(self.fd)
             # Only our own lock: if something replaced it, removing that would let a third
             # operation in alongside the one that holds it now (independent review).
-            st = os.stat(self.path)
-            if (st.st_dev, st.st_ino) == getattr(self, "ident", None):
+            if _still_this_lock(self.path, getattr(self, "ident", None)):
                 os.remove(self.path)
         except OSError:
             pass
         return False
+
+
+def _still_this_lock(path, ident):
+    """Whether the lock at `path` is still the one identified as (device, inode, its words).
+
+    The inode alone doesn't say: Linux hands a freed inode number to the next new file at once, so
+    a lock replaced after we looked can carry the old one's inode (CI on Linux caught it). Its words
+    (operation, pid, time) still differ."""
+    if not ident:
+        return False
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        st = os.fstat(fd)
+        return (st.st_dev, st.st_ino, os.read(fd, 4096)) == ident
+    finally:
+        os.close(fd)
 
 
 def load_journal(target):
@@ -1248,8 +1266,9 @@ def _reclaim_stale_lock(stale):
         fd = os.open(stale, os.O_RDONLY)
         try:
             st = os.fstat(fd)
-            ident = (st.st_dev, st.st_ino)
-            text = os.read(fd, 4096).decode("utf-8", "replace")
+            words = os.read(fd, 4096)
+            ident = (st.st_dev, st.st_ino, words)
+            text = words.decode("utf-8", "replace")
         finally:
             os.close(fd)
     except OSError:
@@ -1260,8 +1279,7 @@ def _reclaim_stale_lock(stale):
                        "let it finish, or stop that process, then run rollback. If you're sure "
                        "nothing is running, delete %s" % LOCK_PATH])
     try:
-        st = os.stat(stale)
-        if (st.st_dev, st.st_ino) == ident:  # still the lock we judged dead
+        if _still_this_lock(stale, ident):  # still the lock we judged dead
             os.remove(stale)
             return True
     except OSError:
