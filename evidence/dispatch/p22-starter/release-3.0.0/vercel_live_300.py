@@ -80,7 +80,8 @@ def main():
 
     code, teams = call(token, "GET", "/v2/teams?limit=100")
     scope = a.scope or next((t["id"] for t in teams.get("teams", []) if t.get("slug", "").endswith("-projects")), None)
-    print("### V0 scope: the token's personal team (%s)" % ("found" if scope else "not found"))
+    print("### V0 scope: the token's personal team (%s)" % ("found" if scope else "not found, HTTP %s%s" % (
+        code, "; the CLI's saved token has expired: `vercel whoami` refreshes it" if code in (401, 403) else "")))
     if not scope:
         return 1
     project = None
