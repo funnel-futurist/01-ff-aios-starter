@@ -122,6 +122,11 @@ def build(repo, rev, version, spec=None, branch=None, credentials=None, min_upgr
                             % (sl["line"], sl["path"], rev[:12]))
     if problems:
         raise Refusal(EXIT_PACKAGE, "the package spec's seed_lines are not releasable", problems)
+    layout = spec.get("layout")
+    if layout:
+        problems = check_layout(layout)
+        if problems:
+            raise Refusal(EXIT_PACKAGE, "the package spec's folder layout is not releasable", problems)
 
     manifest = {
         "schema": SCHEMA,
@@ -149,7 +154,56 @@ def build(repo, rev, version, spec=None, branch=None, credentials=None, min_upgr
     }
     if seed_lines:  # only when declared, so a release without them keeps its exact shape
         manifest["seed_lines"] = [{"path": sl["path"], "line": sl["line"]} for sl in seed_lines]
+    if layout:
+        # The folder moves an upgrade applies are part of the pinned release, so the founder
+        # approves the exact moves with it. Declared breaking: paths change on upgrade.
+        manifest["layout"] = layout
+        manifest["compatibility"]["breaking"] = [
+            "folder layout %s: on upgrade, every file under the 2.x folders moves to its new folder "
+            "with its bytes unchanged (layout.moves); hosting settings and CODEOWNERS that name an "
+            "old folder must be updated" % layout.get("version")]
     return manifest
+
+
+def check_layout(layout):
+    """The folder map must be total, safe and unambiguous before anyone can approve it."""
+    problems = []
+    if not isinstance(layout, dict):
+        return ["layout must be an object"]
+    if not str(layout.get("version") or "").isdigit():
+        problems.append("layout.version must be a number as a string, got %r" % layout.get("version"))
+    roots = layout.get("retired_roots") or []
+    moves = layout.get("moves") or []
+    if not roots or not moves:
+        problems.append("layout needs retired_roots and moves")
+    for r in roots:
+        if not isinstance(r, str) or "/" in r or not util.safe_relpath(r):
+            problems.append("retired root %r must be one top-level folder name" % (r,))
+    seen = set()
+    for m in moves:
+        src, dst = (m or {}).get("from"), (m or {}).get("to")
+        if not isinstance(src, str) or not isinstance(dst, str):
+            problems.append("move %r needs from and to" % (m,))
+            continue
+        if src in seen:
+            problems.append("two rules move %s" % src)
+        seen.add(src)
+        if src.endswith("/") != dst.endswith("/"):
+            problems.append("move %s -> %s: a folder rule maps to a folder, a file to a file" % (src, dst))
+        for path in (src, dst):
+            if not util.safe_relpath(path.rstrip("/")):
+                problems.append("move path %r is unsafe" % path)
+        if src.split("/", 1)[0] not in roots:
+            problems.append("move %s is not under a retired root" % src)
+        if dst.split("/", 1)[0] in roots:
+            problems.append("move %s -> %s lands in a retired folder" % (src, dst))
+    for r in roots:
+        if (r + "/") not in seen:
+            problems.append("retired root %s has no catch-all rule (%s/ -> somewhere)" % (r, r))
+    for name in layout.get("quarantine") or []:
+        if not isinstance(name, str) or "/" in name or not name.strip():
+            problems.append("quarantine entry %r must be a plain file name" % (name,))
+    return problems
 
 
 def check_seed_lines(seed_lines, spec=None):
@@ -180,6 +234,8 @@ def check_shape(man):
         problems.append("schema is %r, expected %r" % (man.get("schema"), SCHEMA))
     if "seed_lines" in man:
         problems += check_seed_lines(man["seed_lines"])
+    if man.get("layout") is not None:
+        problems += check_layout(man["layout"])
     if man.get("package") != PACKAGE:
         problems.append("package is %r, expected %r" % (man.get("package"), PACKAGE))
     if not util.parse_semver(man.get("version", "")):

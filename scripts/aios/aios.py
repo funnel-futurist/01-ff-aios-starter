@@ -17,6 +17,7 @@
     boundary          does this pull request touch the founder lane without a founder?
     hook              Claude Code hooks (pre-edit: hold the founder lane in the session)
     workspace         Obsidian Workspace Kit: one vault over separate authorized repositories
+    instance          the instance contract checks, including founder review at the new paths
 
 Exit codes are part of the contract: 0 ok, 1 error, 2 package, 3 role, 4 credential,
 5 state, 6 verify, 7 sanitize, 8 governance.
@@ -34,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aioslib import governance, install as install_mod, orgconfig, release as release_mod  # noqa: E402
 from aioslib import adapters, boundary, notice, protected, roles, sanitize, util, workspace  # noqa: E402
+from aioslib import layout as layout_mod  # noqa: E402
 from aioslib.util import (EXIT_ERROR, EXIT_GOVERNANCE, EXIT_OK, EXIT_SANITIZE, Refusal)  # noqa: E402
 
 
@@ -246,7 +248,8 @@ def cmd_upgrade(args):
     login, role = roles.require_lifecycle(policy, config, "upgrade")
     if args.dry_run:
         # The same checks and refusals as a real upgrade; nothing is written, not even a lock.
-        plan = install_mod.upgrade_plan(target, manifest, repo, _aios_lookup_from(args.aios_releases))
+        plan = install_mod.upgrade_plan(target, manifest, repo, _aios_lookup_from(args.aios_releases),
+                                        no_vercel=args.no_vercel)
         _say("dry run: %s %s -> %s, nothing written" % (target, plan["from"], plan["to"]))
         _say("  by:        %s (%s)" % (login, role))
         for label in ("changed", "added", "removed"):
@@ -258,21 +261,63 @@ def cmd_upgrade(args):
                  % (len(plan["new_seeds"]), ", ".join(plan["new_seeds"])))
         for sl in plan["seed_lines"]:
             _say("  one line:  %s gains `%s` (added once; rollback takes it back)" % (sl["path"], sl["line"]))
+        lay = plan.get("layout")
+        if lay:
+            _say("  layout:    %s -> %s: %d file(s) move to new folders, bytes unchanged; %d empty "
+                 "folder(s) recreated; %d junk file(s) set aside in the backup"
+                 % (lay["from"], lay["to"], len(lay["moves"]), len(lay["empty_folders"]),
+                    len(lay["set_aside"])))
+            for src, dst in lay["moves"]:
+                _say("  move:      %s -> %s" % (src, dst))
+            for src in lay["set_aside"]:
+                _say("  set aside: %s" % src)
+            for row in lay["sites"]:
+                _say("  website:   %s" % row)
+            for line in lay["founder_review"]:
+                _say("  after:     %s" % line)
+            if lay["blocked"]:
+                _say("  BLOCKED: the upgrade will refuse until this is done:")
+                for b in lay["blocked"]:
+                    _say("    - %s" % b)
+                return util.EXIT_STATE
         _say("  run it again without --dry-run to upgrade")
         return EXIT_OK
     before = install_mod.load_record(target)
-    record = install_mod.upgrade(target, manifest, repo, _aios_lookup_from(args.aios_releases))
+    record = install_mod.upgrade(target, manifest, repo, _aios_lookup_from(args.aios_releases),
+                                 no_vercel=args.no_vercel)
     _say("upgraded %s: %s -> %s"
          % (target, before["release"]["version"], record["release"]["version"]))
     _say("  by:       %s (%s)" % (login, role))
     _say("  managed:  %d files, verified by readback" % len(record["managed"]))
     added = [e for e in record.get("seed_lines") or []
              if e.get("state") == "added" and e.get("release") == record["release"]["version"]]
+    migration = record.get("layout_migration")
+    if migration:
+        _say("  layout:   %s -> %s: %d file(s) moved to new folders, every one re-hashed: bytes unchanged"
+             % (migration["from"], migration["to"], migration["moved"]))
+        _say("            proof: %s" % migration["proof"])
+        if migration.get("set_aside"):
+            _say("            %d junk file(s) (.DS_Store and the like) set aside in the backup"
+                 % migration["set_aside"])
+        for row in migration.get("sites") or []:
+            _say("  website:  %s" % row)
+        stale = migration.get("stale_references") or []
+        if stale:
+            _say("  check:    %d of your own file(s) still name an old folder. They were not edited; "
+                 "update the paths when you're ready:" % len(stale))
+            for p in stale[:15]:
+                _say("              %s" % p)
     if added:
-        _say("  state:    untouched, except one declared line: %s"
-             % "; ".join("%s gained `%s`" % (e["path"], e["line"]) for e in added))
+        _say("  state:    untouched, except %s: %s"
+             % ("one declared line" if len(added) == 1 else "%d declared lines" % len(added),
+                "; ".join("%s gained `%s`" % (e["path"], e["line"]) for e in added)))
     else:
         _say("  state:    untouched (seed and unmanaged files were not written)")
+    if migration:
+        for line in install_mod.founder_review_notice(target, (manifest.get("layout") or {})
+                                                      .get("retired_roots") or []):
+            _say("  NEXT:     %s" % line)
+        _say("  next:     commit the change (git add -A, then git commit): git shows it as renames")
     _say("  rollback: available (%s)" % record["previous"]["backup"])
     return EXIT_OK
 
@@ -317,6 +362,15 @@ def cmd_start(args):
              % (summary["release_id"], summary["version"], "" if not problems else "  DRIFTED"))
         for p in problems[:5]:
             _say("  - %s" % p)
+        if record.get("layout") == "3":
+            fails = [d for st, d in governance.founder_review_local(
+                target, policy, config, layout_mod.OLD_FOLDERS) if st == "FAIL"]
+            _say("founder review: %s" % ("CODEOWNERS covers the founder lane (run `aios instance check` "
+                                         "to confirm GitHub enforces it)" if not fails else
+                                         "NOT RESTORED at the 3.0 paths - `aios instance check` fails "
+                                         "until it is (docs/human_steps/restore_founder_review.md)"))
+            for d in fails[:5]:
+                _say("  - %s" % d)
     except Refusal:
         _say("release:   UNPINNED - this workspace was not installed from an approved release")
         _say("           (a workspace made with \"Use this template\" copies mutable main;")
@@ -342,6 +396,47 @@ def cmd_start(args):
         _say("")
         _say("update:    %s" % newer)
     return EXIT_OK
+
+
+def cmd_instance_check(args):
+    """Read-only. Exit 0 only when every control passes, founder review included (R-C)."""
+    target = os.path.abspath(args.target)
+    results = list(layout_mod.instance_checks(target))
+    policy, config = None, None
+    try:
+        policy = roles.load_policy(target)
+        config = orgconfig.load(target)
+    except Refusal as exc:
+        results.append(("founder", "FAIL", "can't read the role policy or people map (%s)" % exc.message))
+    slug = args.repo_slug or governance.target_repo_slug(target)  # one identity for every check
+    for problem in governance.check(target, slug, config):
+        results.append(("B4", "FAIL", problem))  # placeholders, binding, owner syntax
+    if policy is not None and config is not None:
+        for status, detail in governance.founder_review_local(target, policy, config,
+                                                              layout_mod.OLD_FOLDERS):
+            results.append(("founder", status, detail))
+        if args.offline:
+            results.append(("founder", "FAIL", "GitHub enforcement not checked (--offline), so founder "
+                                               "review is unverified"))
+        else:
+            rel, path = governance.find_file(target)
+            local_text = open(path, encoding="utf-8", errors="replace").read() if path else None
+            founders = governance.founders_of(config)
+            for status, detail in governance.founder_review_remote(slug, policy, founders, local_text):
+                results.append(("founder", status, detail))
+            for status, detail in governance.founder_review_enforced(slug, founders):
+                results.append(("founder", status, detail))
+    for control, status, detail in results:
+        _say("  %-5s %-9s %s" % (status, control, detail))
+    failed = [r for r in results if r[1] == "FAIL"]
+    founder_failed = [r for r in failed if r[0] == "founder"]
+    if founder_failed:
+        _say("")
+        _say("FOUNDER REVIEW IS NOT IN FORCE at this workspace's founder-lane paths.")
+        _say("  restore it: docs/human_steps/restore_founder_review.md")
+    _say("verdict:  %s" % ("meets the instance contract's checks" if not failed
+                          else "%d check(s) failed" % len(failed)))
+    return util.EXIT_VERIFY if failed else EXIT_OK
 
 
 def cmd_release_notice(args):
@@ -665,6 +760,9 @@ def build_parser():
     up.add_argument("--aios-releases", dest="aios_releases")
     up.add_argument("--dry-run", dest="dry_run", action="store_true",
                     help="run every check and print the managed-file changes; write nothing")
+    up.add_argument("--no-vercel", dest="no_vercel", action="store_true",
+                    help="3.0 folder move without a Vercel token: you state this repository isn't "
+                         "deployed by Vercel (recorded; refused if Vercel's files are in the moving folders)")
     up.set_defaults(func=cmd_upgrade)
 
     rbk = sub.add_parser("rollback", help="restore the previous release")
@@ -756,6 +854,16 @@ def build_parser():
     hksub = hk.add_subparsers(dest="subcommand")
     hp = hksub.add_parser("pre-edit", help="PreToolUse: hold the founder lane in the session")
     hp.set_defaults(func=cmd_hook_pre_edit)
+
+    ic = sub.add_parser("instance", help="the instance contract checks")
+    icsub = ic.add_subparsers(dest="instance_command")
+    icc = icsub.add_parser("check", help="read-only: baseline files, the 3.0 folders, founder review "
+                                         "at the new paths (asks GitHub whether it's enforced)")
+    icc.add_argument("--target", default=".")
+    icc.add_argument("--repo-slug", dest="repo_slug", help="owner/repo (default: the origin remote)")
+    icc.add_argument("--offline", action="store_true",
+                     help="skip GitHub; founder review then counts as unverified (a failure)")
+    icc.set_defaults(func=cmd_instance_check)
 
     ws = sub.add_parser("workspace", help="Obsidian Workspace Kit over separate repositories")
     wssub = ws.add_subparsers(dest="workspace_command")

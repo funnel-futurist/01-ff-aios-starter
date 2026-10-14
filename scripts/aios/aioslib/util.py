@@ -267,9 +267,20 @@ def write_file(target_root, relpath, data, mode):
             EXIT_STATE,
             "refusing to write outside the workspace: %s resolves to %s" % (relpath, real_parent),
         )
-    with open(dest, "wb") as fh:
+    # All at once: a kill leaves either no file or the whole file, never a half-written one that
+    # recovery can't tell from the client's own (independent review). The temporary copy lives in
+    # the git-ignored backups folder, so a kill can't leave a stray file in the workspace.
+    tmp_dir = os.path.join(target_root, ".aios", "backups")
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp = os.path.join(tmp_dir, ".write.tmp")
+    with open(tmp, "wb") as fh:
         fh.write(data)
-    os.chmod(dest, 0o755 if mode == "100755" else 0o644)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.chmod(tmp, 0o755 if mode == "100755" else 0o644)
+    if os.path.islink(dest):  # checked again at the moment of the write
+        raise Refusal(EXIT_STATE, "refusing to write through a symlink: %s" % relpath)
+    os.replace(tmp, dest)
     return sha256_bytes(data)
 
 
