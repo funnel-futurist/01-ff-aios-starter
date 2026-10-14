@@ -10,12 +10,16 @@ on:
     - cron: '0 13 * * 1'   # Mondays 13:00 UTC
   workflow_dispatch: {}
 
+# Read-only (LW-21). Branch protection itself is read with the optional ADMIN_TOKEN secret.
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Assert protection + CODEOWNERS
         env:
           GH_TOKEN: ${{ secrets.ADMIN_TOKEN || github.token }}

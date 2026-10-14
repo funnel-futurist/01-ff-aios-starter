@@ -14,7 +14,7 @@ A **fingerprint list** is made privately from the protected source files. The pu
 |---|---|
 | Unit | every run of 12 consecutive words, lowercased, letters and digits only (so wrapping, case and markdown do not hide a paste) |
 | Hash | HMAC-SHA256 under a random salt, first 8 bytes kept |
-| Fail rule | 3 or more windows from one protected source in one file |
+| Fail rule | the list's `min_hits` or more windows from one protected source in one file (3 unless the list says otherwise; `protected fingerprint --min-hits` sets it) |
 | Scope | every file in the public tree (what git tracks), including `evidence/`, `templates/`, `releases/`, `tests/`, and the inside of `.docx`/`.xlsx`/`.pptx`/`.zip` files |
 | Output | the path and an opaque source label such as `P-001`. Never any text |
 
@@ -32,6 +32,15 @@ A **fingerprint list** is made privately from the protected source files. The pu
 | Where the private list lives (a maintainer's machine, or the repository secret `PROTECTED_FINGERPRINTS_JSON`) | `protected scan` against the real list | Yes |
 
 If the list is not configured, CI prints a `NOT RUN` warning and the scan command refuses to say "clean". Not having looked is not a result.
+
+### Where FF's own list lives, and when it runs
+
+- **A repository secret holds at most 48 KB**, about 2,500 fingerprints. That fits a short list of chosen passages. It doesn't fit a whole protected layer: FF's list is about 110 MB.
+- **So FF keeps its list on a maintainer's machine and runs the scan at every release cut**, before the release is approved. The release brief records:
+  - the findings;
+  - how each was classified;
+  - the list's sha256.
+- **This repository's CI keeps printing `NOT RUN`.** That's accurate: CI didn't look.
 
 ## Commands
 
@@ -53,7 +62,7 @@ python3 scripts/aios/aios.py protected scan --fingerprints /private/path/fingerp
 # or: AIOS_PROTECTED_FINGERPRINTS=/private/path/fingerprints.json python3 scripts/aios/aios.py protected scan
 ```
 
-Exit code 7 on any finding. To use the repository secret, store the file's contents as `PROTECTED_FINGERPRINTS_JSON`; the `tests` job then runs the real scan.
+Exit code 7 on any finding. To use the repository secret (a list of 48 KB or less), store the file's contents as `PROTECTED_FINGERPRINTS_JSON`; the `tests` job then runs the real scan.
 
 ## The allow-list: `release/public_methods.json`
 

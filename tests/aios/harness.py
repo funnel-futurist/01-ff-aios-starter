@@ -164,6 +164,8 @@ class Sandbox(unittest.TestCase):
         self._old_path = os.environ.get("PATH", "")
         self._old_fault = os.environ.get("AIOS_FAULT")
         self.addCleanup(self._restore_env)
+        # `aios start` checks GitHub for a newer release once a day; tests never touch the network.
+        os.environ["AIOS_NO_RELEASE_NOTICE"] = "1"
 
     def _restore_env(self):
         os.environ["PATH"] = self._old_path

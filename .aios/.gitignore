@@ -6,5 +6,7 @@ usage/
 local-operator.json
 core_bridge/instance.json
 core_bridge/reports/
+# the daily release-notice check's one-line cache
+release_notice.json
 # the install tool's own lock while an upgrade or rollback runs
 lock

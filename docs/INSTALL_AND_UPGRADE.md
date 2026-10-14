@@ -64,10 +64,10 @@ git checkout starter-X.Y.Z        # only once check-tag says the tag is the appr
 package file at the tag is byte-identical to the pin. If it refuses, don't install from the
 tag.
 
-**starter-2.6.0 is the known exception.** Its tag was placed on the pinned commit before the
-approval was recorded, so the record inside the tag is an earlier draft and `check-tag`
-refuses it. Published tags are never moved. Install 2.6.0 from the normal copy instead: the
-installer still materialises only the pinned 2.6.0 files and re-hashes them on disk.
+Published tags are never moved. One was withdrawn: `starter-2.6.0`, on 2026-10-14. That
+release bundled third-party document-skill files whose licence doesn't allow redistribution,
+and it was already superseded, so it can't be installed. Workspaces still on 2.6.0 upgrade
+as usual; the upgrade removes those copies.
 
 ## Installing a new workspace
 
@@ -82,6 +82,8 @@ The target must be clean. The installer materialises every file from the pinned 
 verifies the result by **re-hashing what landed on disk**, and writes `.aios/install.json`
 recording exactly what you have. If the readback disagrees with the manifest, the install fails
 - "the installer said it worked" is not evidence.
+
+Anything you have to do by hand along the way (2FA, a scoped token, a backup, connecting Vercel, removing someone, running a command Claude gives you) has a click-by-click card in [`docs/human_steps/`](human_steps/README.md).
 
 ### Your organization config
 
@@ -138,7 +140,10 @@ local changes to the system layer - that is information, not a failure.
    file it prints the diff and the two ways forward: revert it, or keep your change by moving
    it into a file the release doesn't manage. For `.claude/settings.json` that file is
    `.claude/settings.local.json` (see "Your own settings" below).
-3. Refuses if the new release ships a path that already exists as your own file.
+3. Refuses if the new release ships a path that already exists as your own file. The likeliest
+   one is `AGENTS.md`, which the Starter generates for Codex from `CLAUDE.md` and the operator
+   core. If you wrote your own, move your rules to `~/.codex/AGENTS.md` (Codex reads it in every
+   project) or to an `AGENTS.md` inside one of your folders, delete the root one, then upgrade.
 4. Snapshots every managed file and writes a journal **before** changing anything.
 5. Replaces managed files. Adds new seed files only where they do not already exist.
    **Seed files are never upgraded:** `CLAUDE.md` and the foundation folders are written once and
@@ -252,6 +257,16 @@ change a managed file **and** its recorded hash, and the check would agree with 
 With `--repo` it also re-derives every hash from the pinned commit in the source repository, which
 catches exactly that. The output always says which of the two it ran. Use `--repo` when the answer
 matters to somebody other than you.
+
+## Hearing about a new release
+
+Once a day, `aios start` and the session-start check look up the Starter's public release tags and
+tell you in one line when a newer approved release exists: "Starter X is approved; this workspace
+has Y". It only reads (the tag list and two public release records on GitHub), never changes
+anything, and says nothing when you're offline. It names a release only when the record on `main`
+and the one inside its tag both say approved, pinned to the same commit, so a withdrawn or replaced
+release is never advertised. Before you upgrade, still run `check-tag` (above). To switch the check
+off, set `AIOS_NO_RELEASE_NOTICE=1` in your environment.
 
 ## For maintainers: approving a release
 
