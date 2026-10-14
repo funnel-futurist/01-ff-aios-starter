@@ -1,7 +1,8 @@
 {
   "approval": {
-    "approved_at": null,
-    "approved_by": null
+    "approved_at": "2026-10-14T03:37:00Z",
+    "approved_by": "phoenix-ship-it",
+    "basis": "Phoenix, 2026-10-14 at about 03:37Z, typed \"Approve starter 2.9.0 at e5646ae\" in the lane 0.1 Starter session, the exact line the founder brief releases/starter-2.9.0.BRIEF.md asked for, in reply to receipt 26 (ff-delegation exec/lane01-handoffs-20261004 a7c8d7a). Recorded verbatim at 4b3d046, parallel_handoffs/0.1/PHOENIX_WORDS_2026-10-14_0337Z.md. The approval binds to e5646ae1691b8aee267fc0308d7ca321ca4917af only (re-cut with release build at that rev: byte-identical to the stored draft, sha256 368348c2e723db82...). He did not say \"keep 2.8.0\", so 2.8.0 is superseded, as the brief said. His earlier GitHub approval of #34 was the platform step on the candidate PR; this line is the release approval."
   },
   "compatibility": {
     "breaking": [],
@@ -814,6 +815,6 @@
     "workspace_health",
     "wrap-up"
   ],
-  "status": "draft",
+  "status": "approved",
   "version": "2.9.0"
 }
