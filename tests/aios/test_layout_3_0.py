@@ -862,12 +862,19 @@ class IndependentReviewRegressions(Layout3):
 
     def test_1_a_dry_run_and_a_refusal_leave_nothing_behind(self):
         backups = os.path.join(self.target, ".aios", "backups")
-        before = sorted(os.listdir(backups)) if os.path.isdir(backups) else None
+
+        def attempts():  # the guard's own empty lock file, `.locks/recovery`, stays on purpose:
+            # deleting a lock file others may be waiting on would let two operations in
+            return sorted(n for n in os.listdir(backups) if n != ".locks") if os.path.isdir(backups) else []
+        before = attempts()
         install_mod.upgrade_plan(self.target, self.v3, self.source, no_vercel=True)
-        self.assertEqual(sorted(os.listdir(backups)) if os.path.isdir(backups) else None, before)
+        self.assertEqual(attempts(), before)
         with self.assertRaises(Refusal):
             self.up(no_vercel=False)  # no token, no statement: refused
-        self.assertEqual(sorted(os.listdir(backups)) if os.path.isdir(backups) else None, before)
+        self.assertEqual(attempts(), before)
+        locks = os.path.join(backups, ".locks")
+        self.assertEqual(os.listdir(locks) if os.path.isdir(locks) else ["recovery"], ["recovery"])
+        self.assertEqual(os.path.getsize(os.path.join(locks, "recovery")) if os.path.isdir(locks) else 0, 0)
 
     def test_2_a_linked_destination_folder_is_refused(self):
         outside = os.path.join(self.tmp, "outside")
@@ -1175,6 +1182,48 @@ class ThirdCodexRegressions(Layout3):
         write(self.target, ".aios/lock", "upgrade pid=999999 at then\n")
         self.assertTrue(install_mod._reclaim_stale_lock(path))
         self.assertFalse(os.path.lexists(path))
+
+    @unittest.skipUnless(hasattr(os, "fork"), "the guard is flock, which this system lacks")
+    def test_r10_no_new_holder_can_land_between_dead_and_removed(self):
+        # A recovery judged the lock dead. In that instant someone deletes it and a real second
+        # process starts an upgrade. Its lock must survive the recovery's removal.
+        path = os.path.join(self.target, ".aios", "lock")
+        write(self.target, ".aios/lock", "upgrade pid=999999 at then\n")
+        child_src = ("import sys, time\nsys.path.insert(0, %r)\nfrom aioslib import install\n"
+                     "print('trying', flush=True)\n"
+                     "with install._Lock(%r, 'upgrade'):\n    print('got', flush=True)\n    time.sleep(3)\n"
+                     % (harness.AIOS_DIR, self.target))
+        child = []
+        real_still = install_mod._still_this_lock
+
+        def window(p, ident):
+            same = real_still(p, ident)
+            if p == path and same and not child:
+                os.remove(path)  # someone clears it by hand...
+                proc = subprocess.Popen([sys.executable, "-c", child_src], stdout=subprocess.PIPE)
+                child.append(proc)
+                self.assertEqual(proc.stdout.readline().strip(), b"trying")  # ...and an upgrade starts
+                import select
+                ready, _, _ = select.select([proc.stdout], [], [], 1.5)
+                if ready:
+                    child.append(proc.stdout.readline().strip())  # it got in during the window
+            return same
+        install_mod._still_this_lock = window
+        try:
+            with install_mod._RecoveryGuard(self.target):
+                install_mod._reclaim_stale_lock(path)
+        finally:
+            install_mod._still_this_lock = real_still
+        proc = child[0]
+        try:
+            self.assertEqual(len(child), 1, "the second process took the lock inside the window")
+            self.assertEqual(proc.stdout.readline().strip(), b"got")  # once the guard is free
+            with open(path) as fh:
+                self.assertIn("pid=%d" % proc.pid, fh.read())  # its lock survived
+        finally:
+            proc.wait(10)
+            proc.stdout.close()
+        self.assertFalse(os.path.lexists(path))  # and it removed only its own, on finishing
 
     def test_r3_7_a_setuid_bit_counts_as_a_change(self):
         self.up()

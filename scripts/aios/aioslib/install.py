@@ -74,32 +74,36 @@ class _Lock(object):
     """
 
     def __init__(self, target, op):
+        self.target = target
         self.path = os.path.join(target, LOCK_PATH)
         self.op = op
         self.fd = None
 
     def __enter__(self):
         util.ensure_parent(self.path)
-        try:
-            self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        except OSError:
-            holder = ""
+        # Taken under the workspace guard, so it can't land between a recovery's "this lock is
+        # dead" and its removal (independent review, round 10).
+        with _RecoveryGuard(self.target):
             try:
-                with open(self.path) as fh:
-                    holder = fh.read().strip()
+                self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
             except OSError:
-                pass
-            raise Refusal(
-                EXIT_STATE,
-                "another %s is already running in this workspace" % self.op,
-                [("lock held by: %s" % holder) if holder else "lock file: %s" % self.path,
-                 "if nothing is running, the previous attempt was killed: run `aios rollback`, "
-                 "or delete %s once you are sure" % LOCK_PATH],
-            )
-        words = ("%s pid=%d at %s\n" % (self.op, os.getpid(), util.now_iso())).encode("utf-8")
-        os.write(self.fd, words)
-        st = os.fstat(self.fd)
-        self.ident = (st.st_dev, st.st_ino, words)
+                holder = ""
+                try:
+                    with open(self.path) as fh:
+                        holder = fh.read().strip()
+                except OSError:
+                    pass
+                raise Refusal(
+                    EXIT_STATE,
+                    "another %s is already running in this workspace" % self.op,
+                    [("lock held by: %s" % holder) if holder else "lock file: %s" % self.path,
+                     "if nothing is running, the previous attempt was killed: run `aios rollback`, "
+                     "or delete %s once you are sure" % LOCK_PATH],
+                )
+            words = ("%s pid=%d at %s\n" % (self.op, os.getpid(), util.now_iso())).encode("utf-8")
+            os.write(self.fd, words)
+            st = os.fstat(self.fd)
+            self.ident = (st.st_dev, st.st_ino, words)
         return self
 
     def __exit__(self, exc_type, exc, tb):
@@ -107,10 +111,12 @@ class _Lock(object):
             if self.fd is not None:
                 os.close(self.fd)
             # Only our own lock: if something replaced it, removing that would let a third
-            # operation in alongside the one that holds it now (independent review).
-            if _still_this_lock(self.path, getattr(self, "ident", None)):
-                os.remove(self.path)
-        except OSError:
+            # operation in alongside the one that holds it now (independent review). Checked and
+            # removed under the guard, so nothing can take its place in between.
+            with _RecoveryGuard(self.target):
+                if _still_this_lock(self.path, getattr(self, "ident", None)):
+                    os.remove(self.path)
+        except (OSError, Refusal):
             pass
         return False
 
@@ -1231,9 +1237,11 @@ def rollback(target):
 
 
 class _RecoveryGuard(object):
-    """An OS-held lock (flock) around inspecting and clearing a stale lock, so two recoveries
-    can't both clear it and both get in (independent review, round 3). Where flock doesn't exist,
-    the inode check in _reclaim_stale_lock still holds."""
+    """An OS-held lock (flock) around every decision about the workspace lock: taking it, releasing
+    it, and judging and clearing a stale one. So two recoveries can't both clear it (independent
+    review, round 3), and no new holder can take the lock between a recovery's "this one is dead"
+    and its removal (round 10). Where flock doesn't exist, the identity check (device, inode,
+    words) in _still_this_lock still holds, with that one window left."""
 
     def __init__(self, target):
         # In its own folder inside the git-ignored backups, beside each upgrade's own folder.
@@ -1245,8 +1253,13 @@ class _RecoveryGuard(object):
             import fcntl
         except ImportError:
             return self
+        here = self.path
+        for _ in range(3):  # .aios/backups/.locks, .aios/backups, .aios: real folders, never links
+            here = os.path.dirname(here)
+            if os.path.islink(here) or (os.path.lexists(here) and not os.path.isdir(here)):
+                raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % here)
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o644)
+        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o644)
         fcntl.flock(self.fd, fcntl.LOCK_EX)
         return self
 
