@@ -5,8 +5,8 @@ git version 2.50.1 (Apple Git-155)
 v25.8.1
 
 ### R1 fresh clone of the candidate branch from GitHub
-95d1dd9 release(starter-2.10.0): draft record pinned at 688521e
-record status: draft | pin: 688521e47315850d3bffe055c48fddac0b6f5c9a | files: {'files': 131, 'managed': 95, 'seed': 36, 'skills': 22}
+cb7151c evidence(starter-2.10.0): receipt names the new pin; the rehearsal counts cards without the index
+record status: draft | pin: 522668d3f95447d81fbc7b3f46ec7ad508c853fc | files: {'files': 131, 'managed': 95, 'seed': 36, 'skills': 22}
 2.8.0 record status: superseded
 2.6.0 record status: superseded
 2.9.0 record status: approved
@@ -17,14 +17,14 @@ install exit=2 (expect 2)
 ### R3 fresh install of the exact candidate
 installed starter-2.10.0 into r2100/fresh
   by:       rehearsal-founder (founder)
-  pinned:   688521e47315850d3bffe055c48fddac0b6f5c9a
+  pinned:   522668d3f95447d81fbc7b3f46ec7ad508c853fc
 install exit=0
 checked:   workspace files AND the install record, against the pinned release in r2100/starter
 verdict:   matches the installed release
 # AIOS Operator Core v1.2.0
 import lines in CLAUDE.md: 1
 AGENTS.md present: yes
-human-step cards: 7
+human-step cards (index excluded): 6
 release notice command: yes
 workflow actions not pinned to a full SHA: 0
 AGENTS.md equals a fresh render of the installed CLAUDE.md and core: True
@@ -63,7 +63,7 @@ dry run: r2100/up 2.9.0 -> 2.10.0, nothing written
   run it again without --dry-run to upgrade
   managed:  95 files, verified by readback
   state:    untouched (seed and unmanaged files were not written)
-  rollback: available (.aios/backups/20261014T072453Z-2.9.0-to-2.10.0)
+  rollback: available (.aios/backups/20261014T073041Z-2.9.0-to-2.10.0)
 upgrade exit=0
 checked:   workspace files AND the install record, against the pinned release in r2100/starter
 verdict:   matches the installed release
@@ -71,7 +71,7 @@ client files (installer state_fingerprint) after upgrade: IDENTICAL
 client rule kept: 1
 git history before -> after: 2 -> 2
 AGENTS.md present: yes
-human-step cards: 7
+human-step cards (index excluded): 6
 release notice command: yes
 workflow actions not pinned to a full SHA: 0
 
@@ -85,7 +85,7 @@ git status after rollback (porcelain lines): 0
 
 ### R6 upgrade from a 2.8.0 workspace (installed while 2.8.0 was approved)
 installed starter-2.8.0 into r2100/w28
-  rollback: available (.aios/backups/20261014T072454Z-2.8.0-to-2.10.0)
+  rollback: available (.aios/backups/20261014T073042Z-2.8.0-to-2.10.0)
 upgrade exit=0
 client files after 2.8.0 -> 2.10.0: IDENTICAL
 # AIOS Operator Core v1.2.0
@@ -94,7 +94,7 @@ import lines in CLAUDE.md: 1
 ### R7 upgrade from a 2.6.0 workspace: the bundled third-party document-skill copies go
 installed starter-2.6.0 into r2100/w26
 document-skill folders before (docx, pptx, xlsx, pdf): 4
-  rollback: available (.aios/backups/20261014T072454Z-2.6.0-to-2.10.0)
+  rollback: available (.aios/backups/20261014T073043Z-2.6.0-to-2.10.0)
 upgrade exit=0
 document-skill folders after: 0
 client files after 2.6.0 -> 2.10.0: DIFFERENT: 1 path(s): CLAUDE.md
@@ -119,6 +119,6 @@ client edit still there: 1
 ### R10 release tag route (local clone only): tag on the approval commit passes, tag on the pin fails
 verdict:  the tag carries the approval and installs the pinned files byte for byte
 verdict:  a checkout of this tag is NOT the approved release
-  - the tag's commit 688521e47315 has no releases/starter-2.10.0.json
+  - at the tag: release status is 'draft'; only 'approved' may be installed (founder ruling D3)
 
 rehearsal done
