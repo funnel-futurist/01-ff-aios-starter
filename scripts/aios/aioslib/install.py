@@ -21,6 +21,7 @@ been tested against a clean exception is not recovery.
 """
 
 import difflib
+import json
 import os
 import re
 import shutil
@@ -145,6 +146,7 @@ def verify(target, record=None, source_repo=None):
     record = record or load_record(target)
     problems = []
     checked = 0
+    summary_pin = None
     if source_repo:
         rel = record.get("release") or {}
         rev = rel.get("git_rev")
@@ -174,6 +176,22 @@ def verify(target, record=None, source_repo=None):
                             os.path.isfile(full) and on_disk != pinned_exec[entry["path"]]):
                         problems.append("executable permission of %s does not match the pinned "
                                         "release" % entry["path"])
+            # The record's list is the operator's to edit too: drop a file and its entry and the
+            # per-entry checks above have nothing to say. The release's own file set at the pin
+            # is the list (independent review).
+            try:
+                want_managed = {p for p, c, _m, _s in release_mod.select_files(
+                    source_repo, rev, release_mod.load_spec(source_repo, rev)) if c == "managed"}
+            except Refusal as exc:
+                problems.append("cannot derive the release's files at %s: %s" % (rev[:12], exc.message))
+                want_managed = None
+            if want_managed is not None:
+                listed = {e["path"] for e in record.get("managed") or []}
+                for path in sorted(want_managed - listed):
+                    problems.append("the pinned release manages %s, but the install record doesn't "
+                                    "list it" % path)
+            # And the pin itself: the source's own record of this release names it.
+            summary_pin = _pin_confirmation(source_repo, rel.get("release_id"), rev, problems)
     for entry in record.get("managed") or []:
         path = os.path.join(target, entry["path"])
         if not os.path.isfile(path):
@@ -206,8 +224,31 @@ def verify(target, record=None, source_repo=None):
         "version": (record.get("release") or {}).get("version"),
         "managed_checked": checked,
         "managed_total": len(record.get("managed") or []),
+        "pin_confirmed_by": summary_pin,
     }
     return problems, summary
+
+
+def _pin_confirmation(source_repo, release_id, rev, problems):
+    """Where the source records this release's pin (the release's tag, then the checked-out
+    tree), or None when it has no record of it. A record naming another pin is a problem: the
+    install record's pin was edited, or it is not this release."""
+    if not release_id or not re.match(r"^starter-[0-9][A-Za-z0-9.+-]*$", release_id):
+        return None
+    for ref in ("refs/tags/%s" % release_id, "HEAD"):
+        text = util.git(source_repo, ["show", "%s:releases/%s.json" % (ref, release_id)], check=False)
+        if not text:
+            continue
+        try:
+            pin = (json.loads(text).get("created_from") or {}).get("git_rev")
+        except ValueError:
+            continue
+        where = "%s:releases/%s.json" % ("tag " + release_id if ref != "HEAD" else "HEAD", release_id)
+        if pin != rev:
+            problems.append("the install record pins %s, but %s pins %s"
+                            % ((rev or "?")[:12], where, (pin or "?")[:12]))
+        return where
+    return None
 
 
 def require_verified(target, record=None, what="workspace"):
@@ -875,8 +916,10 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # A path that was ever the client's seed can't become the release's: the upgrade would overwrite
     # it, and only release files are backed up. "Ever": a seed an older release stopped shipping
     # and the client then deleted is still theirs to recreate (independent review).
-    seed_paths = _seed_history(record, manifest)
-    reclassified = sorted(p for p, e in files.items() if e["class"] == "managed" and p in seed_paths)
+    # Compared as a Mac or Windows disk sees names: `Notes/Plan.md` and `notes/plan.md` are one file.
+    seed_keys = {layout_mod.key(p) for p in _seed_history(record, manifest)}
+    reclassified = sorted(p for p, e in files.items()
+                          if e["class"] == "managed" and layout_mod.key(p) in seed_keys)
     if reclassified:
         raise Refusal(EXIT_PACKAGE, "release %s would take over %d file(s) that are yours (seeded "
                       "by a release this workspace has had)" % (manifest["version"], len(reclassified)),
@@ -1413,8 +1456,10 @@ def adopt(target, manifest, source_repo, config, aios_lookup=None):
     for entry in manifest.get("files") or []:
         path = os.path.join(target, entry["path"])
         if entry["class"] == "seed":
-            if os.path.isfile(path):
-                seeded.append({"path": entry["path"], "sha256": sha256_file(path)})
+            # Every seed, present or not: one the client deleted before adopting is still theirs,
+            # and an upgrade must not bring it back (independent review).
+            seeded.append({"path": entry["path"], "sha256": sha256_file(path)
+                           if os.path.isfile(path) and not os.path.islink(path) else ""})
             continue
         if not os.path.lexists(path):
             mismatches.append("missing: %s" % entry["path"])

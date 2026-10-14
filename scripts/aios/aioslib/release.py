@@ -21,7 +21,7 @@ import json
 import os
 import re
 
-from . import util
+from . import layout as layout_mod, util
 from .util import EXIT_PACKAGE, Refusal
 
 SCHEMA = "ff-aios-starter/release@1"
@@ -130,8 +130,9 @@ def build(repo, rev, version, spec=None, branch=None, credentials=None, min_upgr
             raise Refusal(EXIT_PACKAGE, "the package spec's folder layout is not releasable", problems)
     # A file any earlier release seeded is the client's. A workspace that skipped the release that
     # stopped shipping it would see it taken over and overwritten (independent review).
-    ever_seeded = seeds_ever_released(repo, rev, layout)
-    taken = sorted(p for p, c, _m, _s in files if c == "managed" and p in ever_seeded)
+    ever_seeded = {layout_mod.key(p) for p in seeds_ever_released(repo, rev, layout)}
+    # As a Mac or Windows disk sees names: `Notes/Plan.md` and `notes/plan.md` are one file.
+    taken = sorted(p for p, c, _m, _s in files if c == "managed" and layout_mod.key(p) in ever_seeded)
     if taken:
         raise Refusal(EXIT_PACKAGE, "the package would make %d earlier seed file(s) its own" % len(taken),
                       taken[:20] + ["a seed is the client's for good: ship it under a new path"])
@@ -176,7 +177,6 @@ def build(repo, rev, version, spec=None, branch=None, credentials=None, min_upgr
 def seeds_ever_released(repo, rev, layout=None):
     """Every path a release recorded in `releases/` at `rev` shipped as a seed, under its old name
     and, when `layout` moves it, its new one."""
-    from . import layout as layout_mod  # layout imports nothing of ours but util
     rules = (layout or {}).get("moves") or []
     names = util.git(repo, ["ls-tree", "--name-only", rev, "releases/"], check=False) or ""
     out = set()

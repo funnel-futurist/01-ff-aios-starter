@@ -1255,9 +1255,8 @@ class InstallRefusesBeforeWriting(Sandbox):
         self.assertEqual(os.listdir(self.target), [])
 
 
-class FifthCodexRegressions(Sandbox):
-    """Codex round 5: install writes nothing of the client's, owner tokens GitHub would ignore are
-    refused, a seed stays the client's across releases, and adopt pins the executable bit."""
+class InstallerReview(Sandbox):
+    """Helpers for the installer findings of the later review rounds."""
 
     OWNERS = {"REPO_OWNER": ["@acme-founder"], "PRIMARY_REVIEWER": ["@acme-va"]}
 
@@ -1277,6 +1276,11 @@ class FifthCodexRegressions(Sandbox):
             install_mod.install(self.target, self.v(self.rev, "2.10.0"), self.source, cfg)
         self.assertEqual(diff(before, snapshot(self.target)), [], "a refused install changed the target")
         return ctx.exception
+
+
+class FifthCodexRegressions(InstallerReview):
+    """Codex round 5: install writes nothing of the client's, owner tokens GitHub would ignore are
+    refused, a seed stays the client's across releases, and adopt pins the executable bit."""
 
     def test_r5_1_the_clients_codeowners_is_never_replaced_or_shadowed(self):
         for rel in (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"):
@@ -1398,6 +1402,80 @@ class FifthCodexRegressions(Sandbox):
         self.assertEqual(install_mod.verify(self.target)[0], [])
         problems, _ = install_mod.verify(self.target, source_repo=self.source)
         self.assertTrue(any("does not match the pinned release" in p for p in problems), problems)
+
+
+class SixthCodexRegressions(InstallerReview):
+    """Codex round 6: verify --repo takes the release's own file list and pin, adopt keeps every
+    seed, and seed ownership is compared as a case-insensitive disk sees names."""
+
+    def installed(self):
+        install_mod.install(self.target, self.v(self.rev, "2.10.0"), self.source, harness.config())
+        return install_mod.load_record(self.target)
+
+    def test_r6_1_a_file_dropped_from_the_record_and_the_disk_is_caught(self):
+        record = self.installed()
+        record["managed"] = [e for e in record["managed"] if e["path"] != "START_HERE.md"]
+        os.remove(os.path.join(self.target, "START_HERE.md"))
+        util.write_json(install_mod.install_record_path(self.target), record)
+        self.assertEqual(install_mod.verify(self.target)[0], [])  # the record agrees with itself
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertTrue(any("START_HERE.md" in p and "doesn't list it" in p for p in problems), problems)
+
+    def test_r6_1_the_pin_is_checked_against_the_sources_release_record(self):
+        record = self.installed()
+        man = harness.build_manifest(self.source, self.rev, "2.10.0")
+        harness.bump_source(self.source, {"releases/starter-2.10.0.json": json.dumps(man)})
+        problems, summary = install_mod.verify(self.target, source_repo=self.source)
+        self.assertEqual(problems, [])
+        self.assertEqual(summary["pin_confirmed_by"], "HEAD:releases/starter-2.10.0.json")
+        other = harness.bump_source(self.source, {"notes.txt": "x\n"})  # same files, another commit
+        record["release"]["git_rev"] = other
+        util.write_json(install_mod.install_record_path(self.target), record)
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertTrue(any("but HEAD:releases/starter-2.10.0.json pins" in p for p in problems), problems)
+
+    def test_r6_2_adopt_keeps_a_seed_the_client_deleted_and_no_upgrade_brings_it_back(self):
+        v = self.v(self.rev, "2.10.0")
+        install_mod.install(self.target, v, self.source, harness.config())
+        os.remove(install_mod.install_record_path(self.target))
+        os.remove(os.path.join(self.target, "06_Communication/decisions_log.md"))
+        record = install_mod.adopt(self.target, v, self.source, harness.config())
+        self.assertIn({"path": "06_Communication/decisions_log.md", "sha256": ""}, record["seeded"])
+        self.commit_target("adopted")
+        rev2 = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnext.\n"})
+        install_mod.upgrade(self.target, self.v(rev2, "2.10.1"), self.source)
+        self.assertFalse(os.path.lexists(os.path.join(self.target, "06_Communication/decisions_log.md")))
+
+    def _seed_then_managed_in_other_case(self):
+        spec = dict(harness.PACKAGE_SPEC, seed=harness.PACKAGE_SPEC["seed"] + ["Notes/Plan.md"])
+        rev1 = harness.bump_source(self.source, {"Notes/Plan.md": "a seed\n",
+                                                 "release/package_spec.json": json.dumps(spec)})
+        install_mod.install(self.target, self.v(rev1, "2.10.0"), self.source, harness.config())
+        os.remove(os.path.join(self.target, "Notes/Plan.md"))
+        os.rmdir(os.path.join(self.target, "Notes"))
+        self.commit_target("2.10.0, and I deleted the seed")
+        run_git(self.source, "rm", "-q", "-r", "Notes")
+        return harness.bump_source(self.source, {"notes/plan.md": "the release's now\n",
+                                                 "release/package_spec.json": json.dumps(harness.PACKAGE_SPEC)})
+
+    def test_r6_3_a_seed_returning_in_other_case_is_never_taken_over(self):
+        rev2 = self._seed_then_managed_in_other_case()
+        before = snapshot(self.target)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.upgrade(self.target, self.v(rev2, "2.10.1"), self.source)
+        self.assertIn("would take over", ctx.exception.message)
+        self.assertIn("notes/plan.md", ctx.exception.details)
+        self.assertEqual(diff(before, snapshot(self.target)), [])
+
+    def test_r6_3_release_build_folds_case_too(self):
+        rev2 = self._seed_then_managed_in_other_case()
+        old = harness.build_manifest(self.source, self.rev, "2.10.0")
+        old["files"].append({"path": "Notes/Plan.md", "class": "seed", "mode": "100644", "sha256": "0" * 64})
+        rev3 = harness.bump_source(self.source, {"releases/starter-2.10.0.json": json.dumps(old)})
+        with self.assertRaises(Refusal) as ctx:
+            harness.build_manifest(self.source, rev3, "2.10.1")
+        self.assertIn("notes/plan.md", ctx.exception.details)
+        self.assertTrue(rev2)
 
 
 class SecondReviewFounder(FounderReview):

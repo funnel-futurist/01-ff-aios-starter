@@ -206,6 +206,9 @@ def cmd_verify(args):
                             "release in %s" % source if source else
                             "workspace files against the install record "
                             "(pass --repo to also check the record against the pinned release)"))
+    if source:
+        _say("pin:       %s" % ("confirmed by " + summary["pin_confirmed_by"] if summary.get("pin_confirmed_by")
+                                else "not confirmed: the source has no record of this release"))
     _say("managed:   %d/%d files re-hashed from disk"
          % (summary["managed_checked"], summary["managed_total"]))
     for e in record.get("seed_lines") or []:
