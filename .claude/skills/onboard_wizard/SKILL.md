@@ -25,8 +25,8 @@ Ask: **"Are you the founder, a co-founder, or a cyborg VA / operator?"**
 4. **If local (Desktop/VS Code):** install **git** once (search "install git for [your OS]" if needed); then **clone your repo into a folder on your computer, that folder IS your AIOS.**
 5. **Open Claude Code** in that folder and run your first session (load your foundational docs). When Claude Code asks whether you trust this folder, say yes - that is what turns on the safety settings.
    - **Install your document skills** (Word, PDF, PowerPoint, Excel). They are made by Anthropic and installed from Anthropic, not copied into your repo. Type `/plugin install document-skills@anthropic-agent-skills` and confirm. If Claude Code says the marketplace is unknown, first type `/plugin marketplace add anthropics/skills`. **Check it worked:** type `/plugin` and look for `document-skills` as installed.
-6. **Invite your team**, GitHub repo → Settings → Collaborators → add each teammate's GitHub username. Now everyone shares the **same brain.**
-7. **Secure it (airlocks):** turn on **2FA**; keep keys in `.env` (it's gitignored, so it never reaches GitHub); set a **spend limit** on your API key.
+6. **Secure it (airlocks), before anyone else gets access:** turn on **2FA**; keep keys in `.env` (it's gitignored, so it never reaches GitHub); set a **spend limit** on your API key.
+7. **Invite your team**, GitHub repo → Settings → Collaborators → add each teammate's GitHub username. Now everyone shares the **same brain.**
 
 ## Step 3: Load your business brain
 Link your **Google Drive** and load your foundational docs (your offer/orientation answers, any intake/Typeform answers) so the AIOS can pull from your real knowledge, not guesses.
