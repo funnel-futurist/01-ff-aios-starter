@@ -14,7 +14,7 @@ A **fingerprint list** is made privately from the protected source files. The pu
 |---|---|
 | Unit | every run of 12 consecutive words, lowercased, letters and digits only (so wrapping, case and markdown do not hide a paste) |
 | Hash | HMAC-SHA256 under a random salt, first 8 bytes kept |
-| Fail rule | 3 or more windows from one protected source in one file |
+| Fail rule | the list's `min_hits` or more windows from one protected source in one file (3 unless the list says otherwise; `protected fingerprint --min-hits` sets it) |
 | Scope | every file in the public tree (what git tracks), including `evidence/`, `templates/`, `releases/`, `tests/`, and the inside of `.docx`/`.xlsx`/`.pptx`/`.zip` files |
 | Output | the path and an opaque source label such as `P-001`. Never any text |
 
@@ -41,7 +41,6 @@ If the list is not configured, CI prints a `NOT RUN` warning and the scan comman
   - how each was classified;
   - the list's sha256.
 - **This repository's CI keeps printing `NOT RUN`.** That's accurate: CI didn't look.
-- **A list too large to load** can keep 1 window in N, chosen by digest, with a lower `min_hits`. The list file records that choice. Measure detection with planted passages before relying on it.
 
 ## Commands
 
