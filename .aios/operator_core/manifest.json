@@ -7,11 +7,12 @@
   "edition": "client",
   "import_line": "@.aios/operator_core/OPERATOR_CORE.md",
   "scope": "client",
-  "sha256": "2a938ffc459a52b05b19583805fee2b099923a356455e65a2b5901162ab16523",
-  "shipped_in": "starter-2.7.2",
-  "source_commit": "5d835ed8eeda4ac9ae505e77f311da8b332348b9",
+  "sha256": "65eb5e3be7d80c55796c62a4be795e3e257992db053a35e77adbb93d950603b5",
+  "shipped_in": "starter-2.9.0",
+  "source_commit": "003506ac42f5d4cb2c9d31a01acc4dad0e5ee20a",
   "source_path": "00_Foundations/operator_core/OPERATOR_CORE.md",
+  "source_pr": "funnel-futurist/ai-os#492",
   "source_repo": "funnel-futurist/ai-os",
-  "source_sha256": "c2334ade3a4a89bdff000a659b675e225006b7363db605eee67b3222796069f1",
-  "version": "1.1.1"
+  "source_sha256": "79547f8e2b1de98b2953872831a54941b8beda446b5da7297ca83ed29de81160",
+  "version": "1.2.0"
 }
