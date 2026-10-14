@@ -25,6 +25,10 @@ on:
   pull_request_review:
     types: [submitted, dismissed]
 
+# Read-only unless a job says otherwise (LW-21).
+permissions:
+  contents: read
+
 jobs:
   tests:
     # The template repository only. Anywhere else this is someone else's test suite.
@@ -32,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Python version (the floor a client machine has to clear)
         run: python3 --version
       - name: Install contract tests
@@ -66,7 +70,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: CODEOWNERS names real owners, bound to this repository
         run: python3 scripts/aios/aios.py governance check --repo-slug "${GITHUB_REPOSITORY}"
 
@@ -82,7 +86,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Founder-lane files need a founder's approval

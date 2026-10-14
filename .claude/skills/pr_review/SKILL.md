@@ -1,6 +1,6 @@
 ---
 name: pr_review
-description: Automated PR review, a senior code reviewer that checks for secrets, bugs, broken builds, content quality, and cross-file safety. Reviews every PR, fixes safe issues, approves good work, suggests improvements, and only stops genuinely-dangerous changes. Never blocks you.
+description: Automated PR review, a senior code reviewer that checks for secrets, bugs, broken builds, content quality, and cross-file safety. Reviews every PR, fixes safe issues when you run it yourself (in CI it suggests them and never changes the branch), approves good work, suggests improvements, and only stops genuinely-dangerous changes. Never blocks you.
 ---
 
 ## Skill Metadata
@@ -138,21 +138,18 @@ quality, scope/bundling, plain-English explanation, and cross-file safety.
   the safe default.
 
 **Review posture, an always-on senior collaborator that moves work forward, safely.** Help good work
-ship; fix what you safely can; block only the genuinely unsafe. Never gate someone over nits.
+ship; suggest the exact fix for what you safely can; block only the genuinely unsafe. Never gate
+someone over nits.
 
 **Output discipline in CI:**
 1. **Review with intent.** Understand what the author is doing and review against *that*. Post ONE PR
    comment: a plain-English summary + concrete, contextual improvement suggestions.
-2. **Auto-fix what's safe, and push it through.** If you find SAFELY-fixable issues, filename renames,
-   formatting, an obvious mechanical correction, a missed import, AND the PR head's latest commit is
-   NOT already one of your own auto-fix commits:
-   - Apply the fix to the files, commit to the PR's head branch with the marker
-     `fix: auto-review, <what> [pr-autofix]`, and push. Then STOP, the push re-triggers this workflow,
-     which re-reviews the now-fixed PR and finalizes it.
-   - **Loop guard (critical):** if the latest commit message already contains `[pr-autofix]` (your own
-     fix), do NOT fix again, review and finalize. This prevents the push→review→push deadlock.
-   - Scope: ONLY mechanical/clear fixes. Judgment calls or risky logic → SUGGEST, don't apply. NEVER
-     auto-fix a hard-block (secrets/destructive), block + comment. On forks you can't push, suggest only.
+2. **Suggest what's safe to fix; never change the branch.** In CI you can read the tree and the pull
+   request, post your review, and write `./verdict.json`. Nothing else: no file edits, no commits, no
+   pushes (the workflow's tool list enforces it). For a SAFELY-fixable issue (a filename rename,
+   formatting, an obvious mechanical correction, a missed import), put the exact change in your comment
+   so the author applies it in one step. NEVER propose a quiet fix for a hard-block (secrets/destructive):
+   block and comment.
 3. **Approve good work.** When there's no `error`-severity issue and the floor is clean, submit an
    approving review: `gh pr review {pr} --repo {repo} --approve -b "<one-line affirmation; suggestions
    are non-blocking>"`. This is the visible "reviewed + approved" and satisfies repos that require a
@@ -195,6 +192,7 @@ Slack or merge in CI mode.
 - Never skip checks because "it's just a small change".
 - Never auto-fix a hard-block (secrets, destructive migrations), block and comment instead.
 - Never auto-merge in CI mode, the deterministic gate decides; the model never presses the merge button.
+- Never edit, commit or push in CI mode. Suggest the change; the author makes it.
 
 ## EVOLUTION
 
