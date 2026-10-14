@@ -173,7 +173,7 @@ def is_git_repo(path):
 # BEFORE checking the worktree, so counting it meant every git-tracked workspace refused its
 # own upgrade. Listed here as well as in .aios/.gitignore, because a workspace installed from
 # 2.6.0 has the old .gitignore until its first upgrade succeeds.
-TOOL_OWNED_PATHS = (".aios/lock",)
+TOOL_OWNED_PATHS = (".aios/lock", ".aios/guard")
 
 
 def worktree_dirty(path):

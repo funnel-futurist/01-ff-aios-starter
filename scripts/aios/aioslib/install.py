@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import stat
+import time
 
 from . import governance, hosting, layout as layout_mod, orgconfig, release as release_mod, roles, util
 from .util import (EXIT_GOVERNANCE, EXIT_PACKAGE, EXIT_STATE, EXIT_VERIFY, Refusal, sha256_bytes,
@@ -1236,37 +1237,94 @@ def rollback(target):
     return _rollback_after_reclaim(target, stale_lock)
 
 
+try:
+    import fcntl as _fcntl
+except ImportError:  # Windows
+    _fcntl = None
+try:
+    import msvcrt as _msvcrt
+except ImportError:  # everywhere but Windows
+    _msvcrt = None
+
+GUARD_PATH = os.path.join(AIOS_DIR, "guard")
+
+
 class _RecoveryGuard(object):
-    """An OS-held lock (flock) around every decision about the workspace lock: taking it, releasing
-    it, and judging and clearing a stale one. So two recoveries can't both clear it (independent
+    """An OS-held lock around every decision about the workspace lock: taking it, releasing it,
+    and judging and clearing a stale one. So two recoveries can't both clear it (independent
     review, round 3), and no new holder can take the lock between a recovery's "this one is dead"
-    and its removal (round 10). Where flock doesn't exist, the identity check (device, inode,
-    words) in _still_this_lock still holds, with that one window left."""
+    and its removal (round 10).
+
+    flock on macOS and Linux; on Windows, msvcrt's lock on the file's first byte, which holds
+    across processes the same way (round 11). A system with neither is refused rather than left
+    unguarded. The file exists only while held: the holder deletes it before letting go, and a
+    waiter that then gets the lock checks the name still means the file it locked, or starts
+    again. So nothing is left behind, not even after a refusal. (Windows can't delete an open
+    file, so there it stays, git-ignored.) A killed holder's lock goes with its process."""
 
     def __init__(self, target):
-        # In its own folder inside the git-ignored backups, beside each upgrade's own folder.
-        self.path = os.path.join(target, BACKUP_DIR, ".locks", "recovery")
+        self.path = os.path.join(target, GUARD_PATH)
         self.fd = None
 
     def __enter__(self):
-        try:
-            import fcntl
-        except ImportError:
-            return self
-        here = self.path
-        for _ in range(3):  # .aios/backups/.locks, .aios/backups, .aios: real folders, never links
-            here = os.path.dirname(here)
-            if os.path.islink(here) or (os.path.lexists(here) and not os.path.isdir(here)):
-                raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % here)
-        os.makedirs(os.path.dirname(self.path), exist_ok=True)
-        self.fd = os.open(self.path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o644)
-        fcntl.flock(self.fd, fcntl.LOCK_EX)
-        return self
+        if _fcntl is None and _msvcrt is None:
+            raise Refusal(EXIT_STATE, "this system has no file lock the installer can use, so it won't "
+                                      "change anything", ["run it on macOS, Linux or Windows"])
+        aios_dir = os.path.dirname(self.path)
+        if os.path.islink(aios_dir) or (os.path.lexists(aios_dir) and not os.path.isdir(aios_dir)):
+            raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % aios_dir)
+        os.makedirs(aios_dir, exist_ok=True)
+        while True:
+            fd = os.open(self.path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o644)
+            try:
+                _os_lock(fd)
+                held = os.fstat(fd)
+                try:
+                    named = os.lstat(self.path)
+                except OSError:
+                    named = None
+            except BaseException:
+                os.close(fd)
+                raise
+            if named is not None and (named.st_dev, named.st_ino) == (held.st_dev, held.st_ino):
+                self.fd = fd
+                return self
+            _os_unlock(fd)  # the holder before us deleted it: lock the file that's there now
+            os.close(fd)
 
     def __exit__(self, *exc):
         if self.fd is not None:
-            os.close(self.fd)  # releases the flock
+            try:
+                os.remove(self.path)  # while still held, so no one can be locking it as it goes
+            except OSError:
+                pass  # Windows: an open file can't be deleted; it stays, git-ignored
+            _os_unlock(self.fd)
+            os.close(self.fd)
+            self.fd = None
         return False
+
+
+def _os_lock(fd):
+    if _fcntl is not None:
+        _fcntl.flock(fd, _fcntl.LOCK_EX)
+        return
+    os.lseek(fd, 0, os.SEEK_SET)
+    while True:  # LK_LOCK gives up after 10 s; a holder may legitimately take longer
+        try:
+            _msvcrt.locking(fd, _msvcrt.LK_NBLCK, 1)
+            return
+        except OSError:
+            time.sleep(0.05)
+
+
+def _os_unlock(fd):
+    if _fcntl is not None:
+        return  # closing the file releases flock
+    try:
+        os.lseek(fd, 0, os.SEEK_SET)
+        _msvcrt.locking(fd, _msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass
 
 
 def _reclaim_stale_lock(stale):

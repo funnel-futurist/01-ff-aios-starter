@@ -862,19 +862,14 @@ class IndependentReviewRegressions(Layout3):
 
     def test_1_a_dry_run_and_a_refusal_leave_nothing_behind(self):
         backups = os.path.join(self.target, ".aios", "backups")
-
-        def attempts():  # the guard's own empty lock file, `.locks/recovery`, stays on purpose:
-            # deleting a lock file others may be waiting on would let two operations in
-            return sorted(n for n in os.listdir(backups) if n != ".locks") if os.path.isdir(backups) else []
-        before = attempts()
+        before = sorted(os.listdir(backups)) if os.path.isdir(backups) else None
         install_mod.upgrade_plan(self.target, self.v3, self.source, no_vercel=True)
-        self.assertEqual(attempts(), before)
+        self.assertEqual(sorted(os.listdir(backups)) if os.path.isdir(backups) else None, before)
         with self.assertRaises(Refusal):
             self.up(no_vercel=False)  # no token, no statement: refused
-        self.assertEqual(attempts(), before)
-        locks = os.path.join(backups, ".locks")
-        self.assertEqual(os.listdir(locks) if os.path.isdir(locks) else ["recovery"], ["recovery"])
-        self.assertEqual(os.path.getsize(os.path.join(locks, "recovery")) if os.path.isdir(locks) else 0, 0)
+        self.assertEqual(sorted(os.listdir(backups)) if os.path.isdir(backups) else None, before)
+        self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios", "guard")))
+        self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios", "lock")))
 
     def test_2_a_linked_destination_folder_is_refused(self):
         outside = os.path.join(self.tmp, "outside")
@@ -1621,6 +1616,73 @@ class EighthCodexRegressions(Layout3):
     def test_r8_without_the_old_pin_in_the_source_nothing_is_backfilled(self):
         record = {"release": {"git_rev": "0" * 40}, "seeded": []}
         self.assertEqual(install_mod._seed_history(record, self.v3, self.source), set())
+
+
+class WorkspaceGuard(Sandbox):
+    """Codex round 11: the guard around the workspace lock, on every system, leaving nothing."""
+
+    class FakeMsvcrt(object):
+        LK_NBLCK, LK_UNLCK = 2, 0
+
+        def __init__(self, busy=1):
+            self.calls, self.busy = [], busy
+
+        def locking(self, fd, mode, nbytes):
+            self.calls.append((mode, os.lseek(fd, 0, os.SEEK_CUR), nbytes))
+            if mode == self.LK_NBLCK and self.busy:
+                self.busy -= 1
+                raise OSError("locked by another process")
+
+    def setUp(self):
+        super(WorkspaceGuard, self).setUp()
+        os.makedirs(os.path.join(self.target, ".aios"))
+        self.guard = os.path.join(self.target, ".aios", "guard")
+        self.addCleanup(setattr, install_mod, "_fcntl", install_mod._fcntl)
+        self.addCleanup(setattr, install_mod, "_msvcrt", install_mod._msvcrt)
+
+    def test_it_leaves_nothing_behind(self):
+        with install_mod._RecoveryGuard(self.target):
+            self.assertTrue(os.path.isfile(self.guard))
+        self.assertEqual(os.listdir(os.path.join(self.target, ".aios")), [])
+
+    def test_a_waiter_whose_file_was_deleted_locks_the_one_there_now(self):
+        real_lock, rounds = install_mod._os_lock, []
+
+        def lock(fd):  # the holder before us finishes and deletes the file as we get its lock
+            real_lock(fd)
+            rounds.append(os.fstat(fd).st_ino)
+            if len(rounds) == 1:
+                os.remove(self.guard)
+        install_mod._os_lock = lock
+        try:
+            with install_mod._RecoveryGuard(self.target) as g:
+                self.assertEqual(os.fstat(g.fd).st_ino, os.lstat(self.guard).st_ino)
+        finally:
+            install_mod._os_lock = real_lock
+        self.assertEqual(len(rounds), 2)
+
+    def test_windows_locks_the_first_byte_waits_while_busy_and_unlocks(self):
+        fake = self.FakeMsvcrt(busy=1)
+        install_mod._fcntl, install_mod._msvcrt = None, fake
+        with install_mod._RecoveryGuard(self.target):
+            pass
+        self.assertEqual(fake.calls, [(fake.LK_NBLCK, 0, 1), (fake.LK_NBLCK, 0, 1), (fake.LK_UNLCK, 0, 1)])
+
+    def test_a_system_with_no_file_lock_is_refused_with_nothing_changed(self):
+        install_mod._fcntl = install_mod._msvcrt = None
+        with self.assertRaises(Refusal):
+            with install_mod._RecoveryGuard(self.target):
+                self.fail("ran unguarded")
+        self.assertEqual(os.listdir(os.path.join(self.target, ".aios")), [])
+
+    def test_a_linked_aios_folder_is_refused(self):
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        shutil.rmtree(os.path.join(self.target, ".aios"))
+        os.symlink(outside, os.path.join(self.target, ".aios"))
+        with self.assertRaises(Refusal):
+            install_mod._RecoveryGuard(self.target).__enter__()
+        self.assertEqual(os.listdir(outside), [])
 
 
 class SecondReviewFounder(FounderReview):
