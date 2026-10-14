@@ -21,17 +21,17 @@
     {
       "path": ".claude/skills/humanize/SKILL.md",
       "reason": "Copy-quality pass that strips AI-sounding patterns.",
-      "sha256": "b83a72452477f597061e968c2658a5f61dba9a6ef4c18d9bfb695df04126f657"
+      "sha256": "da0fedc903660b777904755468db543afa0c5296a6aea91febb977b59c87f6bb"
     },
     {
       "path": ".claude/skills/qc_review/SKILL.md",
       "reason": "Copy-quality review gate.",
-      "sha256": "7a59c965484709b8accd9a838072db628de624a093750f91915aaa93d5d4a7d8"
+      "sha256": "3f2fe8e907f466c4569cd5f9ab3597c1f4395ee47fa7fa4150c525ca53dcb5fa"
     },
     {
       "path": ".claude/skills/f6_completeness_check/SKILL.md",
       "reason": "Checks the client's foundation folders are filled; names the document set, not its method.",
-      "sha256": "552117dbe0d38e5ce918b9b4409421ef73caf870442eb1b9e63babd12267993d"
+      "sha256": "680207052652634a0550693cc8f34796b64ae1eaf5342517ebd99489ec896edb"
     },
     {
       "path": "docs/UNSTUCK_PROTOCOL.md",

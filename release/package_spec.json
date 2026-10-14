@@ -1,6 +1,6 @@
 {
   "schema": "ff-aios-starter/package-spec@1",
-  "_comment": "Which paths ship in a release, and who owns each one after install. managed = the release owns it (replaced on upgrade, verified by readback). seed = written once if absent, then yours forever. Anything excluded never ships; anything you create yourself is invisible to the installer. client_owned = paths that are the client's by contract and never part of any package (the settings override layer): the installer never writes, replaces, verifies or removes them, and a release build refuses a source that tracks one. seed_lines = one declared line a release adds once to a seed file that predates it (today: the operator core's import in CLAUDE.md); never twice, never into a deleted file, taken back by rollback.",
+  "_comment": "Which paths ship in a release, and who owns each one after install. managed = the release owns it (replaced on upgrade, verified by readback). seed = written once if absent, then yours forever. Anything excluded never ships; anything you create yourself is invisible to the installer. client_owned = paths that are the client's by contract and never part of any package (the settings override layer): the installer never writes, replaces, verifies or removes them, and a release build refuses a source that tracks one. seed_lines = declared lines a release adds once to a seed file that predates them (the operator core's import, and since 3.0 the folder map's import, in CLAUDE.md); never twice, never into a deleted file, taken back by rollback. layout = the 3.0 folder move (see its own comment).",
   "exclude": [
     "evidence/**",
     "releases/**",
@@ -17,15 +17,15 @@
     "README.md",
     ".gitignore",
     ".aios/local-operator.example.json",
-    "01_Foundations/**",
-    "02_Deliverables/**",
-    "03_Quality_Control/**",
-    "04_Customer_Journey/**",
-    "05_Assets/**",
-    "06_Communication/**",
-    "08_Automations/**",
-    "09_Archive/**",
-    "11_Projects/**"
+    "estate.yaml",
+    "REPO_CONTEXT.md",
+    "00_AIOS/**",
+    "01_Creation/**",
+    "02_Team_Ops/**",
+    "03_RevOps/**",
+    "04_Attention/**",
+    "05_Jobs/**",
+    "99_Archive/**"
   ],
   "render": [
     {
@@ -42,6 +42,118 @@
     {
       "path": "CLAUDE.md",
       "line": "@.aios/operator_core/OPERATOR_CORE.md"
+    },
+    {
+      "path": "CLAUDE.md",
+      "line": "@00_AIOS/routing.md"
     }
-  ]
+  ],
+  "layout": {
+    "_comment": "Starter 3.0 instance layout. On upgrade from layout 2, every file under a retired folder that the installed release doesn't manage moves to its new folder: a hard link, then the old name removed, so bytes, size and mode never change. Longest matching 'from' wins; every retired folder has a catch-all. Planned and journaled before the first move; refused, changing nothing, on any existing destination, case or Unicode collision, symlink, nested repository or other disk. The quarantine names are set aside in the upgrade's backup, not moved. A website folder moves only after Vercel confirms no project still builds the old path.",
+    "version": "3",
+    "retired_roots": [
+      "01_Foundations",
+      "02_Deliverables",
+      "03_Quality_Control",
+      "04_Customer_Journey",
+      "05_Assets",
+      "06_Communication",
+      "07_Setup",
+      "08_Automations",
+      "09_Archive",
+      "10_Departments",
+      "11_Projects"
+    ],
+    "moves": [
+      {
+        "from": "01_Foundations/",
+        "to": "00_AIOS/company/"
+      },
+      {
+        "from": "02_Deliverables/_review_queue/",
+        "to": "00_AIOS/review_queue/"
+      },
+      {
+        "from": "02_Deliverables/copy/",
+        "to": "01_Creation/outputs/copy/"
+      },
+      {
+        "from": "02_Deliverables/funnels/",
+        "to": "03_RevOps/funnels/"
+      },
+      {
+        "from": "02_Deliverables/audits/",
+        "to": "03_RevOps/audits/"
+      },
+      {
+        "from": "02_Deliverables/reports/",
+        "to": "03_RevOps/reports/"
+      },
+      {
+        "from": "02_Deliverables/ads/",
+        "to": "04_Attention/campaigns/ads/"
+      },
+      {
+        "from": "02_Deliverables/emails/",
+        "to": "04_Attention/campaigns/emails/"
+      },
+      {
+        "from": "02_Deliverables/webinars/",
+        "to": "04_Attention/campaigns/webinars/"
+      },
+      {
+        "from": "02_Deliverables/",
+        "to": "01_Creation/outputs/"
+      },
+      {
+        "from": "03_Quality_Control/",
+        "to": "00_AIOS/review_queue/"
+      },
+      {
+        "from": "04_Customer_Journey/",
+        "to": "03_RevOps/customer_journey/"
+      },
+      {
+        "from": "05_Assets/brand_guide/",
+        "to": "01_Creation/brand/"
+      },
+      {
+        "from": "05_Assets/",
+        "to": "01_Creation/asset_library/"
+      },
+      {
+        "from": "06_Communication/decisions_log.md",
+        "to": "00_AIOS/decisions_log.md"
+      },
+      {
+        "from": "06_Communication/",
+        "to": "02_Team_Ops/routines/"
+      },
+      {
+        "from": "07_Setup/",
+        "to": "99_Archive/07_Setup/"
+      },
+      {
+        "from": "08_Automations/",
+        "to": "03_RevOps/automations/"
+      },
+      {
+        "from": "09_Archive/",
+        "to": "99_Archive/"
+      },
+      {
+        "from": "10_Departments/",
+        "to": "02_Team_Ops/departments/"
+      },
+      {
+        "from": "11_Projects/",
+        "to": "02_Team_Ops/projects/"
+      }
+    ],
+    "quarantine": [
+      ".DS_Store",
+      "Thumbs.db",
+      "desktop.ini"
+    ]
+  }
 }

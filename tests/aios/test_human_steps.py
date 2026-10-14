@@ -21,6 +21,8 @@ CARDS = [
     "download_a_supabase_backup.md",
     "connect_vercel_to_a_repo.md",
     "run_a_terminal_command_from_claude.md",
+    "move_a_vercel_site.md",
+    "restore_founder_review.md",
 ]
 
 
@@ -52,10 +54,17 @@ class HumanStepCards(unittest.TestCase):
             for heading in ("## It worked when", "## Send back", "## Video and checks"):
                 self.assertIn(heading, text, "%s lacks %s" % (card, heading))
 
-    def test_no_card_carries_the_unapproved_3_0_layout_or_a_skill_that_does_not_exist(self):
+    def test_no_card_sends_people_to_a_2x_folder_or_a_skill_that_does_not_exist(self):
+        # Until 3.0 this test forbade the 3.0 folder names, because 3.0 wasn't approved. In the 3.0
+        # candidate they are the release's own folders, so the guard turns round: no card may
+        # present a Starter 2.x folder as current. Only the card about the move itself names one.
+        old = re.compile(r"\b(01_Foundations|02_Deliverables|03_Quality_Control|04_Customer_Journey|"
+                         r"05_Assets|06_Communication|07_Setup|08_Automations|09_Archive|"
+                         r"10_Departments|11_Projects)\b")
         for name in CARDS + ["README.md"]:
             text = read("docs", "human_steps", name)
-            self.assertNotIn("03_RevOps", text, name)
+            if name not in ("move_a_vercel_site.md", "restore_founder_review.md"):
+                self.assertIsNone(old.search(text), name)
             self.assertNotRegex(text, r"human_step(?!s)", name)
 
     def test_the_install_guide_points_at_the_cards(self):
