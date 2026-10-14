@@ -84,7 +84,7 @@ mine(){ # the client's own work, the same in every upgrade below
 }
 newbits(){ # what 2.10.0 adds, as seen in a workspace
   printf 'AGENTS.md present: '; [ -f "$1/AGENTS.md" ] && echo yes || echo no
-  printf 'human-step cards: '; ls "$1/docs/human_steps" 2>/dev/null | wc -l | tr -d ' '
+  printf 'human-step cards (index excluded): '; ls "$1/docs/human_steps" 2>/dev/null | grep -vcx README.md | tr -d ' '
   printf 'release notice command: '; (cd "$1" && python3 scripts/aios/aios.py release notice --help >/dev/null 2>&1 && echo yes || echo no)
   printf 'workflow actions not pinned to a full SHA: '; grep -hE '^\s*-?\s*uses:' "$1"/.github/workflows/*.yml | grep -vE '@[0-9a-f]{40}' | grep -vc './' | tr -d ' '
 }
