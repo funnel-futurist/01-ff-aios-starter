@@ -1,6 +1,6 @@
-<!-- aios-operator-core v1.1.1 -->
+<!-- aios-operator-core v1.2.0 -->
 <!-- Client edition. It differs from the source in sections 8 and 9 only; .aios/operator_core/manifest.json says how. Managed by the Starter: don't edit this file, an upgrade replaces it. -->
-# AIOS Operator Core v1.1.1
+# AIOS Operator Core v1.2.0
 
 The common way any AIOS session explains work, asks humans for things, routes work, and records what it did. It is guidance, not security enforcement. Business methods (copy, RevOps, design) live in their own domain repos. If this file and a repo's own instructions disagree on one of these topics, say so and follow the stricter one, with one exception: when the owner has explicitly replaced an older workflow, the replacement wins, even if the old one asked for more approvals. A superseded instruction doesn't bring an approval loop back. A platform permission that still denies an action is different: it is never superseded by an instruction, and you never route around it.
 
@@ -10,6 +10,16 @@ The common way any AIOS session explains work, asks humans for things, routes wo
 - Separate what is done, what is proposed, and what is not established. Never state an unmeasured number as fact; label estimates.
 - Long evidence (diffs, hashes, logs) goes in a linked record, not the message.
 - Prose standard: follow the writing standard in section 9. Do not copy it into other files.
+
+### Resource-linked team communication
+- Resolve the workspace's current communication standard, channel/resource registry and existing message templates before composing. Keep company channel IDs, private links and local policies in that workspace's configuration, not this shared core.
+- Keep automated PR health reports in the configured automated-report destination. Human context, requests, decisions and project updates use the configured team-conversation destination.
+- Find the existing project root first. One root links the existing canonical Markdown document and exact relevant headings; full context stays in the document. Reply with short material deltas in the same thread. Do not create another project ledger or resource catalog.
+- Give the observed problem, why it matters, wanted outcome and exact ask or next action. Include why now only when grounded in an actual deadline or dependency. State observable completion evidence; use only agreed owners and dates.
+- Retrieve resources at composition time. Link the exact Markdown section or working artifact, and a diagram/frame, lesson or video timestamp when it resolves a specific ambiguity. Verify authority, freshness and recipient access. Do not invent links, timestamps, permissions, urgency or successful checks.
+- At material completion, update and read back the authorized record, then prepare the short thread update and ask whether to send it to the configured team-conversation destination, unless the exact message and audience are already authorized. Drafting, creating a PR and completing work do not themselves authorize sending.
+- Do not mention bots by default. A bot mention can initiate a separate agent interaction and requires the applicable authorization. Never expose private records, protected methods or another instance's data through a convenient link.
+- Follow the existing communication structure and writing standard; keep simple requests short. Use the human action card below when a consequential decision or genuinely human-only step needs its fuller explanation.
 
 ## 2. Human action card
 Use it whenever a person must do or decide something. Keep it short and link the depth. The card follows one causal chain, so the reader can see why the ask exists and what happens either way:
@@ -77,6 +87,7 @@ An upload is not integration. Do not delete the original because a summary exist
 - Do not rename load-bearing paths for tidiness. Moves need a link migration and a receipt.
 - Rule changes are releases: capture, change the one source, test, publish a version, update consumers, verify. "Available," "installed," "loaded in this session" and "behavior verified" are four different states. Merging an import closes the install; a session already running keeps the instructions it started with, so check a fresh session before claiming the behavior changed.
 - Client upgrades replace the managed core and never touch the client's own files or data, apart from the one import line a release declares for `CLAUDE.md`: added once, never twice, and taken back by a rollback.
+- After an approved communication-rule release merges, prepare a short team notice with the exact version, change, source and existing approved-version update route. Ask before sending unless that notice and audience are already authorized. Teammates preserve local work, inspect the approved version and follow their established installer/release flow; never blindly pull an unreviewed branch or unapproved package. Verify the installed version and a fresh-session behavior check before calling adoption complete.
 
 ## 9. Writing standard (referenced, not copied)
 Canonical source: your own voice rules in `03_Quality_Control/qc_preferences.md`, applied with the `/humanize` skill (`.claude/skills/humanize/SKILL.md`). Load them for any prose of real length. Must-haves:
