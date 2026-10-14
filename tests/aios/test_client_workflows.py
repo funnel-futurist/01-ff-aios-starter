@@ -73,26 +73,51 @@ class Permissions(unittest.TestCase):
                 self.assertNotIn("contents: write", text, name)
                 self.assertNotIn("gh pr merge", text, name)
 
-    def test_the_ai_reviewer_cannot_change_the_branch(self):
+    def steps(self, job_text):
+        """{step name: its text} for `- name:` steps in one job."""
+        out, name = {}, None
+        for line in job_text.splitlines():
+            m = re.match(r"^      - name: (.+)$", line)
+            if m:
+                name = m.group(1).strip()
+                out[name] = ""
+            elif re.match(r"^      - uses:", line):
+                name = None
+            elif name:
+                out[name] += line + "\n"
+        return out
+
+    def test_the_ai_reviewer_has_no_shell_no_token_and_writes_only_its_two_files(self):
         ai = jobs(read(PR_REVIEW))["ai_review"]
         self.assertNotIn("pull_request.head.ref", ai, "it checks out the branch only to read it")
         self.assertIn("persist-credentials: false", ai)
         tools = re.search(r'--allowedTools "([^"]+)"', ai)
         self.assertTrue(tools, "the reviewer's tools are an explicit list")
-        allowed = tools.group(1).split(",")
-        for forbidden in ("Bash", "Write", "Edit"):
-            self.assertNotIn(forbidden, allowed, "an unscoped %s would let it change files or push" % forbidden)
-        self.assertEqual([t for t in allowed if t.startswith("Edit(")], ["Edit(./verdict.json)"])
-        for t in allowed:
-            if t.startswith("Bash("):
-                self.assertRegex(t, r"^Bash\(gh pr (view|diff|review|comment):\*\)$", t)
+        allowed = set(tools.group(1).split(","))
+        self.assertEqual(allowed, {"Read", "Glob", "Grep", "Edit(./review.md)", "Edit(./verdict.json)"})
+        steps = self.steps(ai)
+        model = steps["Claude review (pr_review skill)"]
+        self.assertNotIn("GH_TOKEN", model, "the model step holds no GitHub token")
+        self.assertNotIn("github.token", model)
         self.assertNotIn("push them", ai)
+
+    def test_a_deterministic_step_posts_the_review_from_the_verdict(self):
+        steps = self.steps(jobs(read(PR_REVIEW))["ai_review"])
+        self.assertIn("gh pr diff", steps["Collect the pull request for the reviewer"])
+        post = steps["Post the review"]
+        self.assertIn("has_error_severity", post)
+        self.assertIn('"--request-changes" : "--approve"', post)
+        self.assertIn("--body-file review.md", post)
+        self.assertIn("--comment --body-file review.md", post, "falls back to a comment where Actions can't approve")
 
     def test_the_skill_tells_the_ci_reviewer_to_suggest_not_push(self):
         skill = read(os.path.join(harness.REPO_ROOT, ".claude", "skills", "pr_review", "SKILL.md"))
         ci = skill.split("## CI MODE", 1)[1].split("## FORBIDDEN", 1)[0]
         self.assertNotIn("[pr-autofix]", ci)
         self.assertNotRegex(ci, r"(?i)\bcommit to the PR's head branch\b")
+        self.assertNotIn("gh pr review", ci, "in CI the workflow posts; the model has no gh")
+        self.assertIn(".pr_context/diff.txt", ci)
+        self.assertIn("./review.md", ci)
         self.assertIn("Never edit, commit or push in CI mode", skill)
 
 

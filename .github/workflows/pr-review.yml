@@ -112,6 +112,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false   # no git credential left on disk: the reviewer reads, it doesn't push
+      - name: Collect the pull request for the reviewer
+        # The reviewer gets the pull request as files and no credential at all; this step and
+        # "Post the review" below hold the token, and both are deterministic.
+        if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p .pr_context
+          gh pr view "$PR" --repo "$REPO" --json number,title,body,author,baseRefName,headRefName,files,additions,deletions > .pr_context/pr.json
+          gh pr diff "$PR" --repo "$REPO" > .pr_context/diff.txt
       - name: Claude review (pr_review skill)
         id: claude_review
         continue-on-error: true   # the review counts if verdict.json is valid (see 'Require a valid verdict'); timeout-minutes is the runaway guard
@@ -125,17 +137,31 @@ jobs:
           # Pull requests opened by automation (an agent's app, a dependency bot) still get reviewed.
           allowed_bots: "*"
           prompt: "/pr_review ${{ github.repository }} ${{ github.event.pull_request.number }}"
-          # The tools are the boundary, not the prompt: the reviewer can read the tree, read the
-          # pull request, post its review, and write verdict.json. No other file edit, no git, no
-          # gh api, so it cannot change the branch even if the prompt is ignored.
+          # The tools are the boundary, not the prompt: the reviewer can read the tree and
+          # .pr_context/, and write two files, review.md and verdict.json. No shell, no GitHub
+          # token, so a prompt-injected diff can't change the branch, post on its own, or read a
+          # credential. "Post the review" publishes what it wrote.
           claude_args: |
             --model claude-sonnet-4-6
-            --allowedTools "Read,Glob,Grep,Edit(./verdict.json),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr review:*),Bash(gh pr comment:*)"
-            --append-system-prompt "You are running headless in GitHub Actions CI as the always-on PR reviewer. Follow the pr_review skill CI mode exactly: review with intent; SUGGEST safe mechanical fixes as exact changes in your comment (you cannot and must not edit, commit or push to the branch); APPROVE good work; request-changes only on genuine blockers; and ALWAYS write ./verdict.json per the skill schema."
+            --allowedTools "Read,Glob,Grep,Edit(./review.md),Edit(./verdict.json)"
+            --append-system-prompt "You are running headless in GitHub Actions CI as the always-on PR reviewer. Follow the pr_review skill CI mode exactly. The pull request is in ./.pr_context/ (pr.json and diff.txt); you have no shell and no GitHub access. Review with intent; SUGGEST safe mechanical fixes as exact changes; never edit any other file. Write your review comment to ./review.md and ALWAYS write ./verdict.json per the skill schema; a later workflow step posts them."
+        # DB-free v1: no DATABASE_CONNECTION_URL on the runner (smallest attack surface, matches
+        # the client version). Schema-checks downgraded to "flag for human" in the skill.
+      - name: Post the review
+        # Deterministic: approve unless the verdict has an error-severity issue, then request
+        # changes. If this repository doesn't let Actions approve, it comments instead.
+        if: always() && env.HAS_CLAUDE_CREDENTIAL == 'yes'
         env:
-          # DB-free v1: no DATABASE_CONNECTION_URL on the runner (smallest attack surface,
-          # matches the client version). Schema-checks downgraded to "flag for human" in the skill.
           GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          [ -f verdict.json ] || { echo "no verdict.json, nothing to post"; exit 0; }
+          event=$(node -e 'const v=JSON.parse(require("fs").readFileSync("verdict.json","utf8")); console.log(v.has_error_severity ? "--request-changes" : "--approve")') || exit 0
+          [ -s review.md ] || node -e 'const v=JSON.parse(require("fs").readFileSync("verdict.json","utf8")); require("fs").writeFileSync("review.md", String(v.plain_english || v.summary || "Reviewed."))'
+          gh pr review "$PR" --repo "$REPO" "$event" --body-file review.md \
+            || gh pr review "$PR" --repo "$REPO" --comment --body-file review.md \
+            || echo "::warning::could not post the review"
       - name: Persist verdict for the gate job
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

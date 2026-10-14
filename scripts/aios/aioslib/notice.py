@@ -28,7 +28,10 @@ UPSTREAM = "https://github.com/funnel-futurist/ff-aios-starter"
 RAW = "https://raw.githubusercontent.com/funnel-futurist/ff-aios-starter"
 CACHE = os.path.join(".aios", "release_notice.json")
 EVERY = 24 * 3600
-TIMEOUT = 5
+RETRY = 3600         # after a failed or partial check, wait an hour, so offline costs one delay an hour
+TIMEOUT = 5          # per network call
+BUDGET = 8           # the whole check, all calls together
+CANDIDATES = 3       # the newest few tags above the installed one; a release far behind still shows
 TAG_RE = re.compile(r"refs/tags/starter-(\d+)\.(\d+)\.(\d+)$")
 
 
@@ -62,12 +65,12 @@ def fetch_record(ref, version, timeout=TIMEOUT):
         return None
 
 
-def newest_approved(installed, tags, fetch):
+def newest_approved(installed, tags, fetch, limit=CANDIDATES):
     """(version, complete): the newest version above `installed` that main and its tag both record
     as approved, and whether every record needed to decide was actually read. An unread record is
     "unknown", not "not approved", so the caller doesn't cache a day of silence after a blip."""
     complete = True
-    for ver in sorted((t for t in tags if t > installed), reverse=True):
+    for ver in sorted((t for t in tags if t > installed), reverse=True)[:limit]:
         text = "%d.%d.%d" % ver
         on_main = fetch("main", text)
         if on_main is None:
@@ -93,8 +96,9 @@ def line_for(installed_text, newest_text):
             "docs/INSTALL_AND_UPGRADE.md (run `aios release check-tag` first)." % (newest_text, installed_text))
 
 
-def check(target, now=None, tags_fn=None, fetch_fn=None):
-    """One line to show, or None. At most one network check per day per workspace."""
+def check(target, now=None, tags_fn=None, fetch_fn=None, clock=time.monotonic):
+    """One line to show, or None. At most one network check per day per workspace (an hour after a
+    failed one), and never more than BUDGET seconds of network time."""
     if os.environ.get("AIOS_NO_RELEASE_NOTICE") == "1":
         return None                       # opt-out: no network check at all
     now = time.time() if now is None else now
@@ -109,18 +113,33 @@ def check(target, now=None, tags_fn=None, fetch_fn=None):
     cache_path = os.path.join(target, CACHE)
     try:
         cached = util.read_json(cache_path)
-        if cached.get("installed") == installed_text and now - float(cached.get("checked_at", 0)) < EVERY:
+        window = EVERY if cached.get("complete", True) else RETRY
+        if cached.get("installed") == installed_text and now - float(cached.get("checked_at", 0)) < window:
             return cached.get("line")
     except (OSError, ValueError, TypeError):
         pass
-    tags = (tags_fn or list_tags)()
+
+    deadline = clock() + BUDGET
+
+    def remaining():
+        return deadline - clock()
+
+    def fetch(ref, version):
+        if remaining() <= 0.5:
+            return None                   # out of budget: unknown, not "not approved"
+        if fetch_fn:
+            return fetch_fn(ref, version)
+        return fetch_record(ref, version, timeout=min(TIMEOUT, remaining()))
+
+    tags = tags_fn() if tags_fn else list_tags(timeout=min(TIMEOUT, remaining()))
     if not tags:
-        return None                       # offline or GitHub unreachable: say nothing, retry next time
-    newest, complete = newest_approved(installed, tags, fetch_fn or fetch_record)
+        newest, complete = None, False    # offline or GitHub unreachable: say nothing
+    else:
+        newest, complete = newest_approved(installed, tags, fetch)
     line = line_for(installed_text, newest) if newest else None
-    if newest or complete:
-        try:
-            util.write_json(cache_path, {"checked_at": now, "installed": installed_text, "line": line})
-        except OSError:
-            pass
+    try:
+        util.write_json(cache_path, {"checked_at": now, "installed": installed_text, "line": line,
+                                     "complete": bool(newest or complete)})
+    except OSError:
+        pass
     return line

@@ -108,15 +108,37 @@ class Notice(unittest.TestCase):
         self.install("2.9.0")
         self.assertIsNone(notice.check(self.tmp, now=1001, tags_fn=tags("2.9.0"), fetch_fn=self.approved_290()))
 
-    def test_offline_is_silent_and_not_cached(self):
-        self.assertIsNone(notice.check(self.tmp, now=1000, tags_fn=lambda: [], fetch_fn=self.approved_290()))
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, notice.CACHE)))
+    def no_network(self):
+        raise AssertionError("network called inside the back-off window")
 
-    def test_an_unreadable_record_is_unknown_not_a_cached_no(self):
+    def test_offline_is_silent_and_backs_off_for_an_hour_not_a_day(self):
+        self.assertIsNone(notice.check(self.tmp, now=1000, tags_fn=lambda: [], fetch_fn=self.approved_290()))
+        # Offline costs one delay an hour, not one per session start.
+        self.assertIsNone(notice.check(self.tmp, now=1000 + notice.RETRY - 1, tags_fn=self.no_network))
+        line = notice.check(self.tmp, now=1000 + notice.RETRY + 1, tags_fn=tags("2.9.0"), fetch_fn=self.approved_290())
+        self.assertIn("2.9.0", line)
+
+    def test_an_unreadable_record_is_unknown_and_retried_after_an_hour(self):
         f = Fetch({})          # every fetch fails
         self.assertIsNone(notice.check(self.tmp, now=1000, tags_fn=tags("2.9.0"), fetch_fn=f))
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, notice.CACHE)))
-        self.assertIn("2.9.0", notice.check(self.tmp, now=1001, tags_fn=tags("2.9.0"), fetch_fn=self.approved_290()))
+        self.assertIsNone(notice.check(self.tmp, now=1001, tags_fn=self.no_network))
+        self.assertIn("2.9.0", notice.check(self.tmp, now=1000 + notice.RETRY + 1, tags_fn=tags("2.9.0"),
+                                            fetch_fn=self.approved_290()))
+
+    def test_the_whole_check_stays_inside_its_time_budget(self):
+        ticks = iter([0, notice.BUDGET + 1, notice.BUDGET + 2, notice.BUDGET + 3])  # deadline, then spent
+        f = self.approved_290()
+        line = notice.check(self.tmp, now=1000, tags_fn=tags("2.9.0"), fetch_fn=f, clock=lambda: next(ticks))
+        self.assertIsNone(line)
+        self.assertEqual(f.calls, [], "no call starts once the budget is spent")
+        # Out of budget is "unknown": retried after the short window, not a day later.
+        self.assertIn("2.9.0", notice.check(self.tmp, now=1000 + notice.RETRY + 1, tags_fn=tags("2.9.0"),
+                                            fetch_fn=self.approved_290()))
+
+    def test_only_the_newest_few_candidates_are_read(self):
+        f = Fetch({})
+        notice.check(self.tmp, now=1000, tags_fn=tags("2.9.0", "2.10.0", "2.11.0", "2.12.0", "2.13.0"), fetch_fn=f)
+        self.assertEqual(len({v for _ref, v in f.calls}), notice.CANDIDATES)
 
     def test_not_an_installed_workspace_says_nothing(self):
         os.remove(os.path.join(self.tmp, ".aios", "install.json"))
