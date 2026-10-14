@@ -32,7 +32,7 @@
 | **Docs** | The install guide, `SETUP.md`, `README`, `GETTING_STARTED`, `taxonomy_rules.md`, the decision record (with a 10-14 amendment) and 10 skills now use the new paths. |
 
 **What was proven** (detail in `evidence/dispatch/p22-starter/release-3.0.0/`):
-- **Every starting version 3.0 upgrades from, each installed by its own installer:** 2.6.0, 2.6.1, 2.7.0, 2.7.1, 2.7.2, 2.8.0, 2.9.0 and 2.10.0, plus two previously upgraded workspaces (2.6.0 → 2.8.0 → 2.10.0 and 2.7.0 → 2.9.0) and one adopted workspace (2.7.2). Each carried the client's own edits: an edited seed, their own files in every old folder, a git-ignored `.env`, binary and executable files, a Unicode name, empty folders, junk files and their own `CLAUDE.md` rule.
+- **Every starting version, each installed by its own installer:** the six approved releases (2.6.0, 2.7.0, 2.7.2, 2.8.0, 2.9.0 and 2.10.0) and the folder layouts of 2.6.1 and 2.7.1. Those two were never approved, so no real workspace carries their record; they ran on a rehearsal-only approval copy. Plus two previously upgraded workspaces (2.6.0 → 2.8.0 → 2.10.0 and 2.7.0 → 2.9.0) and one adopted workspace (2.7.2). Each carried the client's own edits: an edited seed, their own files in every old folder, a git-ignored `.env`, binary and executable files, a Unicode name, empty folders, junk files and their own `CLAUDE.md` rule.
 - **For each of those 11:**
   - the dry run is blocked until Vercel is decided, and shows the exact map line;
   - after the upgrade, an independent proof finds every client file at its mapped path with the same bytes, size and permissions, and nothing else of theirs changed;
