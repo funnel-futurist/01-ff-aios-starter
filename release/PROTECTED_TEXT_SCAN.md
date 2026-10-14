@@ -33,6 +33,16 @@ A **fingerprint list** is made privately from the protected source files. The pu
 
 If the list is not configured, CI prints a `NOT RUN` warning and the scan command refuses to say "clean". Not having looked is not a result.
 
+### Where FF's own list lives, and when it runs
+
+- **A repository secret holds at most 48 KB**, about 2,500 fingerprints. That fits a short list of chosen passages. It doesn't fit a whole protected layer: FF's list is about 110 MB.
+- **So FF keeps its list on a maintainer's machine and runs the scan at every release cut**, before the release is approved. The release brief records:
+  - the findings;
+  - how each was classified;
+  - the list's sha256.
+- **This repository's CI keeps printing `NOT RUN`.** That's accurate: CI didn't look.
+- **A list too large to load** can keep 1 window in N, chosen by digest, with a lower `min_hits`. The list file records that choice. Measure detection with planted passages before relying on it.
+
 ## Commands
 
 Private side, once per change to the protected set (output stays OUTSIDE this repository):
@@ -53,7 +63,7 @@ python3 scripts/aios/aios.py protected scan --fingerprints /private/path/fingerp
 # or: AIOS_PROTECTED_FINGERPRINTS=/private/path/fingerprints.json python3 scripts/aios/aios.py protected scan
 ```
 
-Exit code 7 on any finding. To use the repository secret, store the file's contents as `PROTECTED_FINGERPRINTS_JSON`; the `tests` job then runs the real scan.
+Exit code 7 on any finding. To use the repository secret (a list of 48 KB or less), store the file's contents as `PROTECTED_FINGERPRINTS_JSON`; the `tests` job then runs the real scan.
 
 ## The allow-list: `release/public_methods.json`
 
