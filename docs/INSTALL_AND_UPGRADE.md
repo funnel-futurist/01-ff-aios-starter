@@ -258,6 +258,16 @@ With `--repo` it also re-derives every hash from the pinned commit in the source
 catches exactly that. The output always says which of the two it ran. Use `--repo` when the answer
 matters to somebody other than you.
 
+## Hearing about a new release
+
+Once a day, `aios start` and the session-start check look up the Starter's public release tags and
+tell you in one line when a newer approved release exists: "Starter X is approved; this workspace
+has Y". It only reads (the tag list and two public release records on GitHub), never changes
+anything, and says nothing when you're offline. It names a release only when the record on `main`
+and the one inside its tag both say approved, pinned to the same commit, so a withdrawn or replaced
+release is never advertised. Before you upgrade, still run `check-tag` (above). To switch the check
+off, set `AIOS_NO_RELEASE_NOTICE=1` in your environment.
+
 ## For maintainers: approving a release
 
 1. Cut the draft: `python3 scripts/aios/aios.py release build --version X.Y.Z --rev <commit on main>`.

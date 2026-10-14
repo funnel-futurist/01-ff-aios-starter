@@ -1,9 +1,15 @@
 # Converged PR auto-reviewer — event-driven, one brain (pr_review skill), GitHub-enforced gate.
 #
-# Three jobs:
+# Four jobs:
 #   static_checks — deterministic floor (no LLM). REQUIRED status check. Fails only on a true BLOCK.
 #   ai_review     — runs the pr_review skill via claude-code-action. Posts the review, writes verdict.json.
-#   gate          — deterministic. Sets the `pr-gate` commit status + enables native auto-merge if eligible.
+#                   It reads and comments; it never changes the branch (LW-21).
+#   gate          — deterministic. Sets the `pr-gate` commit status and decides auto-merge eligibility.
+#   automerge     — enables native auto-merge, only when the repo variable PR_AUTOMERGE is "on" and the
+#                   gate said eligible. The only job that can write to the repository.
+#
+# Supply chain (LW-21): every action is pinned to a full commit SHA, with its version as a comment.
+# A tag can be moved to different code; a SHA can't. Bump pins in the template, then ship a release.
 #
 # Gating model (all GitHub-enforced):
 #   Tier 1 (in-lane, low-risk, eligible)        -> auto-merge, no human
@@ -24,12 +30,8 @@ concurrency:
   group: pr-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-permissions:
-  contents: write          # enable auto-merge
-  pull-requests: write     # post review comment
-  statuses: write          # set the pr-gate commit status
-  checks: read
-  id-token: write          # reserved (OIDC, if ever routed via Bedrock/Vertex)
+# Nothing by default: each job asks for only what it uses (LW-21).
+permissions: {}
 
 jobs:
   # ── 1. Deterministic floor — required status check, zero deps, zero cost ──────
@@ -38,13 +40,17 @@ jobs:
     timeout-minutes: 5
     # Skip forks (no secrets there); internal org PRs come from branches, not forks.
     if: github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read           # check out the code
+      pull-requests: read      # gh pr diff / gh pr view
     outputs:
       has_block: ${{ steps.run.outputs.has_block }}
       overall: ${{ steps.run.outputs.overall }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Collect PR diff + metadata
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,7 +77,7 @@ jobs:
           exit $code      # exit 1 on BLOCK -> this required check goes red
       - name: Persist verdict for the gate job
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: static_verdict
           path: static_verdict.json
@@ -85,6 +91,10 @@ jobs:
     needs: static_checks
     # Skip the (paid) deep review when the deterministic floor already hard-blocks. Matches the cron.
     if: needs.static_checks.outputs.has_block != 'true'
+    permissions:
+      contents: read           # read the code; the reviewer never pushes (LW-21)
+      pull-requests: write     # post the review and its comment
+      id-token: write          # claude-code-action's own sign-in (OIDC); not a repository write
     env:
       # "No credential configured" and "the reviewer crashed" are different facts and must not
       # look the same. Without this, a repo that never configured a key shows a red X on every
@@ -97,37 +107,64 @@ jobs:
           echo "::warning title=AI review not configured::No ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret is set for this repository, so no AI review ran. The deterministic floor (static_checks) still ran. This PR needs a human review before merge."
           printf '%s\n' '{"configured": false, "reason": "no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret"}' > verdict.json
           { echo "### AI review"; echo; echo "**Not configured** — no Claude credential secret on this repository."; echo "The deterministic floor still ran. A human reviews this PR."; } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@v4          # check out the PR HEAD branch so the reviewer can push auto-fixes (+ discover .claude/skills)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: false   # no git credential left on disk: the reviewer reads, it doesn't push
+      - name: Collect the pull request for the reviewer
+        # The reviewer gets the pull request as files and no credential at all; this step and
+        # "Post the review" below hold the token, and both are deterministic.
+        if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p .pr_context
+          gh pr view "$PR" --repo "$REPO" --json number,title,body,author,baseRefName,headRefName,files,additions,deletions > .pr_context/pr.json
+          gh pr diff "$PR" --repo "$REPO" > .pr_context/diff.txt
       - name: Claude review (pr_review skill)
         id: claude_review
         continue-on-error: true   # the review counts if verdict.json is valid (see 'Require a valid verdict'); timeout-minutes is the runaway guard
         if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@34968b5981d5d170904281aa3df6f3c0d4a28855 # v1.0.249
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # A subscription token from `claude setup-token` works too, so a client without API
           # billing can still run the reviewer.
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Allow the action to run on bot-initiated events — needed so the re-run AFTER an auto-fix
-          # push (made by the claude bot) is permitted to finalize (review→approve). The skill's
-          # [pr-autofix] loop guard prevents an actual loop (the re-run reviews, it never re-fixes).
+          # Pull requests opened by automation (an agent's app, a dependency bot) still get reviewed.
           allowed_bots: "*"
           prompt: "/pr_review ${{ github.repository }} ${{ github.event.pull_request.number }}"
+          # The tools are the boundary, not the prompt: the reviewer can read the tree and
+          # .pr_context/, and write two files, review.md and verdict.json. No shell, no GitHub
+          # token, so a prompt-injected diff can't change the branch, post on its own, or read a
+          # credential. "Post the review" publishes what it wrote.
           claude_args: |
             --model claude-sonnet-4-6
-            --allowedTools Bash,Read,Glob,Grep,Write,Edit
-            --append-system-prompt "You are running headless in GitHub Actions CI as the always-on PR reviewer. Follow the pr_review skill CI mode exactly: review with intent; AUTO-FIX safe mechanical issues and push them to the PR branch (honor the [pr-autofix] loop guard — never re-fix your own fix commit); APPROVE good work; request-changes only on genuine blockers; and ALWAYS write ./verdict.json per the skill schema. Never auto-fix secrets or destructive changes."
+            --allowedTools "Read,Glob,Grep,Edit(./review.md),Edit(./verdict.json)"
+            --append-system-prompt "You are running headless in GitHub Actions CI as the always-on PR reviewer. Follow the pr_review skill CI mode exactly. The pull request is in ./.pr_context/ (pr.json and diff.txt); you have no shell and no GitHub access. Review with intent; SUGGEST safe mechanical fixes as exact changes; never edit any other file. Write your review comment to ./review.md and ALWAYS write ./verdict.json per the skill schema; a later workflow step posts them."
+        # DB-free v1: no DATABASE_CONNECTION_URL on the runner (smallest attack surface, matches
+        # the client version). Schema-checks downgraded to "flag for human" in the skill.
+      - name: Post the review
+        # Deterministic: approve unless the verdict has an error-severity issue, then request
+        # changes. If this repository doesn't let Actions approve, it comments instead.
+        if: always() && env.HAS_CLAUDE_CREDENTIAL == 'yes'
         env:
-          # DB-free v1: no DATABASE_CONNECTION_URL on the runner (smallest attack surface,
-          # matches the client version). Schema-checks downgraded to "flag for human" in the skill.
           GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          [ -f verdict.json ] || { echo "no verdict.json, nothing to post"; exit 0; }
+          event=$(node -e 'const v=JSON.parse(require("fs").readFileSync("verdict.json","utf8")); console.log(v.has_error_severity ? "--request-changes" : "--approve")') || exit 0
+          [ -s review.md ] || node -e 'const v=JSON.parse(require("fs").readFileSync("verdict.json","utf8")); require("fs").writeFileSync("review.md", String(v.plain_english || v.summary || "Reviewed."))'
+          gh pr review "$PR" --repo "$REPO" "$event" --body-file review.md \
+            || gh pr review "$PR" --repo "$REPO" --comment --body-file review.md \
+            || echo "::warning::could not post the review"
       - name: Persist verdict for the gate job
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ai_verdict
           path: verdict.json
@@ -141,17 +178,22 @@ jobs:
           node -e 'const fs=require("fs"); let v; try { v=JSON.parse(fs.readFileSync("verdict.json","utf8")); } catch (e) { process.exit(1); } const q=v && v.quality_score; process.exit(typeof q==="number" && q>=1 && q<=10 ? 0 : 1);' \
             || { echo "::error::No valid verdict.json - the AI review did not finish"; exit 1; }
 
-  # ── 3. Deterministic gate — sets pr-gate status + enables native auto-merge ───
+  # ── 3. Deterministic gate — sets pr-gate status + decides auto-merge eligibility ─
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [static_checks, ai_review]
     if: always() && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      statuses: write          # set the pr-gate commit status; nothing else
+    outputs:
+      eligible: ${{ steps.decide.outputs.eligible }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with: { name: ai_verdict, path: ., merge-multiple: true }
         continue-on-error: true            # ai_review may have been skipped (hard block) — handled below
-      - name: Decide gate + auto-merge
+      - name: Decide gate + auto-merge eligibility
+        id: decide
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
@@ -198,14 +240,13 @@ jobs:
           const eligible = !gateFail && !aiErrored && !notConfigured && !codeownerTouched && v && tierEligible;
           const armed = process.env.PR_AUTOMERGE === 'on';   // repo variable; OFF during bake = kill-switch
 
+          // The merge itself is the automerge job's: it alone holds write access, and it runs only
+          // when PR_AUTOMERGE is "on" and this says eligible.
+          fs.appendFileSync(process.env.GITHUB_OUTPUT || '/dev/null', `eligible=${eligible ? 'true' : 'false'}\n`);
+
           let mergeNote = 'manual merge';
           if (eligible && armed) {
-            try {
-              sh(`gh pr merge ${PR} --repo ${REPO} --squash --auto --delete-branch`);
-              mergeNote = `auto-merge enabled (${adds} lines, score ${score}/10)`;
-            } catch (e) {
-              mergeNote = 'auto-merge enable failed: ' + e.message.split('\n')[0];
-            }
+            mergeNote = `eligible (${adds} lines, score ${score}/10) — the automerge job enables auto-merge`;
           } else if (eligible && !armed) {
             mergeNote = `eligible (${adds} lines, score ${score}/10) — auto-merge DISARMED (PR_AUTOMERGE != on)`;
           } else if (notConfigured) {
@@ -240,3 +281,27 @@ jobs:
           curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H "Content-Type: application/json" \
             -d "$payload" >/dev/null || true
+
+  # ── 4. Auto-merge — the only job that can write, and only when switched on ──────
+  automerge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: gate
+    # Off unless the repository variable PR_AUTOMERGE is "on" (unset = off: bake mode and
+    # kill-switch), and only for a pull request the deterministic gate called eligible.
+    if: vars.PR_AUTOMERGE == 'on' && needs.gate.outputs.eligible == 'true'
+    permissions:
+      contents: write          # native auto-merge needs it
+      pull-requests: write
+    steps:
+      - name: Enable native auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh pr merge "$PR" --repo "$REPO" --squash --auto --delete-branch; then
+            echo "### Auto-merge" >> "$GITHUB_STEP_SUMMARY"; echo "- enabled" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::auto-merge enable failed; a human merges"
+          fi
