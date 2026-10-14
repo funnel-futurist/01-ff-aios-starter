@@ -2,10 +2,10 @@
 
 **Written for:** the founder, before approving. About three minutes.
 
-> **Candidate, not approved.** `releases/starter-2.10.0.json` is a draft pinned to `688521e47315850d3bffe055c48fddac0b6f5c9a`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
+> **Candidate, not approved.** `releases/starter-2.10.0.json` is a draft pinned to `522668d3f95447d81fbc7b3f46ec7ad508c853fc`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
 
 ## Decision
-**Approve AIOS Starter 2.10.0 at `688521e`.** It's the small release agreed before the 3.0 folder rebuild. It bundles four reviewed pull requests:
+**Approve AIOS Starter 2.10.0 at `522668d`.** It's the small release agreed before the 3.0 folder rebuild. It bundles four reviewed pull requests:
 - step-by-step cards for the human steps;
 - instructions Codex can read;
 - safer review workflows, whose reviewer can't change a client's branch;
@@ -21,7 +21,7 @@
 
 | Change | From | What the client gets |
 |---|---|---|
-| **Human-step cards** | #35 | Seven click-by-click cards in `docs/human_steps/`: GitHub two-factor, removing an org member, a Supabase token, a Supabase backup, connecting Vercel, and running a terminal command from Claude. Each was re-checked against the vendor's docs on 10-14. The setup wizard now secures access before inviting the team, and `SECURITY.md` no longer overstates what the deny rules block. |
+| **Human-step cards** | #35 | Six click-by-click cards in `docs/human_steps/`, with an index: GitHub two-factor, removing an org member, a Supabase token, a Supabase backup, connecting Vercel, and running a terminal command from Claude. Each was re-checked against the vendor's docs on 10-14. The setup wizard now secures access before inviting the team, and `SECURITY.md` no longer overstates what the deny rules block. |
 | **Codex reads the same instructions** | #36 | A generated `AGENTS.md`: the workspace's `CLAUDE.md` as shipped, plus the operator core, inlined. It carries the template's text, not a client's own edits: client rules for Codex go in `~/.codex/AGENTS.md`, and the file says so. |
 | **Safer review workflows** | #38 | Every action is pinned to an exact version. Each job has only the access it uses, and only the separate auto-merge job can write, when switched on. The AI reviewer has no shell and no token: it reads the PR and writes its review, and a fixed step posts it. **In CI it now suggests exact fixes instead of pushing them.** |
 | **Hearing about a new release** | #38 | Once a day, `aios start` and the session start show one line when a newer approved release exists. It's read-only, silent offline, and off with `AIOS_NO_RELEASE_NOTICE=1`. |
@@ -55,7 +55,7 @@
 - **If not approved:** clients stay on 2.9.0: workflows not pinned, the reviewer able to push to their branch, no Codex instructions, no cards, no notice. The 3.0 rebuild waits.
 
 ## Owner action
-1. **Say:** "Approve starter 2.10.0 at 688521e".
+1. **Say:** "Approve starter 2.10.0 at 522668d".
 2. Lane 0.1 records the approval: a commit to `releases/` only, with the record re-cut byte-identical. It tags `starter-2.10.0` once `check-tag` passes, and marks 2.9.0 `superseded`.
 3. **Platform approval:** GitHub requires one code owner's approval on the release pull request. Either founder's approval works.
 4. Chat Zero merges with a merge commit as the FF Agents App.

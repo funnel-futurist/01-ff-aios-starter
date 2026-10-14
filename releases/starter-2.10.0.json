@@ -18,7 +18,7 @@
   },
   "created_from": {
     "branch": "exec/lane01-starter-2.10.0-20261014",
-    "git_rev": "688521e47315850d3bffe055c48fddac0b6f5c9a"
+    "git_rev": "522668d3f95447d81fbc7b3f46ec7ad508c853fc"
   },
   "credentials": [
     {
@@ -544,7 +544,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "GETTING_STARTED.md",
-      "sha256": "1e8866127b984196ce5b3d3a189d58f70d06f4e48628895b69e645b8543304a9"
+      "sha256": "f9c75b24b5ece9b3190eca4c68870fed4005d417f2a5851d62f0926f47ddc095"
     },
     {
       "class": "managed",
