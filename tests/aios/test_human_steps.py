@@ -56,7 +56,7 @@ class HumanStepCards(unittest.TestCase):
         for name in CARDS + ["README.md"]:
             text = read("docs", "human_steps", name)
             self.assertNotIn("03_RevOps", text, name)
-            self.assertNotRegex(text, r"human_step\b(?!s)", name)
+            self.assertNotRegex(text, r"human_step(?!s)", name)
 
     def test_the_install_guide_points_at_the_cards(self):
         self.assertIn("human_steps/README.md", read("docs", "INSTALL_AND_UPGRADE.md"))
@@ -66,9 +66,12 @@ class WizardOrder(unittest.TestCase):
 
     def test_airlocks_come_before_the_team_invite(self):
         lines = read(".claude", "skills", "onboard_wizard", "SKILL.md").splitlines()
-        airlock = next(i for i, l in enumerate(lines) if re.match(r"\d+\. \*\*Secure it", l))
-        invite = next(i for i, l in enumerate(lines) if re.match(r"\d+\. \*\*Invite your team", l))
+        airlock = next(i for i, l in enumerate(lines)
+                       if re.search(r"^\s*\d+\.\s+\*\*Secure it \(airlocks\)", l))
+        invite = next(i for i, l in enumerate(lines)
+                      if re.search(r"^\s*\d+\.\s+\*\*Invite your team\*\*", l))
         self.assertLess(airlock, invite)
+        self.assertIn("2FA", lines[airlock])
 
 
 class SecurityClaims(unittest.TestCase):
