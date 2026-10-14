@@ -27,7 +27,7 @@
   ],
   "template": "ff-aios-starter",
   "updated": "2026-10-14",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "plugins": [
     {
       "id": "document-skills@anthropic-agent-skills",
