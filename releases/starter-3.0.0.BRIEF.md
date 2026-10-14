@@ -2,10 +2,10 @@
 
 **Written for:** the founder, before approving. About five minutes.
 
-> **Candidate, not approved.** `releases/starter-3.0.0.json` is a draft pinned to `98f4352260b63503ca49b734acfd8f43a38e4703`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
+> **Candidate, not approved.** `releases/starter-3.0.0.json` is a draft pinned to `abbdd9c7b04c6c1bffa1283b3364092d399841c3`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
 
 ## Decision
-**Approve AIOS Starter 3.0.0 at `98f4352`.** It's the folder rebuild you ruled on 2026-10-14: one repository per company with phase folders, rebuilt on 2.10.0. Client files keep every byte, and the migration and rollback are proven.
+**Approve AIOS Starter 3.0.0 at `abbdd9c`.** It's the folder rebuild you ruled on 2026-10-14: one repository per company with phase folders, rebuilt on 2.10.0. Client files keep every byte, and the migration and rollback are proven.
 
 ## Principle
 - **Paths change, bytes never do.** The upgrade moves the client's files: it never rewrites, merges or deletes them.
@@ -59,7 +59,7 @@
 - **If not approved:** clients stay on 2.10.0 with the numbered folders. The rebuild waits on the branch.
 
 ## Owner action
-1. **Say:** "Approve starter 3.0.0 at 98f4352".
+1. **Say:** "Approve starter 3.0.0 at abbdd9c".
 2. Lane 0.1 records the approval:
    - a commit to `releases/` only, with the record re-cut byte-identical;
    - 2.10.0 marked `superseded`;

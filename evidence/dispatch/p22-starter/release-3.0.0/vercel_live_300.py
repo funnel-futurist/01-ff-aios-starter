@@ -19,6 +19,7 @@ written. Everything it creates is deleted at the end, even after a failure.
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -166,7 +167,9 @@ def main():
         # where the process list would show it.
         code, out = sh(["vercel", "deploy", "--prod", "--yes", "--cwd", ws],
                        env={"VERCEL_ORG_ID": scope, "VERCEL_PROJECT_ID": project})
-        url = next((l.strip() for l in out.splitlines() if l.strip().startswith("https://")), "")
+        # The CLI prints the address inside a line ("Production: https://... [2s]"), not on its own.
+        found = re.search(r"https://[A-Za-z0-9.-]+\.vercel\.app", out)
+        url = found.group(0) if found else ""
         check("deployed (exit %d)" % code, code == 0 and url, "" if code == 0 else out[-300:].replace(token, "***"))
         code, deps = call(token, "GET", "/v6/deployments?projectId=%s&limit=1" % project, scope=scope)
         dep = (deps.get("deployments") or [{}])[0]
