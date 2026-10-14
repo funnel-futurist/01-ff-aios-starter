@@ -1246,7 +1246,9 @@ try:
 except ImportError:  # everywhere but Windows
     _msvcrt = None
 
-GUARD_PATH = os.path.join(AIOS_DIR, "guard")
+# In the installer's own git-ignored backups folder, which every release since 2.6 reserves, so it
+# can never be a file of the client's (independent review, round 12).
+GUARD_PATH = os.path.join(BACKUP_DIR, "guard")
 
 
 class _RecoveryGuard(object):
@@ -1259,8 +1261,9 @@ class _RecoveryGuard(object):
     across processes the same way (round 11). A system with neither is refused rather than left
     unguarded. The file exists only while held: the holder deletes it before letting go, and a
     waiter that then gets the lock checks the name still means the file it locked, or starts
-    again. So nothing is left behind, not even after a refusal. (Windows can't delete an open
-    file, so there it stays, git-ignored.) A killed holder's lock goes with its process."""
+    again. So no file is left behind, not even after a refusal. (Windows can't delete an open
+    file, so there it stays, in the git-ignored backups folder.) A killed holder's lock goes with
+    its process."""
 
     def __init__(self, target):
         self.path = os.path.join(target, GUARD_PATH)
@@ -1270,10 +1273,11 @@ class _RecoveryGuard(object):
         if _fcntl is None and _msvcrt is None:
             raise Refusal(EXIT_STATE, "this system has no file lock the installer can use, so it won't "
                                       "change anything", ["run it on macOS, Linux or Windows"])
-        aios_dir = os.path.dirname(self.path)
-        if os.path.islink(aios_dir) or (os.path.lexists(aios_dir) and not os.path.isdir(aios_dir)):
-            raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % aios_dir)
-        os.makedirs(aios_dir, exist_ok=True)
+        backups = os.path.dirname(self.path)
+        for part in (os.path.dirname(backups), backups):  # .aios, .aios/backups: real folders
+            if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
+                raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
+        os.makedirs(backups, exist_ok=True)
         while True:
             fd = os.open(self.path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o644)
             try:
@@ -1297,7 +1301,7 @@ class _RecoveryGuard(object):
             try:
                 os.remove(self.path)  # while still held, so no one can be locking it as it goes
             except OSError:
-                pass  # Windows: an open file can't be deleted; it stays, git-ignored
+                pass  # Windows: an open file can't be deleted; it stays, in the ignored backups
             _os_unlock(self.fd)
             os.close(self.fd)
             self.fd = None

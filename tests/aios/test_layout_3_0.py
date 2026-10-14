@@ -867,8 +867,8 @@ class IndependentReviewRegressions(Layout3):
         self.assertEqual(sorted(os.listdir(backups)) if os.path.isdir(backups) else None, before)
         with self.assertRaises(Refusal):
             self.up(no_vercel=False)  # no token, no statement: refused
-        self.assertEqual(sorted(os.listdir(backups)) if os.path.isdir(backups) else None, before)
-        self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios", "guard")))
+        if os.name != "nt":  # Windows can't delete the open guard file, so it stays there
+            self.assertEqual(sorted(os.listdir(backups)) if os.path.isdir(backups) else None, before)
         self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios", "lock")))
 
     def test_2_a_linked_destination_folder_is_refused(self):
@@ -1636,15 +1636,20 @@ class WorkspaceGuard(Sandbox):
     def setUp(self):
         super(WorkspaceGuard, self).setUp()
         os.makedirs(os.path.join(self.target, ".aios"))
-        self.guard = os.path.join(self.target, ".aios", "guard")
+        self.guard = os.path.join(self.target, ".aios", "backups", "guard")
         self.addCleanup(setattr, install_mod, "_fcntl", install_mod._fcntl)
         self.addCleanup(setattr, install_mod, "_msvcrt", install_mod._msvcrt)
 
-    def test_it_leaves_nothing_behind(self):
+    @unittest.skipIf(os.name == "nt", "Windows can't delete the open guard file")
+    def test_it_leaves_no_file_behind_and_nothing_of_the_clients_is_touched(self):
+        write(self.target, ".aios/guard", "a file of the client's, at the 3.0 rc's first guard path\n")
         with install_mod._RecoveryGuard(self.target):
             self.assertTrue(os.path.isfile(self.guard))
-        self.assertEqual(os.listdir(os.path.join(self.target, ".aios")), [])
+        self.assertEqual(os.listdir(os.path.join(self.target, ".aios", "backups")), [])
+        with open(os.path.join(self.target, ".aios", "guard")) as fh:
+            self.assertIn("client's", fh.read())
 
+    @unittest.skipIf(os.name == "nt", "Windows can't delete the open guard file")
     def test_a_waiter_whose_file_was_deleted_locks_the_one_there_now(self):
         real_lock, rounds = install_mod._os_lock, []
 
@@ -1673,7 +1678,7 @@ class WorkspaceGuard(Sandbox):
         with self.assertRaises(Refusal):
             with install_mod._RecoveryGuard(self.target):
                 self.fail("ran unguarded")
-        self.assertEqual(os.listdir(os.path.join(self.target, ".aios")), [])
+        self.assertEqual(os.listdir(os.path.join(self.target, ".aios")), [])  # not even the folder
 
     def test_a_linked_aios_folder_is_refused(self):
         outside = os.path.join(self.tmp, "outside")
