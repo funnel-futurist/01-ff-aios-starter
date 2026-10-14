@@ -733,7 +733,8 @@ case "$2" in
 esac
 exit 1
 """ % {"login": login, "slug": slug, "rules": rules, "prot": prot, "code": prot_code, "perm": permission,
-       "remote_cmd": ('if [ "$3" = "-H" ]; then cat "%s"; else echo \'%s\'; fi; exit 0' % (remote_file, remote))
+       "remote_cmd": ('if [ "$4" = "Accept: application/vnd.github.raw" ]; then cat "%s"; '
+                      'else echo \'%s\'; fi; exit 0' % (remote_file, remote))
                      if remote_codeowners is not None else "echo '{\"message\": \"Not Found\"}'; exit 1"}
     path = os.path.join(bin_dir, "gh")
     with open(path, "w") as fh:
@@ -1194,6 +1195,64 @@ class ThirdCodexFounder(FounderReview):
         self.addCleanup(os.environ.pop, "GITHUB_REPOSITORY", None)
         self.addCleanup(os.environ.pop, "GITHUB_WORKSPACE", None)
         self.assertEqual(governance.check(self.target), [])  # bound to acme/acme-aios, its own origin
+
+
+class FourthCodexRegressions(Layout3):
+    """Codex round 4: the installer paths under the move, hardened."""
+
+    def test_r4_1_a_release_may_never_take_over_a_seed(self):
+        spec = dict(V3_SPEC, seed=[x for x in V3_SPEC["seed"] if x != "00_AIOS/**"])
+        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2)
+        rev3 = bump_to_v3(self.source, spec=spec)  # 00_AIOS/company/... is now managed
+        v3 = harness.approve(harness.build_manifest(self.source, rev3, "3.0.0"))
+        exc = self.refuses_unchanged(self.up, v3)
+        self.assertIn("would take over", exc.message)
+
+    def test_r4_2_a_planted_link_in_the_backups_folder_redirects_nothing(self):
+        outside = os.path.join(self.tmp, "outside.txt")
+        with open(outside, "w") as fh:
+            fh.write("untouched\n")
+        os.makedirs(os.path.join(self.target, ".aios", "backups"), exist_ok=True)
+        for name in (".write.tmp", ".seed-line.tmp"):
+            os.symlink(outside, os.path.join(self.target, ".aios", "backups", name))
+        self.up()
+        with open(outside) as fh:
+            self.assertEqual(fh.read(), "untouched\n")
+
+    def test_r4_4_a_link_with_the_same_bytes_isnt_identical(self):
+        src = os.path.join(self.tmp, "a.md")
+        with open(src, "w") as fh:
+            fh.write("same\n")
+        link = os.path.join(self.tmp, "b.md")
+        os.symlink(src, link)
+        self.assertFalse(install_mod._identical_regular(src, link))
+
+    def test_r4_5_verify_catches_a_link_and_special_bits(self):
+        self.up()
+        rel = "START_HERE.md"
+        full = os.path.join(self.target, rel)
+        os.chmod(full, 0o4644)
+        problems, _ = install_mod.verify(self.target)
+        self.assertTrue(any("setuid" in p for p in problems), problems)
+        os.chmod(full, 0o644)
+        copy = os.path.join(self.tmp, "copy.md")
+        shutil.copy2(full, copy)
+        os.remove(full)
+        os.symlink(copy, full)
+        problems, _ = install_mod.verify(self.target)
+        self.assertTrue(any("replaced by a link" in p for p in problems), problems)
+
+
+class InstallRefusesBeforeWriting(Sandbox):
+    """Codex round 4: CODEOWNERS is rendered before the first file is written."""
+
+    def test_an_incomplete_owners_map_leaves_the_target_empty(self):
+        v = harness.approve(harness.build_manifest(self.source, self.rev, "2.10.0"))
+        cfg = harness.config(code_owners={"PRIMARY_REVIEWER": ["@acme-founder"]})  # REPO_OWNER missing
+        os.makedirs(self.target)
+        with self.assertRaises(Refusal):
+            install_mod.install(self.target, v, self.source, cfg)
+        self.assertEqual(os.listdir(self.target), [])
 
 
 class SecondReviewFounder(FounderReview):

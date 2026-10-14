@@ -464,7 +464,9 @@ def remote_codeowners(slug):
     branch = repo.get("default_branch") or "main"
     for loc in (".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"):
         path = "repos/%s/contents/%s?ref=%s" % (slug, loc, branch)
-        data, err = _gh_json([path])
+        # The object media type: the default one refuses files over 1 MB (GitHub's contents docs),
+        # which would make a large but valid file look unreadable (independent review, round 5).
+        data, err = _gh_json([path, "-H", "Accept: application/vnd.github.object"])
         if err:
             # GitHub uses the FIRST location that exists, so only a confirmed absence moves on.
             # Any other failure is unverified, never a reason to judge a different file.

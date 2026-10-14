@@ -270,18 +270,36 @@ def write_file(target_root, relpath, data, mode):
     # All at once: a kill leaves either no file or the whole file, never a half-written one that
     # recovery can't tell from the client's own (independent review). The temporary copy lives in
     # the git-ignored backups folder, so a kill can't leave a stray file in the workspace.
-    tmp_dir = os.path.join(target_root, ".aios", "backups")
-    os.makedirs(tmp_dir, exist_ok=True)
-    tmp = os.path.join(tmp_dir, ".write.tmp")
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.chmod(tmp, 0o755 if mode == "100755" else 0o644)
-    if os.path.islink(dest):  # checked again at the moment of the write
-        raise Refusal(EXIT_STATE, "refusing to write through a symlink: %s" % relpath)
-    os.replace(tmp, dest)
+    tmp = private_temp(target_root)
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o755 if mode == "100755" else 0o644)
+        if os.path.islink(dest):  # checked again at the moment of the write
+            raise Refusal(EXIT_STATE, "refusing to write through a symlink: %s" % relpath)
+        os.replace(tmp, dest)
+    finally:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
     return sha256_bytes(data)
+
+
+def private_temp(target_root):
+    """A new, uniquely named, exclusively created regular file in the workspace's git-ignored
+    backups folder: never a name something else planted (a link there would redirect the write).
+    Same disk as the workspace, so the os.replace that follows is atomic (independent review)."""
+    import tempfile
+
+    tmp_dir = os.path.join(target_root, ".aios", "backups")
+    for part in (os.path.join(target_root, ".aios"), tmp_dir):
+        if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
+            raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
+    os.makedirs(tmp_dir, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix=".write-", dir=tmp_dir)
+    os.close(fd)
+    return path
 
 
 def now_iso():

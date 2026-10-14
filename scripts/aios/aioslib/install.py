@@ -164,11 +164,21 @@ def verify(target, record=None, source_repo=None):
         if not os.path.isfile(path):
             problems.append("missing managed file: %s" % entry["path"])
             continue
+        st = os.lstat(path)
+        if not stat.S_ISREG(st.st_mode):
+            problems.append("managed file replaced by a link or something else: %s" % entry["path"])
+            continue
         actual = sha256_file(path)
         checked += 1
         if actual != entry["sha256"]:
             problems.append("modified managed file: %s (on disk %s, release %s)"
                             % (entry["path"], actual[:12], entry["sha256"][:12]))
+        # Permissions: only what git itself keeps (the executable bit), so a teammate's clone with
+        # another umask still verifies; and never setuid, setgid or sticky (independent review).
+        if st.st_mode & 0o7000:
+            problems.append("managed file gained setuid, setgid or sticky permissions: %s" % entry["path"])
+        elif "exec" in entry and bool(st.st_mode & 0o100) != entry["exec"]:
+            problems.append("managed file's executable permission changed: %s" % entry["path"])
     for entry in record.get("rendered") or []:
         if not os.path.isfile(os.path.join(target, entry["path"])):
             problems.append("missing rendered file: %s" % entry["path"])
@@ -236,6 +246,17 @@ def _backup(target, record, txn_id):
     return backup_root
 
 
+def _identical_regular(src, dest):
+    """Both regular files (lstat: a link never counts), same bytes, same permission bits."""
+    try:
+        a, b = os.lstat(src), os.lstat(dest)
+    except OSError:
+        return False
+    return (stat.S_ISREG(a.st_mode) and stat.S_ISREG(b.st_mode)
+            and stat.S_IMODE(a.st_mode) == stat.S_IMODE(b.st_mode)
+            and sha256_file(src) == sha256_file(dest))
+
+
 def _restore_preflight(target, backup_root, record_to_restore, remove_paths, expected=None):
     """Every refusal a restore can make, made before anything changes. Rollback runs it before
     writing its own journal, so a refusal leaves the workspace exactly as it was."""
@@ -261,9 +282,8 @@ def _restore_preflight(target, backup_root, record_to_restore, remove_paths, exp
             if rel in expected or not os.path.lexists(dest):
                 continue
             src = os.path.join(files_root, rel)
-            if os.path.isfile(src) and os.path.isfile(dest) \
-                    and sha256_file(src) == sha256_file(dest):
-                continue  # identical; restoring it changes nothing
+            if _identical_regular(src, dest):
+                continue  # identical; restoring it changes nothing (and it isn't touched)
             collisions.append(rel)
         if collisions:
             raise Refusal(
@@ -309,6 +329,8 @@ def _restore(target, backup_root, record_to_restore, remove_paths, expected=None
         src = os.path.join(files_root, entry["path"])
         dst = os.path.join(target, entry["path"])
         if os.path.isfile(src):
+            if expected is not None and entry["path"] not in expected and _identical_regular(src, dst):
+                continue  # not ours now, and already exactly the release's copy: leave it be
             util.ensure_parent(dst)
             if os.path.islink(dst):
                 os.remove(dst)  # copying onto a link would write wherever it points
@@ -403,6 +425,16 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
 
     managed, seeded, rendered = [], [], []
     template_text = None
+    # Everything that can refuse happens before the first write: rendering CODEOWNERS can refuse an
+    # incomplete owners map, and must not leave a half-installed target (independent review).
+    template_path = manifest.get("render_template") or "templates/governance/CODEOWNERS.template"
+    owners_text = None
+    if render_governance and (config.get("code_owners") or {}):
+        for path, _mode, data in util.read_tree(source_repo, manifest["created_from"]["git_rev"]):
+            if path == template_path and path in files:
+                owners_text = governance.render(data.decode("utf-8"), config["repository"],
+                                                config["code_owners"])
+                break
     for path, mode, data in util.read_tree(source_repo,
                                            manifest["created_from"]["git_rev"]):
         entry = files.get(path)
@@ -410,22 +442,21 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
             continue
         if entry["sha256"] != sha256_bytes(data):
             raise Refusal(EXIT_PACKAGE, "content at the pin does not match the manifest: %s" % path)
-        if path == (manifest.get("render_template") or "templates/governance/CODEOWNERS.template"):
+        if path == template_path:
             template_text = data.decode("utf-8")
         dest_exists = os.path.exists(os.path.join(target, path))
         if entry["class"] == "seed" and dest_exists:
             continue  # yours already; never overwritten
         sha = util.write_file(target, path, data, entry.get("mode", "100644"))
-        (managed if entry["class"] == "managed" else seeded).append(
-            {"path": path, "sha256": sha})
+        rec = {"path": path, "sha256": sha}
+        if entry["class"] == "managed":
+            rec["exec"] = entry.get("mode") == "100755"
+        (managed if entry["class"] == "managed" else seeded).append(rec)
 
-    if render_governance and template_text:
-        owners = config.get("code_owners") or {}
-        if owners:
-            text = governance.render(template_text, config["repository"], owners)
-            sha = util.write_file(target, os.path.join(".github", "CODEOWNERS"),
-                                  text.encode("utf-8"), "100644")
-            rendered.append({"path": ".github/CODEOWNERS", "sha256": sha})
+    if render_governance and template_text and owners_text is not None:
+        sha = util.write_file(target, os.path.join(".github", "CODEOWNERS"),
+                              owners_text.encode("utf-8"), "100644")
+        rendered.append({"path": ".github/CODEOWNERS", "sha256": sha})
 
     util.write_json(orgconfig.default_config_path(target), config)
 
@@ -666,16 +697,18 @@ def _replace_bytes(target, full, data):
     """Write a client file all at once: the old bytes or the new, never half of each. The
     temporary copy lives in the git-ignored backups folder, so a kill can't leave a stray file
     beside the client's own."""
-    mode = os.stat(full).st_mode & 0o7777
-    tmp_dir = os.path.join(target, BACKUP_DIR)
-    os.makedirs(tmp_dir, exist_ok=True)
-    tmp = os.path.join(tmp_dir, ".seed-line.tmp")
-    with open(tmp, "wb") as fh:
-        fh.write(data)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.chmod(tmp, mode)
-    os.replace(tmp, full)
+    mode = stat.S_IMODE(os.lstat(full).st_mode)
+    tmp = util.private_temp(target)
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, full)
+    finally:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
 
 
 def _apply_seed_lines(target, adds):
@@ -778,6 +811,17 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     old_managed = {e["path"]: e for e in record.get("managed") or []}
     old_seeded = {e["path"] for e in record.get("seeded") or []}
 
+    # A path that was the client's seed can't become the release's: the upgrade would overwrite it,
+    # and only release files are backed up (independent review).
+    rules = (manifest.get("layout") or {}).get("moves") or []
+    seed_paths = set(old_seeded)
+    if rules:
+        seed_paths |= {layout_mod.destination(p, rules) or p for p in old_seeded}
+    reclassified = sorted(p for p, e in files.items() if e["class"] == "managed" and p in seed_paths)
+    if reclassified:
+        raise Refusal(EXIT_PACKAGE, "release %s would take over %d file(s) that are yours (seeded "
+                      "by the installed release)" % (manifest["version"], len(reclassified)),
+                      reclassified[:20] + ["a release must never make a seed file its own"])
     # A newly shipped path that already exists as something of yours is a collision. Refuse:
     # the alternative is silently eating a file the release never owned.
     collisions = []
@@ -895,7 +939,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
                 continue
             previous = old_managed.get(path)
             sha = util.write_file(target, path, data, entry.get("mode", "100644"))
-            new_managed.append({"path": path, "sha256": sha})
+            new_managed.append({"path": path, "sha256": sha, "exec": entry.get("mode") == "100755"})
             if previous and previous.get("sha256") != sha:
                 # Fire only after a file that genuinely CHANGED. Crashing after writing a
                 # byte-identical file leaves a workspace that still verifies clean, which
