@@ -21,7 +21,7 @@ Edit this `CLAUDE.md` freely as your business and workflow evolve, it's your bra
 ## Best practices (the guardrails)
 - **Secrets stay out of the repo.** Keys live in `.env` (it's gitignored, so it never reaches GitHub). Set a spend limit on each key; turn on 2FA. (Airlocks: scope access, contain the blast radius.)
 - **Reversible by default.** Commit early and often, git is your safety net. Don't delete important work or force-push.
-- **The PR reviewer has your back.** `.claude/skills/pr_review` reviews every PR, fixes safe issues, approves good work, and flags real risk. It never blocks you.
+- **The PR reviewer has your back.** `.claude/skills/pr_review` reviews every PR, approves good work, flags real risk, and suggests the exact fix for safe issues (in CI it can't change your branch; run `/pr_review` yourself to have it apply them). It never blocks you.
 - **When you're stuck, use the unstuck protocol** (`docs/UNSTUCK_PROTOCOL.md`): Claude in caveman mode → screenshot + AI → YouTube (last 1–2 months) → NotebookLM → escalate. You'll solve ~99% yourself.
 - **Lean beats bloated.** Add the high-impact core; look the specifics up as you go.
 

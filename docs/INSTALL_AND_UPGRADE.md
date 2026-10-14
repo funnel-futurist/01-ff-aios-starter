@@ -64,10 +64,10 @@ git checkout starter-X.Y.Z        # only once check-tag says the tag is the appr
 package file at the tag is byte-identical to the pin. If it refuses, don't install from the
 tag.
 
-**starter-2.6.0 is the known exception.** Its tag was placed on the pinned commit before the
-approval was recorded, so the record inside the tag is an earlier draft and `check-tag`
-refuses it. Published tags are never moved. Install 2.6.0 from the normal copy instead: the
-installer still materialises only the pinned 2.6.0 files and re-hashes them on disk.
+Published tags are never moved. One was withdrawn: `starter-2.6.0`, on 2026-10-14. That
+release bundled third-party document-skill files whose licence doesn't allow redistribution,
+and it was already superseded, so it can't be installed. Workspaces still on 2.6.0 upgrade
+as usual; the upgrade removes those copies.
 
 ## Installing a new workspace
 
