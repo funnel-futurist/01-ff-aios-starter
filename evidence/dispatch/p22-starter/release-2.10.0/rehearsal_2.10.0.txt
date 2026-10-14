@@ -1,0 +1,124 @@
+
+### R0 tools
+Python 3.9.6
+git version 2.50.1 (Apple Git-155)
+v25.8.1
+
+### R1 fresh clone of the candidate branch from GitHub
+95d1dd9 release(starter-2.10.0): draft record pinned at 688521e
+record status: draft | pin: 688521e47315850d3bffe055c48fddac0b6f5c9a | files: {'files': 131, 'managed': 95, 'seed': 36, 'skills': 22}
+2.8.0 record status: superseded
+2.6.0 record status: superseded
+2.9.0 record status: approved
+
+### R2 the real draft record is refused (no approval inferred)
+install exit=2 (expect 2)
+
+### R3 fresh install of the exact candidate
+installed starter-2.10.0 into r2100/fresh
+  by:       rehearsal-founder (founder)
+  pinned:   688521e47315850d3bffe055c48fddac0b6f5c9a
+install exit=0
+checked:   workspace files AND the install record, against the pinned release in r2100/starter
+verdict:   matches the installed release
+# AIOS Operator Core v1.2.0
+import lines in CLAUDE.md: 1
+AGENTS.md present: yes
+human-step cards: 7
+release notice command: yes
+workflow actions not pinned to a full SHA: 0
+AGENTS.md equals a fresh render of the installed CLAUDE.md and core: True
+not shipped (releases/tests/evidence present): 0
+live release notice in a 2.10.0 workspace (expect nothing: no newer approved release): [exit 0]
+
+### R4 upgrade: the approved 2.9.0 with the client's own work -> 2.10.0 candidate
+installed starter-2.9.0 into r2100/up
+128 files
+dry run: r2100/up 2.9.0 -> 2.10.0, nothing written
+  by:        rehearsal-founder (founder)
+  changed:   .aios/.gitignore
+  changed:   .claude/hooks/git-staleness-check.js
+  changed:   .claude/skills/README.md
+  changed:   .claude/skills/onboard_wizard/SKILL.md
+  changed:   .claude/skills/pr_review/SKILL.md
+  changed:   .github/workflows/install-contract.yml
+  changed:   .github/workflows/pr-review.yml
+  changed:   .github/workflows/verify-protection.yml
+  changed:   .template_version.json
+  changed:   GETTING_STARTED.md
+  changed:   SECURITY.md
+  changed:   docs/INSTALL_AND_UPGRADE.md
+  changed:   docs/PR_REVIEWER_SETUP.md
+  changed:   scripts/aios/aios.py
+  changed:   scripts/aios/aioslib/adapters.py
+  added:     AGENTS.md
+  added:     docs/human_steps/README.md
+  added:     docs/human_steps/connect_vercel_to_a_repo.md
+  added:     docs/human_steps/create_a_supabase_token.md
+  added:     docs/human_steps/download_a_supabase_backup.md
+  added:     docs/human_steps/remove_an_org_member.md
+  added:     docs/human_steps/run_a_terminal_command_from_claude.md
+  added:     docs/human_steps/turn_on_github_2fa.md
+  added:     scripts/aios/aioslib/notice.py
+  run it again without --dry-run to upgrade
+  managed:  95 files, verified by readback
+  state:    untouched (seed and unmanaged files were not written)
+  rollback: available (.aios/backups/20261014T072453Z-2.9.0-to-2.10.0)
+upgrade exit=0
+checked:   workspace files AND the install record, against the pinned release in r2100/starter
+verdict:   matches the installed release
+client files (installer state_fingerprint) after upgrade: IDENTICAL
+client rule kept: 1
+git history before -> after: 2 -> 2
+AGENTS.md present: yes
+human-step cards: 7
+release notice command: yes
+workflow actions not pinned to a full SHA: 0
+
+### R5 rollback to 2.9.0: the whole workspace comes back byte for byte
+  release:  starter-2.9.0 (2.9.0)
+  managed:  86/86 files re-hashed from disk
+rollback exit=0
+128 files
+whole workspace vs before the upgrade: IDENTICAL
+git status after rollback (porcelain lines): 0
+
+### R6 upgrade from a 2.8.0 workspace (installed while 2.8.0 was approved)
+installed starter-2.8.0 into r2100/w28
+  rollback: available (.aios/backups/20261014T072454Z-2.8.0-to-2.10.0)
+upgrade exit=0
+client files after 2.8.0 -> 2.10.0: IDENTICAL
+# AIOS Operator Core v1.2.0
+import lines in CLAUDE.md: 1
+
+### R7 upgrade from a 2.6.0 workspace: the bundled third-party document-skill copies go
+installed starter-2.6.0 into r2100/w26
+document-skill folders before (docx, pptx, xlsx, pdf): 4
+  rollback: available (.aios/backups/20261014T072454Z-2.6.0-to-2.10.0)
+upgrade exit=0
+document-skill folders after: 0
+client files after 2.6.0 -> 2.10.0: DIFFERENT: 1 path(s): CLAUDE.md
+CLAUDE.md lines the upgrade added (expect only the declared seed line, the core import): +@.aios/operator_core/OPERATOR_CORE.md 
+client rule kept: 1
+verdict:   matches the installed release
+
+### R8 a client's own AGENTS.md: the upgrade refuses and changes nothing
+126 files
+REFUSED: release 2.10.0 ships 1 path(s) that already exist in this workspace and are not managed by the installed release
+  - AGENTS.md
+upgrade exit=5
+126 files
+workspace after the refusal: IDENTICAL
+
+### R9 a hand-edited managed workflow is refused, not overwritten
+REFUSED: workspace does not match its installed release
+  - modified managed file: .github/workflows/pr-review.yml (on disk 1c2c196ef3eb, release 7f9205f193f5)
+upgrade exit=6
+client edit still there: 1
+
+### R10 release tag route (local clone only): tag on the approval commit passes, tag on the pin fails
+verdict:  the tag carries the approval and installs the pinned files byte for byte
+verdict:  a checkout of this tag is NOT the approved release
+  - the tag's commit 688521e47315 has no releases/starter-2.10.0.json
+
+rehearsal done
