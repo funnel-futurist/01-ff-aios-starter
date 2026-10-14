@@ -83,6 +83,8 @@ verifies the result by **re-hashing what landed on disk**, and writes `.aios/ins
 recording exactly what you have. If the readback disagrees with the manifest, the install fails
 - "the installer said it worked" is not evidence.
 
+Anything you have to do by hand along the way (2FA, a scoped token, a backup, connecting Vercel, removing someone, running a command Claude gives you) has a click-by-click card in [`docs/human_steps/`](human_steps/README.md).
+
 ### Your organization config
 
 ```json
