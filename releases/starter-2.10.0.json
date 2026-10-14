@@ -1,7 +1,8 @@
 {
   "approval": {
-    "approved_at": null,
-    "approved_by": null
+    "approved_at": "2026-10-14T07:57:00Z",
+    "approved_by": "phoenix-ship-it",
+    "basis": "Phoenix, 2026-10-14 at about 07:57Z, typed \"Approve starter 2.10.0 at 522668d\" in the lane 0.1 Starter session, the exact line the founder brief releases/starter-2.10.0.BRIEF.md asked for, in reply to receipt 32 (ff-delegation exec/lane01-handoffs-20261004 a322161). Recorded verbatim at 1c00768, parallel_handoffs/0.1/PHOENIX_WORDS_2026-10-14_0757Z.md. The approval binds to 522668d3f95447d81fbc7b3f46ec7ad508c853fc only (re-cut with release build at that rev: byte-identical to the stored draft, sha256 fa45c4d1cd5db116...). He did not say \"keep 2.9.0\", so 2.9.0 is superseded, as the brief said."
   },
   "compatibility": {
     "breaking": [],
@@ -868,6 +869,6 @@
     "workspace_health",
     "wrap-up"
   ],
-  "status": "draft",
+  "status": "approved",
   "version": "2.10.0"
 }
