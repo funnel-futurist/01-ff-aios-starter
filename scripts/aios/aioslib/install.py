@@ -657,7 +657,7 @@ def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=Fals
     the_plan, site_rows, blocked = _layout_preflight(target, record, manifest, files, old_managed,
                                                      no_vercel)
     move_keys = layout_mod.destinations(the_plan)
-    seeds_moved_away = _old_seeds_at_new_paths(old_seeded, manifest)
+    seed_keys = _seed_keys(record, manifest)
     return {
         "layout": None if not the_plan else {
             "from": the_plan["from"], "to": the_plan["to"],
@@ -676,8 +676,8 @@ def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=Fals
         "removed": sorted(set(old_managed) - set(files)),
         "unchanged": sum(1 for p, e in managed.items()
                          if p in old_managed and old_managed[p].get("sha256") == e["sha256"]),
-        "new_seeds": sorted(p for p, e in files.items() if e["class"] == "seed" and p not in old_seeded
-                            and p not in seeds_moved_away and layout_mod.key(p) not in move_keys
+        "new_seeds": sorted(p for p, e in files.items() if e["class"] == "seed"
+                            and layout_mod.key(p) not in seed_keys and layout_mod.key(p) not in move_keys
                             and not os.path.lexists(os.path.join(target, p))),
         "seed_lines": [{"path": e["path"], "line": e["line"]}
                        for e in _seed_line_plan(target, record, manifest, _moved_from(the_plan))[1]],
@@ -855,19 +855,11 @@ def _seed_history(record, manifest):
     return paths
 
 
-def _old_seeds_at_new_paths(old_seeded, manifest):
-    """The installed release's seed paths, as the new layout names them. A seed the client
-    deleted under its old name must not come back under its new one."""
-    new_layout = manifest.get("layout") or {}
-    rules = new_layout.get("moves") or []
-    out = set()
-    for p in old_seeded:
-        out.add(p)
-        if rules:
-            moved = layout_mod.destination(p, rules)
-            if moved:
-                out.add(moved)
-    return out
+def _seed_keys(record, manifest):
+    """Every name a release has seeded into this workspace, as a Mac or Windows disk compares names.
+    A seed the client deleted, under its old name or its new one, in this release or an earlier one,
+    must not come back (independent review)."""
+    return {layout_mod.key(p) for p in _seed_history(record, manifest)}
 
 
 def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
@@ -917,7 +909,7 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # it, and only release files are backed up. "Ever": a seed an older release stopped shipping
     # and the client then deleted is still theirs to recreate (independent review).
     # Compared as a Mac or Windows disk sees names: `Notes/Plan.md` and `notes/plan.md` are one file.
-    seed_keys = {layout_mod.key(p) for p in _seed_history(record, manifest)}
+    seed_keys = _seed_keys(record, manifest)
     reclassified = sorted(p for p, e in files.items()
                           if e["class"] == "managed" and layout_mod.key(p) in seed_keys)
     if reclassified:
@@ -930,6 +922,8 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     for path, entry in files.items():
         if path in old_managed or path in old_seeded:
             continue
+        if entry["class"] == "seed" and layout_mod.key(path) in seed_keys:
+            continue  # the client's seed under this name, or another spelling of it: kept as theirs
         if os.path.exists(os.path.join(target, path)):
             collisions.append(path)
     if collisions:
@@ -951,7 +945,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         raise Refusal(EXIT_STATE, "the folder move needs Vercel checked first (R-A); nothing was "
                                   "changed", blocked)
     move_keys = layout_mod.destinations(the_plan)
-    seeds_moved_away = _old_seeds_at_new_paths(old_seeded, manifest)
+    seed_keys = _seed_keys(record, manifest)
     seed_lines_kept, seed_lines_add, seed_lines_settled = _seed_line_plan(
         target, record, manifest, _moved_from(the_plan))
 
@@ -991,7 +985,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         # install record still describes the old release, so recovery cannot infer them.
         # Never a path a client file is moving to: recovery would delete the client's file.
         "seed_adds": sorted({p for p, e in files.items()
-                             if e["class"] == "seed" and p not in seeds_moved_away
+                             if e["class"] == "seed" and layout_mod.key(p) not in seed_keys
                              and layout_mod.key(p) not in move_keys
                              and not os.path.lexists(os.path.join(target, p))}),
         # The declared lines this upgrade appends to seed files, with their exact bytes, so a
@@ -1028,7 +1022,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
                     # move. Seeds are written once, never refreshed: the client's bytes win.
                     new_seeded.append({"path": path, "sha256": sha256_file(dest)
                                        if os.path.isfile(dest) else ""})
-                elif path in seeds_moved_away:
+                elif layout_mod.key(path) in seed_keys:
                     # Seeded once already and the operator deleted it. "Written once, then
                     # never touched again" has to include not resurrecting it: an upgrade
                     # that undoes a deletion has not preserved state, whatever it reports.

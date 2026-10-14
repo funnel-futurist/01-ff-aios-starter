@@ -22,6 +22,7 @@ import stat
 import subprocess
 import sys
 import threading
+import unicodedata
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -1476,6 +1477,44 @@ class SixthCodexRegressions(InstallerReview):
             harness.build_manifest(self.source, rev3, "2.10.1")
         self.assertIn("notes/plan.md", ctx.exception.details)
         self.assertTrue(rev2)
+
+
+class SeventhCodexRegressions(InstallerReview):
+    """Codex round 7: a seed the client deleted never comes back, whichever release last shipped it
+    and however the new release spells it."""
+
+    def _seed_dropped_deleted_then_shipped_again(self, again="notes/x.md"):
+        spec = dict(harness.PACKAGE_SPEC, seed=harness.PACKAGE_SPEC["seed"] + ["notes/x.md", "Notes/**"])
+        rev1 = harness.bump_source(self.source, {"notes/x.md": "a seed\n",
+                                                 "release/package_spec.json": json.dumps(spec)})
+        install_mod.install(self.target, self.v(rev1, "2.10.0"), self.source, harness.config())
+        self.commit_target("2.10.0")
+        run_git(self.source, "rm", "-q", "notes/x.md")  # 2.10.1 stops shipping it
+        install_mod.upgrade(self.target, self.v(harness.bump_source(self.source, {}, "2.10.1"), "2.10.1"),
+                            self.source)
+        os.remove(os.path.join(self.target, "notes/x.md"))  # and the client deletes it
+        os.rmdir(os.path.join(self.target, "notes"))
+        self.commit_target("I deleted it")
+        return harness.bump_source(self.source, {again: "a seed again\n"})  # 2.10.2 seeds it again
+
+    def assert_not_back(self, rev, name):
+        plan = install_mod.upgrade_plan(self.target, self.v(rev, "2.10.2"), self.source)
+        self.assertNotIn(name, plan["new_seeds"])
+        record = install_mod.upgrade(self.target, self.v(rev, "2.10.2"), self.source)
+        self.assertFalse(os.path.lexists(os.path.join(self.target, name)))
+        self.assertIn({"path": name, "sha256": ""}, record["seeded"])
+
+    def test_r7_a_seed_shipped_again_after_the_client_deleted_it_stays_deleted(self):
+        self.assert_not_back(self._seed_dropped_deleted_then_shipped_again(), "notes/x.md")
+
+    def test_r7_in_another_case_too(self):
+        self.assert_not_back(self._seed_dropped_deleted_then_shipped_again("Notes/X.md"), "Notes/X.md")
+
+    def test_r7_in_another_unicode_form_too(self):
+        nfd = unicodedata.normalize("NFD", "notes/café.md")
+        keys = install_mod._seed_keys({"seeded": [{"path": nfd, "sha256": ""}]}, {})
+        self.assertIn(layout_mod.key(unicodedata.normalize("NFC", "notes/café.md")), keys)
+        self.assertIn(layout_mod.key("NOTES/CAFÉ.md"), keys)
 
 
 class SecondReviewFounder(FounderReview):
