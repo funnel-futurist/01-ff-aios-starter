@@ -3,6 +3,7 @@
 
     release build     cut a DRAFT release manifest from a pinned commit
     release verify    is this manifest pinned, intact and approved?
+    release notice    one line when a newer approved release exists (read-only, daily)
     install           install an approved release into a clean workspace
     adopt             pin an existing workspace that already matches a release
     verify            readback: does the workspace still match its release?
@@ -32,7 +33,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aioslib import governance, install as install_mod, orgconfig, release as release_mod  # noqa: E402
-from aioslib import adapters, boundary, protected, roles, sanitize, util, workspace  # noqa: E402
+from aioslib import adapters, boundary, notice, protected, roles, sanitize, util, workspace  # noqa: E402
 from aioslib.util import (EXIT_ERROR, EXIT_GOVERNANCE, EXIT_OK, EXIT_SANITIZE, Refusal)  # noqa: E402
 
 
@@ -336,6 +337,21 @@ def cmd_start(args):
     for warning in _hook_runtime_warnings(target):
         _say("")
         _say("warning:   %s" % warning)
+    newer = notice.check(target)
+    if newer:
+        _say("")
+        _say("update:    %s" % newer)
+    return EXIT_OK
+
+
+def cmd_release_notice(args):
+    """One line when a newer approved release exists, else nothing. Always exit 0: it informs, never blocks."""
+    try:
+        line = notice.check(os.path.abspath(args.target))
+    except Exception:  # noqa: BLE001 - a notice must never break a session start
+        line = None
+    if line:
+        _say(line)
     return EXIT_OK
 
 
@@ -606,6 +622,10 @@ def build_parser():
                     help="e.g. starter-2.7.0 (the record releases/<id>.json is read at the tag)")
     rt.add_argument("--repo", default=_repo_root())
     rt.set_defaults(func=cmd_release_check_tag)
+    rn = relsub.add_parser("notice", help="one line if a newer approved release exists (read-only, "
+                                          "at most one check a day, silent offline)")
+    rn.add_argument("--target", default=".")
+    rn.set_defaults(func=cmd_release_notice)
 
     ins = sub.add_parser("install", help="install an approved release into a clean workspace")
     ins.add_argument("--release", required=True)

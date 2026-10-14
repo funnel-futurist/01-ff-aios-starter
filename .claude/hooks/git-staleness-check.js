@@ -45,6 +45,10 @@ try {
   if (nDirty > 0 && !onMain) {
     lines.push(`   You have ${nDirty} uncommitted change${nDirty === 1 ? '' : 's'} — \`/wrap-up\` will commit + push them cleanly so they're not stranded.`);
   }
+  // Release notice (LW-22): read-only, at most one network check a day, silent offline or on any error.
+  const newer = sh(`python3 "${root}/scripts/aios/aios.py" release notice --target "${root}"`, 15000);
+  if (newer) lines.push(`📦 ${newer}`);
+
   if (lines.length) process.stdout.write(`[git status check]\n${lines.join('\n')}\n`);
 } catch (_) { /* fail-open */ }
 process.exit(0);
