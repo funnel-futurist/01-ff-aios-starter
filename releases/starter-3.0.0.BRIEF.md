@@ -32,16 +32,40 @@
 | **Docs** | The install guide, `SETUP.md`, `README`, `GETTING_STARTED`, `taxonomy_rules.md`, the decision record (with a 10-14 amendment) and 10 skills now use the new paths. |
 
 **What was proven** (detail in `evidence/dispatch/p22-starter/release-3.0.0/`):
-@@PROOF@@
+- **Every starting version 3.0 upgrades from, each installed by its own installer:** 2.6.0, 2.6.1, 2.7.0, 2.7.1, 2.7.2, 2.8.0, 2.9.0 and 2.10.0, plus two previously upgraded workspaces (2.6.0 → 2.8.0 → 2.10.0 and 2.7.0 → 2.9.0) and one adopted workspace (2.7.2). Each carried the client's own edits: an edited seed, their own files in every old folder, a git-ignored `.env`, binary and executable files, a Unicode name, empty folders, junk files and their own `CLAUDE.md` rule.
+- **For each of those 11:**
+  - the dry run is blocked until Vercel is decided, and shows the exact map line;
+  - after the upgrade, an independent proof finds every client file at its mapped path with the same bytes, size and permissions, and nothing else of theirs changed;
+  - `CLAUDE.md` gains the line exactly once;
+  - `verify` passes against the pinned commit;
+  - rollback equals the actual pre-upgrade snapshot, field for field, and the upgrade then runs again;
+  - an existing destination and a case-insensitive collision are each refused with nothing changed;
+  - hard kills at 7 points in the upgrade and 3 in the rollback each recover to the exact snapshot.
+- **The heavy run:** a 120 MB file and 6,000 git-ignored dependency files, with real SIGKILLs at five moments. Each recovered exactly; the full upgrade took 3.8 s.
+- **A case-sensitive disk image:** `Plan.md` and `plan.md` side by side are refused, and rollback is exact.
+- **R-A against Vercel's real API:** a throwaway project still building the old folder made the upgrade refuse with nothing changed. Once corrected, the upgrade verified and moved the site, a production deployment built from the new folder and served the page, and the project was deleted.
+- **R-C:** an operator's edit at the new founder path is held; `instance check` fails and `start` says NOT RESTORED while `CODEOWNERS` names the old path.
+- **Fresh Claude Code and Codex sessions,** in a fresh 3.0 install and in an upgraded workspace whose `CLAUDE.md` still lists the old folders, all name `00_AIOS/company/` and Operator Core v1.2.0.
+- **Tests from a fresh clone of the candidate:** 459 unit and contract tests, 60/0 end-to-end on the real content, 17/17 PR floor, 49/49 hooks, and the allow-list in order.
+- **Client names:** none in anything 3.0 adds. The whole-tree scan finds only the 14 ordinary-word matches `main` already has.
+- **Protected text:** FF's private scan compared every one of its 15,595 protected files, the five over 25 MB included, and 0 were left unscanned. It found four overlaps, all generic: Python standard-library imports, `urllib` and `http.server` boilerplate, and GitHub documentation addresses.
 
 **Three allow-listed public files changed one folder path each:** the `/humanize`, `/qc_review` and `/f6_completeness_check` skills. Their approved hashes were re-pinned in `release/public_methods.json`, and approving this release approves those three re-pins.
 
-**Two defects in shipped 2.x behaviour, fixed here because the 3.0 proof found them:**
+**Defects in shipped 2.x behaviour, fixed here because the 3.0 proof and its reviews found them:**
 - **Empty folders:** an upgrade or rollback removed every empty folder in the workspace, including the client's own. Now it removes only folders it emptied itself.
 - **Rollback after a crash:** if an upgrade was killed while still planning and the founder then ran `rollback`, it undid the previous successful upgrade. Now that rollback clears the stale lock and rolls nothing back.
+- **Install into a folder that already has files:**
+  - install could replace the client's own `CODEOWNERS` or `.aios/config.json` without a backup;
+  - it didn't record a starter file the client already had, so the next upgrade refused it as a collision;
+  - an owner GitHub ignores (not `@user`, `@org/team` or an email) installed "successfully".
+  
+  Now install checks everything before its first write, refuses with nothing changed, and records the client's file as theirs.
+- **A starter file the client deleted** could come back, if a later release shipped it again or under another spelling, or if a 2.x record never listed it. It now stays deleted.
+- **`verify --repo` and `adopt`:** `verify --repo` trusted the workspace's own list of release files, so a file dropped from both still verified; `adopt` ignored the executable bit. Both now check against the release itself.
 
 ## Recommendation
-**Approve.** It's the layout you ruled on, rebuilt on the released 2.10.0. Your three release requirements are enforced in code and proven, and so is the proof bar you set: every starting version, previously upgraded and client-edited workspaces, existing destinations, case-insensitive collisions, interrupted moves, and exact rollback against the actual pre-upgrade snapshot. Two independent reviewers from different model families checked the move engine over several rounds, and every real finding was fixed with a test.
+**Approve.** It's the layout you ruled on, rebuilt on the released 2.10.0. Your three release requirements are enforced in code and proven, and so is the proof bar you set: every starting version, previously upgraded and client-edited workspaces, existing destinations, case-insensitive collisions, interrupted moves, and exact rollback against the actual pre-upgrade snapshot. Two independent reviewers from different model families checked the move engine and the installer over many rounds (Gemini 10, Codex 9), and every real finding was fixed with a test (from round 5 on, each shown to fail without its fix).
 
 ## Consequence
 - **If approved:**
@@ -74,4 +98,6 @@
 - **The Vercel check can only see what the client's token can see.** If it can't read a scope it knows about, it refuses. It can't find a project in an account the token doesn't belong to.
 - **References to old folders inside the client's own files are reported, not fixed.**
 - **The protected-text scan is a copy-and-paste tripwire.** It doesn't catch paraphrase or text in images. A clean scan is evidence, not a guarantee.
+- **One shared-tooling file carries over unchanged.** `.claude/skills/pr_review/SKILL.md` is byte-identical to 2.10.0's, the one overlap found at that cut (shared with FF's own copy of the same skill). Its exception is ai-os #507, which waits on your security approval; this release doesn't change it.
+- **Two Unicode spellings of one name weren't tried on a real disk:** macOS disks, even case-sensitive ones, treat them as one file. The planner's refusal of them is proven by tests.
 - **33–45 hours was an estimate.** This brief reports what was proven, not how long it took.

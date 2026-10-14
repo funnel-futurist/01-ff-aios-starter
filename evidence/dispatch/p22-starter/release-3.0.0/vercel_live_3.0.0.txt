@@ -1,0 +1,30 @@
+662c904 release(3.0.0): draft record re-cut at 20ffb36 (after Codex round 8)
+### V0 scope: the token's personal team (found)
+
+### V1 a throwaway project whose Root Directory is the 2.x folder
+  PASS  created aios-starter-3-rehearsal-20261014 (HTTP 200), Root Directory 11_Projects/main-website
+  PASS  2.10.0 installed with a static site in 11_Projects/main-website, linked to the project
+
+### V2 the candidate refuses while Vercel still builds the old folder
+  PASS  refused (exit 5), naming aios-starter-3-rehearsal-20261014 and the exact new Root Directory
+  PASS  nothing changed
+  PASS  the token appears nowhere in the output
+
+### V3 the Root Directory is corrected (the card's step 3, via the API)
+  PASS  Root Directory now 02_Team_Ops/projects/main-website (HTTP 200)
+
+### V4 the candidate verifies it with Vercel and moves the site
+  PASS  upgraded (exit 0); website:  11_Projects/main-website: verified. Vercel project aios-starter-3-rehearsal-20261014 builds 02_Team_Ops/projects/main-website/
+  PASS  the site is at 02_Team_Ops/projects/main-website with its bytes
+
+### V5 a production deployment builds from the new folder
+  PASS  deployed (exit 0)
+  PASS  deployment state READY
+  PASS  the production address serves the moved page (HTTP 200)
+
+### V6 cleanup
+  PASS  throwaway project deleted (HTTP 204)
+  PASS  a read of it now answers 404
+
+RESULT: 13 passed, 0 failed
+exit 0

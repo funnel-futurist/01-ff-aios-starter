@@ -1,0 +1,14 @@
+Fresh sessions, 2026-10-14 (hooks off). Workspaces: "fresh" = a 3.0 install; "up" = a 2.10.0 install
+with the client's own pricing file, upgraded to 3.0 (--no-vercel). In "up", CLAUDE.md still lists the
+2.x folders (01_Foundations ...) and has gained only the declared line @00_AIOS/routing.md.
+
+Question (same to both tools): "Answer from the instructions you have loaded, without opening any
+files. Two lines only. Line 1: the folder path where this company keeps its pricing and offer
+economics documents. Line 2: the version of the AIOS Operator Core this workspace follows."
+
+Claude Code 2.1.292 (claude-haiku-5-5), fresh:  00_AIOS/company/ | v1.2.0
+Codex CLI 0.162 (gpt-5.6-sol, read-only), fresh: 00_AIOS/company/ | AIOS Operator Core v1.2.0
+Claude Code 2.1.292 (claude-haiku-5-5), up:     00_AIOS/company/ | 1.2.0
+Codex CLI 0.162 (gpt-5.6-sol, read-only), up:    00_AIOS/company/ | v1.2.0
+
+(Claude Code printed a notice that its model catalog doesn't list claude-haiku-5-5 yet; the session ran.)
