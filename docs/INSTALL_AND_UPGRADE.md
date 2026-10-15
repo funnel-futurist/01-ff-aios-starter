@@ -252,6 +252,20 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   with no role needed. A running operation's lock is never taken; one that names no process
   (its holder was killed while writing it) is cleared like any dead one.
 
+**What adoption and its rollback trust:**
+- Rollback trusts the release source, and what your repository has committed: the install record
+  and plan exactly as committed with the adoption.
+- It never trusts a file that anyone's pull request could change after that. A changed record, plan
+  or committed journal makes rollback refuse, changing nothing.
+- It trusts your own local, uncommitted state: the ignored journal of an operation that was
+  interrupted, and a record not yet committed. Whoever can edit those can already change any file
+  in the repository directly.
+- It doesn't defend against another program changing the repository while it runs, beyond refusing
+  links and checking again before each write.
+- Files are compared byte for byte, as every release has. A checkout that converts line endings
+  (`core.autocrlf=true`) reads as changed, so keep it off for this repository, or use a
+  `.gitattributes` with `* text=auto eol=lf`.
+
 **Upgrades** write only what the plan adopts:
 - A new path the release ships must be added to the plan first, or the upgrade refuses.
 - A file you move from `adopt` to `instance_owned` stays where it is and becomes yours.

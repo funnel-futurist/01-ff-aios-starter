@@ -164,10 +164,58 @@ def load_journal(target):
     except (OSError, ValueError) as exc:
         raise Refusal(EXIT_STATE, "the journal at %s can't be read (%s); nothing was changed" % (rel, exc),
                       ["move it aside, then run this again"])
-    if not isinstance(journal, dict) or not journal:
+    problems = _journal_problems(journal) if isinstance(journal, dict) and journal else ["not a JSON object"]
+    if problems:
         raise Refusal(EXIT_STATE, "%s isn't a journal the installer wrote; nothing was changed" % rel,
-                      ["move it aside, then run this again"])
+                      problems[:10] + ["move it aside, then run this again"])
     return journal
+
+
+def _repo_owned(target, rel):
+    """Whether git has `rel` as the repository's file: in the index, or committed in HEAD (a file
+    `git rm --cached` left on disk is still the repository's). Cleanup never removes one (3.1 round 28)."""
+    rel = rel.replace(os.sep, "/")
+    return util.is_tracked(target, rel) or util.in_head(target, rel)
+
+
+_JOURNAL_OPS = ("upgrade", "rollback", "adopt-existing", "adopt-undo")
+
+
+def _journal_problems(journal):
+    """What makes a journal one the installer didn't write: an operation it doesn't know, or a field an
+    operation reads that is missing or of the wrong kind, or a backup outside the backups folder
+    (independent review, 3.1 round 28)."""
+    op = journal.get("op")
+    if op not in _JOURNAL_OPS:
+        return ["unknown operation %r" % (op,)]
+    out = []
+    if "phase" in journal and not isinstance(journal["phase"], str):
+        out.append("phase isn't text")
+    if op == "upgrade" or (op == "rollback" and journal.get("phase") != "complete"):  # the ones that read it
+        backup = journal.get("backup")
+        if not (isinstance(backup, str) and util.safe_relpath(backup)
+                and backup.replace(os.sep, "/").startswith(BACKUP_DIR.replace(os.sep, "/") + "/")):
+            out.append("backup isn't a folder inside %s" % BACKUP_DIR.replace(os.sep, "/"))
+    if op == "upgrade":
+        for key in ("adds", "seed_adds"):
+            if key in journal and not (isinstance(journal[key], list) and all(isinstance(x, str) for x in journal[key])):
+                out.append("%s isn't a list of paths" % key)
+        for key, kind in (("add_provenance", dict), ("layout", dict)):
+            if journal.get(key) is not None and not isinstance(journal[key], kind):
+                out.append("%s has the wrong shape" % key)
+    if op == "rollback":
+        if not isinstance(journal.get("current_record"), dict):
+            out.append("current_record is missing")
+        if not isinstance(journal.get("created") or [], list):
+            out.append("created isn't a list")
+    if op == "adopt-existing":
+        if not isinstance(journal.get("adoption"), dict):
+            out.append("adoption is missing")
+        if journal.get("pending") is not None and not isinstance(journal["pending"], dict):
+            out.append("pending has the wrong shape")
+    if op == "adopt-undo" and journal.get("phase") not in ("undoing", "complete"):
+        out.append("phase isn't undoing or complete")
+    return out
 
 
 # ─── verification ───────────────────────────────────────────────────────────
@@ -1517,7 +1565,7 @@ def _reclaim_stale_lock(stale, target=None):
     """Clear a lock whose holder is dead. True if one was cleared."""
     if not os.path.exists(stale):
         return False
-    if target is not None and util.is_tracked(target, LOCK_PATH.replace(os.sep, "/")):
+    if target is not None and _repo_owned(target, LOCK_PATH):
         # The installer's lock is never committed (.aios/.gitignore ignores it): a tracked one is the
         # repository's own file, whatever it says (independent review, 3.1 round 20).
         raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's lock"
@@ -1554,7 +1602,19 @@ def _reclaim_stale_lock(stale, target=None):
 
 def _rollback_after_reclaim(target, stale_lock, source_repo=None):
     with _Lock(target, "rollback"):
-        journal = load_journal(target)  # refuses a tracked, non-file or non-journal one (3.1 rounds 25-27)
+        journal = load_journal(target)  # refuses a tracked, non-file or non-journal one (3.1 rounds 25-28)
+        record_full = install_record_path(target)
+        if os.path.lexists(record_full):
+            # The record too, before anything is decided: present but not a readable file is a refusal,
+            # never "no record" or a crash (independent review, 3.1 round 28).
+            if os.path.islink(record_full) or not os.path.isfile(record_full):
+                raise Refusal(EXIT_STATE, ".aios/install.json isn't the install record (a link or a folder); "
+                                          "nothing was changed", ["restore it from git, or move it aside"])
+            try:
+                with open(record_full, "rb") as fh:
+                    fh.read(1)
+            except OSError as exc:
+                raise Refusal(EXIT_STATE, "the install record can't be read (%s); nothing was changed" % exc)
         if stale_lock and not journal and not os.path.isfile(install_record_path(target)):
             # Killed before its journal, with no release ever pinned here (an adoption that hadn't
             # started writing): nothing changed, so there is nothing to undo (independent review,
@@ -1668,7 +1728,7 @@ def _sweep_temporaries(target):
             rel = os.path.join(rel_dir, name).replace(os.sep, "/")
             # A name is not proof: a file git tracks is the repository's, whatever it's called
             # (independent review, 3.1 round 18). Adoption also refuses to start over one.
-            if pattern.match(name) and stat.S_ISREG(os.lstat(full).st_mode) and not util.is_tracked(target, rel):
+            if pattern.match(name) and stat.S_ISREG(os.lstat(full).st_mode) and not _repo_owned(target, rel):
                 os.remove(full)
                 removed.append(rel)
     return removed
@@ -2009,7 +2069,7 @@ def _reserved_before_adoption(target):
     for rel in (LOCK_PATH, os.path.relpath(journal_path(target), target)):
         rel = rel.replace(os.sep, "/")
         if os.path.lexists(os.path.join(target, rel)):
-            if util.is_tracked(target, rel):
+            if _repo_owned(target, rel):
                 out.append("%s is a file this repository tracks; the installer needs that path" % rel)
             else:
                 out.append("%s exists: another operation is running, or one was interrupted "
@@ -2450,7 +2510,7 @@ def _remove_copy_temp(target, rel):
         st = os.lstat(full)
     except OSError:
         return
-    if stat.S_ISREG(st.st_mode) and not util.is_tracked(target, rel):
+    if stat.S_ISREG(st.st_mode) and not _repo_owned(target, rel):
         os.remove(full)
 
 

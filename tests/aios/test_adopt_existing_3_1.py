@@ -2169,3 +2169,63 @@ class ReviewRoundTwentySeven(ReviewRoundTwentyFour):
         self.assertNotEqual(code, 0, out + err)
         self.assertIn("isn't a journal the installer wrote", out + err)
         self.assertNotIn("Traceback", err)
+
+
+class ReviewRoundTwentyEight(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 28."""
+
+    def test_a_committed_lock_left_by_git_rm_cached_is_never_reclaimed(self):
+        write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
+        run_git(self.target, "add", "-f", ".aios/lock")
+        self.commit("a lock file of ours")
+        run_git(self.target, "rm", "-q", "--cached", ".aios/lock")  # still in HEAD, still on disk
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/lock")))
+
+    def test_a_committed_temporary_name_left_by_git_rm_cached_is_never_swept(self):
+        self.adopt()
+        self.commit("adopted")
+        name = ".aios/.txn.json.aaaaaaaa.tmp"
+        write(self.target, name, "ours\n")
+        run_git(self.target, "add", "-f", name)
+        self.commit("a file of ours with that name")
+        run_git(self.target, "rm", "-q", "--cached", name)
+        self.rollback_ok()
+        self.assertTrue(os.path.isfile(os.path.join(self.target, name)))
+
+    def test_a_record_that_is_a_folder_or_unreadable_is_a_refusal(self):
+        self.adopt()
+        self.commit("adopted")
+        record = install_mod.install_record_path(self.target)
+        self.be("acme-founder")
+        os.chmod(record, 0)
+        try:
+            code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        finally:
+            os.chmod(record, 0o644)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertNotIn("Traceback", err)
+        os.remove(record)
+        os.makedirs(record)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("isn't the install record", out + err)
+
+    def test_a_journal_its_operation_couldnt_have_written_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        for journal in ({"unexpected": 1}, {"op": "upgrade", "phase": "applying"},
+                        {"op": "upgrade", "phase": "applying", "backup": "../elsewhere"},
+                        {"op": "rollback", "phase": "restoring", "backup": ".aios/backups/x"},
+                        {"op": "adopt-existing", "phase": "writing"},
+                        {"op": "adopt-undo", "phase": 3}):
+            with self.subTest(journal=journal):
+                util.write_json(install_mod.journal_path(self.target), journal)
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+                self.assertNotEqual(code, 0, out + err)
+                self.assertIn("isn't a journal the installer wrote", out + err)
+                self.assertNotIn("Traceback", err)
+        os.remove(install_mod.journal_path(self.target))
