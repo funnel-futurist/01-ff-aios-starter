@@ -1833,9 +1833,12 @@ def _record_unchanged(full):
     with open(full, "rb") as fh:
         raw = fh.read()
     record = json.loads(raw.decode("utf-8"))
+    mode = os.lstat(full).st_mode
+    # Written and restored as 0644. Windows keeps no POSIX bits, only read-only, so there it must
+    # still be writable (independent review, 3.1 round 13).
+    same_mode = stat.S_IMODE(mode) == 0o644 if _EXEC_BITS else bool(mode & stat.S_IWRITE)
     return (isinstance(record, dict) and record.get(RECORD_SEAL) is not None
-            and _sealed(record) == record and raw == _record_bytes(record)
-            and stat.S_IMODE(os.lstat(full).st_mode) == 0o644)
+            and _sealed(record) == record and raw == _record_bytes(record) and same_mode)
 
 
 def _config_text(config):
@@ -1862,6 +1865,10 @@ def adopt_existing(target, manifest, source_repo, config, plan_rel=None, aios_lo
 
 def _reserved_before_adoption(target):
     out = []
+    # The lock is taken next, inside `.aios`: a link there would put it outside the repository
+    # (independent review, 3.1 round 13).
+    for rel in _linked_paths(target, [LOCK_PATH.replace(os.sep, "/")]):
+        out.append("%s is a link or a file of this repository's own; the installer needs that folder" % rel)
     for rel in (LOCK_PATH, os.path.relpath(journal_path(target), target)):
         if os.path.lexists(os.path.join(target, rel)):
             out.append("%s exists: another operation is running, or one was interrupted "
@@ -2001,19 +2008,11 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             journal["pending"] = {"path": rel, "temp": os.path.relpath(tmp, target).replace(os.sep, "/"),
                                   "sha256": sha256_bytes(data), "mode": stat.S_IMODE(os.lstat(tmp).st_mode)}
             util.write_json(journal_path(target), journal)
-        try:
-            tmp = util.create_new(target, rel, data, mode, pending)
-        except BaseException:
-            # Unless the link happened (only an interrupt right after it), whatever is at `rel`, even
-            # identical bytes that appeared meanwhile, isn't this run's: rollback must not judge it
-            # by `pending` (independent review, 3.1 round 12).
-            p = journal["pending"]
-            if p is not None:
-                t, d = os.path.join(target, p["temp"]), os.path.join(target, rel)
-                if not (os.path.lexists(t) and os.path.lexists(d) and os.path.samestat(os.lstat(t), os.lstat(d))):
-                    journal["pending"] = None
-                    util.write_json(journal_path(target), journal)
-            raise
+        # If the link fails, the temporary copy stays with `pending` naming it: the undo below (or a
+        # later rollback) removes it and keeps whatever is at `rel` unless it is that very inode, so a
+        # file that appeared meanwhile, even with identical bytes, is never taken (independent review,
+        # 3.1 rounds 12 and 13).
+        tmp = util.create_new(target, rel, data, mode, pending)
         if provenance:
             st = os.lstat(os.path.join(target, rel))
             # The mode as the disk keeps it, so rollback compares like with like on every system.

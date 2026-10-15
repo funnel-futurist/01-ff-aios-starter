@@ -1195,3 +1195,101 @@ class ReviewRoundTwelveCodex(Existing):
             man["files"].append({"path": path, "class": "managed", "mode": "100644", "sha256": "0" * 64})
             self.assertTrue(any("installer's own state" in p for p in release.check_shape(man)), path)
         self.assertFalse(util.is_reserved(".aios/config.jsonx/child"))
+
+
+class ReviewRoundThirteen(Existing):
+    """Gemini, 3.1 round 13: a temporary copy create_new couldn't remove is still cleaned up."""
+
+    def test_a_failed_link_whose_temporary_copy_remains_is_cleaned_up_and_keeps_the_other_file(self):
+        real = util.create_new
+
+        def link_fails_and_copy_stays(target, rel, data, mode, before_link=None):
+            if rel != "START_HERE.md":
+                return real(target, rel, data, mode, before_link)
+            tmp = util.private_temp(target)
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+            os.chmod(tmp, 0o644)
+            before_link(tmp)
+            write(target, rel, "# someone else's, appeared meanwhile\n")
+            raise Refusal(util.EXIT_STATE, "%s appeared while this ran; it was not overwritten" % rel)
+
+        util.create_new = link_fails_and_copy_stays
+        try:
+            with self.assertRaises(Refusal):
+                self.adopt()
+        finally:
+            util.create_new = real
+        backups = os.path.join(self.target, ".aios", "backups")
+        self.assertEqual([n for n in os.listdir(backups) if n.startswith(".write-")]
+                         if os.path.isdir(backups) else [], [], "a temporary copy was left behind")
+        with open(os.path.join(self.target, "START_HERE.md")) as fh:
+            self.assertEqual(fh.read(), "# someone else's, appeared meanwhile\n")
+        self.assertFalse(os.path.lexists(install_mod.journal_path(self.target)))
+
+
+class ReviewRoundThirteenCodex(Existing):
+    """Codex, 3.1 round 13."""
+
+    def test_a_kill_after_a_failed_link_never_takes_the_file_that_appeared(self):
+        import subprocess
+        with open(os.path.join(self.source, "START_HERE.md"), "rb") as fh:
+            release_bytes = fh.read()
+        rel = self.write_json("release.json", self.v)
+        cfg = self.write_json("org.json", harness.config())
+        script = (
+            "import json, os, sys\n"
+            "sys.path.insert(0, %r)\n"
+            "from aioslib import install, util\n"
+            "real = util.create_new\n"
+            "def appears_first(target, rel, data, mode, before_link=None):\n"
+            "    if rel == 'START_HERE.md':\n"
+            "        with open(os.path.join(target, rel), 'wb') as fh:\n"
+            "            fh.write(%r)\n"
+            "        os.chmod(os.path.join(target, rel), 0o644)\n"
+            "    return real(target, rel, data, mode, before_link)\n"
+            "util.create_new = appears_first\n"
+            "install.adopt_existing(%r, json.load(open(%r)), %r, json.load(open(%r)))\n"
+        ) % (harness.AIOS_DIR, release_bytes, self.target, rel, self.source, cfg)
+        env = dict(os.environ, AIOS_FAULT="crash:create.link_refused")
+        proc = subprocess.run([sys.executable, "-c", script], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertEqual(proc.returncode, 137, proc.stderr)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        with open(os.path.join(self.target, "START_HERE.md"), "rb") as fh:
+            self.assertEqual(fh.read(), release_bytes)  # someone else's, identical, kept
+        backups = os.path.join(self.target, ".aios", "backups")
+        self.assertEqual([n for n in os.listdir(backups) if n.startswith(".write-")]
+                         if os.path.isdir(backups) else [], [])
+        for path in ADOPTED:
+            if path != "START_HERE.md":
+                self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
+
+    def test_on_windows_an_unchanged_record_is_judged_by_its_read_only_flag(self):
+        self.adopt()
+        self.commit("adopted")
+        record = install_mod.install_record_path(self.target)
+        saved = install_mod._EXEC_BITS
+        install_mod._EXEC_BITS = False  # as on Windows: no POSIX bits, only read-only
+        try:
+            os.chmod(record, 0o666)  # what Windows reports for an ordinary writable file
+            self.assertTrue(install_mod._record_unchanged(record))
+            os.chmod(record, 0o444)  # read-only: changed
+            self.assertFalse(install_mod._record_unchanged(record))
+            os.chmod(record, 0o666)
+            install_mod.rollback(self.target)
+        finally:
+            install_mod._EXEC_BITS = saved
+        self.assertFalse(os.path.lexists(record))
+
+    def test_a_linked_aios_folder_refuses_before_the_lock(self):
+        outside = os.path.join(self.tmp, "outside")
+        shutil.move(os.path.join(self.target, ".aios"), outside)
+        os.symlink(outside, os.path.join(self.target, ".aios"))
+        self.commit("our .aios is a link")
+        before = sorted(os.listdir(outside))
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("own paths", exc.message)
+        self.assertTrue(any(".aios is a link" in d for d in exc.details), exc.details)
+        self.assertEqual(sorted(os.listdir(outside)), before)

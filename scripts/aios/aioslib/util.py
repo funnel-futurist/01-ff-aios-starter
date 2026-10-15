@@ -339,6 +339,7 @@ def create_new(target_root, relpath, data, mode, before_link=None):
         raise Refusal(EXIT_STATE, "refusing to write outside the workspace: %s resolves to %s"
                       % (relpath, real_parent))
     tmp = private_temp(target_root)
+    journaled = False
     try:
         with open(tmp, "wb") as fh:
             fh.write(data)
@@ -346,16 +347,23 @@ def create_new(target_root, relpath, data, mode, before_link=None):
             os.fsync(fh.fileno())
         os.chmod(tmp, 0o755 if mode == "100755" else 0o644)
         if before_link:
+            journaled = True  # from here the caller's journal names it, and its rollback removes it
             before_link(tmp)
         try:
             os.link(tmp, dest)  # fails if anything is at dest, a link included: never a replace
         except FileExistsError:
+            fault("create.link_refused")
             raise Refusal(EXIT_STATE, "%s appeared while this ran; it was not overwritten" % relpath)
         except OSError as exc:
             raise Refusal(EXIT_STATE, "this disk can't create %s without risking a replace (%s)"
                           % (relpath, exc), ["adopting into an existing instance needs a disk with hard links"])
     except BaseException:
-        if os.path.lexists(tmp) and not (os.path.lexists(dest) and os.path.samestat(os.lstat(tmp), os.lstat(dest))):
+        # Removed here only while no journal names it. Once one does, it stays until that journal's
+        # rollback removes it, judging `dest` by whether it is this very inode: removing it first would
+        # leave a kill in between with a journal that names a copy that's gone, and a file that merely
+        # matches would be judged by its bytes (independent review, 3.1 round 13).
+        if not journaled and os.path.lexists(tmp) and not (
+                os.path.lexists(dest) and os.path.samestat(os.lstat(tmp), os.lstat(dest))):
             os.remove(tmp)
         raise
     return tmp
