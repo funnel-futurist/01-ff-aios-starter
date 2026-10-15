@@ -1301,7 +1301,7 @@ def _tree(root):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if not (dirpath == root and d == ".git")]
         rel = os.path.relpath(dirpath, root)
-        out[rel + "/"] = None
+        out[rel + "/"] = "<folder>"  # a value, so a folder only one side has is a difference
         for f in filenames:
             with open(os.path.join(dirpath, f), "rb") as fh:
                 out[os.path.join(rel, f)] = fh.read()
@@ -1354,3 +1354,81 @@ class ReviewRoundFourteen(Existing):
             self.adopt()
         self.assertIn("no role policy of its own", ctx.exception.message)
         self.assertEqual(_tree(self.target), before)
+
+
+class ReviewRoundFifteen(Existing):
+    """Codex, 3.1 round 15."""
+
+    def test_rollback_in_an_ordinary_folder_creates_nothing(self):
+        plain = os.path.join(self.tmp, "plain")
+        write(plain, "notes.md", "# just a folder\n")
+        before = _tree(plain)
+        code, out, err = self.cli("rollback", "--target", plain)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("nothing to roll back", out)
+        self.assertEqual(_tree(plain), before)
+
+    def with_config_committed(self):
+        write(self.target, ".aios/config.json", json.dumps(harness.config()))
+        self.commit("our people map, committed")  # so the first create is an adopted file
+        return _tree(self.target)
+
+    def test_a_refused_link_leaves_no_folder_it_made(self):
+        before = self.with_config_committed()
+        real = os.link
+
+        def no_links_into_new_folders(src, dst, *a, **kw):
+            if ".claude/skills" in dst.replace(os.sep, "/"):
+                raise PermissionError(1, "Operation not permitted")
+            return real(src, dst, *a, **kw)
+
+        os.link = no_links_into_new_folders
+        try:
+            with self.assertRaises(Refusal) as ctx:
+                self.adopt()
+        finally:
+            os.link = real
+        self.assertIn("without risking a replace", ctx.exception.message)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_create_that_fails_before_its_journal_entry_has_its_folders_pruned_by_rollback(self):
+        before = self.with_config_committed()
+        real = util.create_new
+
+        def fails_after_making_folders(target, rel, data, mode, before_link=None):
+            if rel.startswith(".claude/skills/"):
+                util.ensure_parent(os.path.join(target, rel))
+                raise OSError(5, "Input/output error")
+            return real(target, rel, data, mode, before_link)
+
+        util.create_new = fails_after_making_folders
+        try:
+            with self.assertRaises(OSError):
+                self.adopt()
+        finally:
+            util.create_new = real
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_finished_adoption_rolled_back_leaves_every_folder_as_it_was(self):
+        before = self.with_config_committed()
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        after = _tree(self.target)
+        self.assertEqual(diff(before, after), [])
+
+    def test_an_empty_backups_folder_that_was_there_stays(self):
+        os.makedirs(os.path.join(self.target, ".aios", "backups"))
+        before = self.with_config_committed()
+        self.assertIn(".aios/backups/", before)
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])

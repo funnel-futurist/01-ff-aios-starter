@@ -1563,6 +1563,11 @@ def clear_dead_lock(target):
     record. It never takes a live holder's lock. True if one was cleared."""
     if load_journal(target) or os.path.lexists(install_record_path(target)):
         return False
+    if not os.path.lexists(os.path.join(target, LOCK_PATH)):
+        # Nothing to clear, so no guard either: outside git it would create `.aios/backups` in a folder
+        # that has nothing of the installer's (independent review, 3.1 round 15). A lock that appears
+        # after this look is a live holder's.
+        return False
     with _RecoveryGuard(target):
         return _reclaim_stale_lock(os.path.join(target, LOCK_PATH))
 
@@ -1986,8 +1991,11 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     creds = orgconfig.resolve(manifest.get("credentials"), config, target)
     orgconfig.require_resolved(creds)
 
+    planned = sorted([e["path"] for e in adopt] + [config_rel, record_rel])
     pre_dirs = set()
-    for rel in [e["path"] for e in adopt] + [config_rel, record_rel]:
+    # The backups folder too: the temporary copies are made there, and the undo prunes it only if this
+    # adoption made it and it's empty again.
+    for rel in planned + [_IN_BACKUPS]:
         parts = rel.split("/")[:-1]
         for i in range(1, len(parts) + 1):
             d = "/".join(parts[:i])
@@ -1996,6 +2004,10 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     info = {
         "plan": plan_rel, "plan_sha256": plan_sha,
         "adopt": plan["adopt"], "instance_owned": plan["instance_owned"], "exclude": plan["exclude"],
+        # Every path it may create, journaled before the first: a create that fails after making its
+        # folders still has them pruned, as long as they are empty and weren't there before
+        # (independent review, 3.1 round 15).
+        "planned": planned,
         "created": [], "pre_dirs": sorted(pre_dirs),
     }
     journal = {
@@ -2119,6 +2131,10 @@ def _same_bytes_and_mode(target, entry):
     return not _EXEC_BITS or bool(st.st_mode & 0o100) == (entry.get("mode") == "100755")
 
 
+# A name inside the backups folder, so _prune_parents considers the folder itself.
+_IN_BACKUPS = BACKUP_DIR.replace(os.sep, "/") + "/x"
+
+
 def _undo_adoption(target, info, pending=None):
     """Take back exactly what an adoption created: the files it recorded, while each is still the
     bytes and mode it wrote, and a file it was creating when killed only if it is still that very
@@ -2170,7 +2186,8 @@ def _undo_adoption(target, info, pending=None):
                     notes.append("%s changed since the adoption wrote it, so it was left for you" % record_rel)
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
-    _prune_parents(target, created + [record_rel], keep=info.get("pre_dirs"))
+    _prune_parents(target, created + list(info.get("planned") or []) + [record_rel, _IN_BACKUPS],
+                   keep=info.get("pre_dirs"))
     return notes
 
 
