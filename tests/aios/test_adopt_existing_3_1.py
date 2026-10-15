@@ -2461,3 +2461,62 @@ class ReviewRoundThirtyThree(ReviewRoundThirtyTwo):
         self.commit("the plan committed under another case")
         exc = self.refuses_unchanged(self.adopt)
         self.assertIn("must be committed as .aios/adoption.json exactly", exc.message)
+
+
+class ReviewRoundThirtyFour(ReviewRoundThirtyTwo):
+    """Codex and Gemini, 3.1 round 34: the state note's folder is the installer's own, and leaves nothing."""
+
+    NOTE = ".aios/backups/state/head.json"
+
+    def bump(self):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        return harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+
+    def test_a_tracked_note_is_refused_before_any_change(self):
+        self.adopt()
+        self.commit("adopted")
+        run_git(self.target, "add", "-f", self.NOTE)
+        self.commit("a pull request commits the note")
+        before = _tree(self.target)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.upgrade(self.target, self.bump(), self.source)
+        self.assertIn("state note isn't its own", ctx.exception.message)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+        with self.assertRaises(Refusal):
+            install_mod.rollback(self.target, self.source)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_linked_state_folder_is_refused_and_nothing_outside_is_written(self):
+        self.adopt()
+        self.commit("adopted")
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        state = os.path.join(self.target, ".aios", "backups", "state")
+        shutil.rmtree(state)
+        os.symlink(outside, state)
+        with self.assertRaises(Refusal):
+            install_mod.upgrade(self.target, self.bump(), self.source)
+        self.assertEqual(os.listdir(outside), [])
+
+    def test_a_kill_while_the_note_is_written_leaves_nothing_after_rollback(self):
+        before = _tree(self.target)
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:state.after_dir"})
+        self.assertEqual(code, 137)
+        write(self.target, ".aios/backups/state/.head.json.abcd1234.tmp", "{}")  # as a kill inside the write leaves
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_malformed_record_entry_is_a_refusal_not_a_crash(self):
+        record_path = self.upgraded()
+        record = util.read_json(record_path)
+        record["managed"].append("not-an-entry")
+        util.write_json(record_path, record)
+        self.forget_state()
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target, self.source)
+        self.assertIn("outside the workspace", ctx.exception.message)

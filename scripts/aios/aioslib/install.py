@@ -176,13 +176,38 @@ def load_journal(target):
 STATE_PATH = os.path.join(BACKUP_DIR, "state", "head.json")
 
 
+def _state_problems(target):
+    """Why the state note's folder isn't the installer's own: a link or a file on the way to it or at
+    it, or anything in it git tracks (index or HEAD, any spelling). Checked before an operation changes
+    anything, and again right before the note is written (independent review, 3.1 round 34)."""
+    state_dir = os.path.dirname(STATE_PATH).replace(os.sep, "/")
+    out = list(_linked_paths(target, [STATE_PATH.replace(os.sep, "/")]))
+    note = os.path.join(target, STATE_PATH)
+    if os.path.lexists(note) and (os.path.islink(note) or not os.path.isfile(note)):
+        out.append(STATE_PATH.replace(os.sep, "/"))
+    if _snapshot_owned(target, state_dir):
+        out.append("%s holds files the repository tracks" % state_dir)
+    return out
+
+
+def _require_state_folder(target):
+    problems = _state_problems(target)
+    if problems:
+        raise Refusal(EXIT_STATE, "the installer's state note isn't its own (a link, a file in a folder's place, "
+                                  "or something git tracks); nothing was changed",
+                      problems[:10] + ["move it aside (and untrack it), then run this again"])
+
+
 def _write_state(target):
     """Note, locally (the backups folder is git-ignored), which install record the operation that just
     finished wrote: rollback trusts the committed record only while it is still that one, so a record
     a pull request changed, or an older one restored, is refused (independent review, 3.1 round 33)."""
     with open(install_record_path(target), "rb") as fh:
         sha = sha256_bytes(fh.read())
+    _require_state_folder(target)
     util.ensure_parent(os.path.join(target, STATE_PATH))
+    util.fault("state.after_dir")
+    _require_state_folder(target)  # again, right before the write
     util.write_json(os.path.join(target, STATE_PATH), {"schema": "ff-aios-starter/state@1", "record_sha256": sha})
 
 
@@ -1087,6 +1112,7 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     if load_journal(target):
         raise Refusal(EXIT_STATE, "a previous operation did not finish; run rollback first",
                       [journal_path(target)])
+    _require_state_folder(target)  # the note it writes at the end must be the installer's own (3.1 round 34)
 
     release_mod.require_consumable(manifest, source_repo, aios_lookup)
     manifest = dict(manifest)
@@ -1656,6 +1682,7 @@ def _reclaim_stale_lock(stale, target=None):
 def _rollback_after_reclaim(target, stale_lock, source_repo=None):
     with _Lock(target, "rollback"):
         journal = load_journal(target)  # refuses a tracked, non-file or non-journal one (3.1 rounds 25-28)
+        _require_state_folder(target)  # before anything changes (3.1 round 34)
         if not journal and os.path.isfile(install_record_path(target)):
             _check_state(target)  # a finished operation: the record must be the one it wrote (round 33)
         record_full = install_record_path(target)
@@ -1789,6 +1816,7 @@ def clear_dead_lock(target):
 # created (util.private_temp), each with tempfile's eight random characters. A kill leaves them.
 _STATE_TEMP = re.compile(r"^\.(install|config|txn)\.json\.[a-z0-9_]{8}\.tmp$")
 _COPY_TEMP = re.compile(r"^\.write-[a-z0-9_]{8}$")
+_NOTE_TEMP = re.compile(r"^\.head\.json\.[a-z0-9_]{8}\.tmp$")
 
 
 def _sweep_temporaries(target):
@@ -1796,7 +1824,8 @@ def _sweep_temporaries(target):
     files, only in `.aios` and its backups folder. Run only while holding the lock or the guard, when
     no other operation can be writing one (independent review, 3.1 round 17)."""
     removed = []
-    for rel_dir, pattern in ((AIOS_DIR, _STATE_TEMP), (BACKUP_DIR, _COPY_TEMP)):
+    for rel_dir, pattern in ((AIOS_DIR, _STATE_TEMP), (BACKUP_DIR, _COPY_TEMP),
+                             (os.path.dirname(STATE_PATH), _NOTE_TEMP)):
         folder = os.path.join(target, rel_dir)
         if _linked_paths(target, [rel_dir.replace(os.sep, "/") + "/x"]) or not os.path.isdir(folder):
             continue
@@ -1917,8 +1946,16 @@ def _rollback_locked(target, journal):
         snapshot_prior = util.read_json(os.path.join(backup_root, "install.json"))
     except (OSError, ValueError) as exc:
         raise Refusal(EXIT_STATE, "the snapshot's install record can't be read (%s); nothing was changed" % exc)
-    unsafe = sorted(str(e.get("path")) for r in (current, snapshot_prior)
-                    for e in (r.get("managed") or []) + (r.get("created_seeds") or []) + (r.get("seeded") or [])
+    def _entries(rec):
+        if not isinstance(rec, dict):
+            return ["(not a record)"]
+        out = []
+        for key in ("managed", "created_seeds", "seeded"):
+            value = rec.get(key) or []
+            out += value if isinstance(value, list) else ["(%s isn't a list)" % key]
+        return out
+    unsafe = sorted(str(e.get("path") if isinstance(e, dict) else e) for r in (current, snapshot_prior)
+                    for e in _entries(r)
                     if not (isinstance(e, dict) and isinstance(e.get("path"), str) and util.safe_relpath(e["path"])))
     if unsafe:
         raise Refusal(EXIT_STATE, "the install records name paths outside the workspace; nothing was changed",
@@ -2745,11 +2782,11 @@ def _undo_adoption(target, info, pending=None, trusted=None, anchor=None):
             notes.append("the install record couldn't be read, so it was left")
     _sweep_temporaries(target)  # before the folders, so a backups folder it made can go too
     state = os.path.join(target, STATE_PATH)
-    if _reachable(target, STATE_PATH.replace(os.sep, "/")) and os.path.isfile(state) \
-            and not os.path.islink(state) and not _repo_owned(target, STATE_PATH):
-        os.remove(state)  # the note of the record this undo removed
+    if _reachable(target, STATE_PATH.replace(os.sep, "/")) and not _state_problems(target):
+        if os.path.isfile(state):
+            os.remove(state)  # the note of the record this undo removed
         try:
-            os.rmdir(os.path.dirname(state))
+            os.rmdir(os.path.dirname(state))  # its folder, if a kill left it empty or the note is gone
         except OSError:
             pass
     backups_rel = BACKUP_DIR.replace(os.sep, "/")
