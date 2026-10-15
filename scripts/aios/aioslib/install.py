@@ -1332,8 +1332,20 @@ class _RecoveryGuard(object):
             if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
                 raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
         os.makedirs(backups, exist_ok=True)
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
         while True:
-            fd = os.open(self.path, os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o644)
+            # Made by this run, or already there (left on Windows, or a file of the repository's own,
+            # which only a reserved path being taken could explain). Only one this run made is ever
+            # deleted (independent review, 3.1 round 5).
+            try:
+                fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_RDWR | nofollow, 0o644)
+                created = True
+            except FileExistsError:
+                try:
+                    fd = os.open(self.path, os.O_RDWR | nofollow)
+                except FileNotFoundError:
+                    continue  # its holder deleted it a moment ago: make one
+                created = False
             try:
                 _os_lock(fd)
                 held = os.fstat(fd)
@@ -1345,17 +1357,18 @@ class _RecoveryGuard(object):
                 os.close(fd)
                 raise
             if named is not None and (named.st_dev, named.st_ino) == (held.st_dev, held.st_ino):
-                self.fd = fd
+                self.fd, self.created = fd, created
                 return self
             _os_unlock(fd)  # the holder before us deleted it: lock the file that's there now
             os.close(fd)
 
     def __exit__(self, *exc):
         if self.fd is not None:
-            try:
-                os.remove(self.path)  # while still held, so no one can be locking it as it goes
-            except OSError:
-                pass  # Windows: an open file can't be deleted; it stays, in the ignored backups
+            if getattr(self, "created", False):
+                try:
+                    os.remove(self.path)  # while still held, so no one can be locking it as it goes
+                except OSError:
+                    pass  # Windows: an open file can't be deleted; it stays, in the ignored backups
             _os_unlock(self.fd)
             os.close(self.fd)
             self.fd = None

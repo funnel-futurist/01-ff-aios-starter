@@ -748,3 +748,27 @@ class BoundaryNullDeclaration(BoundaryHonoursDeclaredReviewers):
         self.head = util.git(self.repo, ["rev-parse", "HEAD"])
         code, _lines = self.check("acme-va", ["acme-founder"])
         self.assertNotEqual(code, 0)
+
+
+class ReviewRoundFive(Existing):
+    """Codex, 3.1 round 5: the guard deletes only a file it made itself."""
+
+    def test_rollback_with_nothing_to_undo_never_deletes_a_file_at_the_guards_path(self):
+        write(self.target, ".aios/backups/guard", "a file of ours\n")
+        run_git(self.target, "add", "-f", ".aios/backups/guard")
+        self.commit("ours, at the guard's path")
+        write(self.target, ".aios/lock", "adopt pid=999999 at then\n")  # a dead holder's lock
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        with open(os.path.join(self.target, ".aios/backups/guard")) as fh:
+            self.assertEqual(fh.read(), "a file of ours\n")
+
+    def test_the_guard_never_deletes_a_file_that_was_already_there(self):
+        write(self.target, ".aios/backups/guard", "")
+        with install_mod._RecoveryGuard(self.target):
+            pass
+        self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/backups/guard")))
+        os.remove(os.path.join(self.target, ".aios/backups/guard"))
+        with install_mod._RecoveryGuard(self.target):
+            self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/backups/guard")))
+        self.assertFalse(os.path.exists(os.path.join(self.target, ".aios/backups/guard")))  # made, so taken back
