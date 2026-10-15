@@ -239,6 +239,12 @@ def cmd_verify(args):
     _say("managed:   %d/%d files re-hashed from disk"
          % (summary["managed_checked"], summary["managed_total"]))
     for e in record.get("seed_lines") or []:
+        # Read only inside the workspace: the record is committed, so a pull request could point an
+        # entry anywhere; verify reports such a path above (independent review, 3.1 round 44).
+        if not util.safe_relpath(e["path"]) or install_mod._linked_paths(target, [e["path"]]) \
+                or os.path.islink(os.path.join(target, e["path"])):
+            _say("  line:    %r not read: the path leaves the workspace or runs through a link" % e["path"])
+            continue
         full = os.path.join(target, e["path"])
         here = False
         if os.path.isfile(full):

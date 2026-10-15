@@ -292,7 +292,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   links and checking again before each write.
 - Files are compared byte for byte, as every release has. A checkout that converts line endings
   (`core.autocrlf=true`) reads as changed, so keep it off for this repository, or use a
-  `.gitattributes` with `* text=auto eol=lf`.
+  `.gitattributes` with `* text=auto eol=lf`. The installer writes its own records as the same
+  bytes on every system, Windows included, and a rollback puts the install record back exactly as
+  it was.
 
 **Upgrades** write only what the plan adopts:
 - A new path the release ships must be added to the plan first, or the upgrade refuses.

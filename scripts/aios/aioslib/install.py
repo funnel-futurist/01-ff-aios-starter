@@ -437,7 +437,7 @@ def verify(target, record=None, source_repo=None):
     # Every path the record names is checked before anything on disk is read: the record is committed,
     # so a pull request could point it outside the workspace (independent review, 3.1 round 40).
     unsafe = set()
-    for kind in ("managed", "rendered", "seeded"):
+    for kind in ("managed", "rendered", "seeded", "seed_lines", "seed_lines_added"):
         for entry in record.get(kind) or []:
             path = entry.get("path") if isinstance(entry, dict) else None
             if not isinstance(path, str) or not util.safe_relpath(path):
@@ -449,6 +449,7 @@ def verify(target, record=None, source_repo=None):
     lineage = _lineage_problem(target, record)
     if lineage:
         problems.append(lineage[0])
+    problems.extend(_dropped_seed_lines(target, record))
     if source_repo:
         rel = record.get("release") or {}
         rev = rel.get("git_rev")
@@ -633,8 +634,8 @@ def _seed_line_problems(record, source_repo):
     request could add an entry that names any file and any bytes, which a later rollback would then cut
     from that file. Each entry must be a line a release up to this workspace's own declared, in its
     source record, with exactly the bytes the installer appends; the lines the last upgrade appended
-    must be its own release's; and every line this workspace's release declares has its entry
-    (independent review, 3.1 rounds 41 and 43)."""
+    must be its own release's (independent review, 3.1 round 41). That none was taken out is
+    _dropped_seed_lines."""
     version = (record.get("release") or {}).get("version")
     current = util.parse_semver(version or "")
     declared = {}
@@ -647,14 +648,6 @@ def _seed_line_problems(record, source_repo):
                                  if isinstance(sl, dict)}
         return declared[release]
 
-    # Complete, too: the installer records every line its release declares, whatever it found, so a
-    # declared line with no entry was removed from the record, and an upgrade would append it again
-    # even where the client took it out (independent review, 3.1 round 43). An adopted instance never
-    # gets seed lines.
-    if current and "adoption" not in record:
-        recorded = {(e.get("path"), e.get("line")) for e in record.get("seed_lines") or []}
-        for path, line in sorted(declares(version) - recorded, key=str):
-            problems.append("%s: the record has no entry for the seed line `%s` release %s declares" % (path, line, version))
     for kind in ("seed_lines", "seed_lines_added"):
         for entry in record.get(kind) or []:
             path, line, release = entry.get("path"), entry.get("line"), entry.get("release")
@@ -753,8 +746,22 @@ def _backup(target, record, txn_id):
         dst = os.path.join(files_root, entry["path"])
         util.ensure_parent(dst)
         shutil.copy2(src, dst)
-    util.write_json(os.path.join(backup_root, "install.json"), record)
+    # The record's own bytes, not a re-serialization: rollback puts back exactly these, so a committed
+    # record (an adoption's, which its undo compares byte for byte) comes back as it was, on any system
+    # (independent review, 3.1 round 44).
+    record_full = install_record_path(target)
+    if os.path.isfile(record_full) and not os.path.islink(record_full):
+        with open(record_full, "rb") as fh:
+            util.write_bytes(os.path.join(backup_root, "install.json"), fh.read())
+    else:
+        util.write_json(os.path.join(backup_root, "install.json"), record)
     return backup_root
+
+
+def _restore_record(target, backup_rel):
+    """Put back the install record exactly as the snapshot keeps it (see _backup)."""
+    with open(os.path.join(target, backup_rel, "install.json"), "rb") as fh:
+        util.write_bytes(install_record_path(target), fh.read())
 
 
 def _identical_regular(src, dest):
@@ -1359,6 +1366,11 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     lineage = _lineage_problem(target, record)
     if lineage:
         raise Refusal(EXIT_STATE, lineage[0] + "; nothing was changed", lineage[1])
+    dropped = _dropped_seed_lines(target, record)
+    if dropped:
+        raise Refusal(EXIT_STATE, "the install record no longer lists seed lines its history recorded, so an "
+                                  "upgrade could append a line you removed; nothing was changed",
+                      dropped[:20] + ["restore the record from git, then upgrade"])
     if "adoption" in record:
         manifest = _adopted_upgrade_view(target, record, manifest)
 
@@ -2203,7 +2215,7 @@ def _rollback_locked(target, journal):
         notes += _undo_seed_lines(target, journal.get("seed_lines") or [])
         if the_plan:
             layout_mod.reverse(target, the_plan, journal["backup"])
-        util.write_json(install_record_path(target), prior)
+        _restore_record(target, journal["backup"])
         problems, summary = verify(target, prior)
         if problems:  # the journal stays, so this can be run again
             raise Refusal(EXIT_VERIFY, "rollback did not restore a verifiable workspace", problems)
@@ -2333,7 +2345,7 @@ def _finish_rollback(target, journal, resumed=False):
     if the_plan:
         layout_mod.reverse(target, the_plan, journal["backup"])
     util.fault("rollback.after_reverse")
-    util.write_json(install_record_path(target), prior)
+    _restore_record(target, journal["backup"])
     problems, summary = verify(target, prior)
     if problems:  # the journal stays, so this can be run again
         raise Refusal(EXIT_VERIFY, "rollback did not restore a verifiable workspace", problems)
@@ -2981,6 +2993,38 @@ def _lineage_problem(target, record):
     if info and not lineage and util.in_head(target, os.path.relpath(install_record_path(target), target)):
         return "the install record says this workspace was adopted, but no commit added it as an adoption", back
     return None
+
+
+def _dropped_seed_lines(target, record):
+    """Seed lines this record's history says were handled that it no longer lists: any entry the record
+    held when committed, since the commit that began its current lifetime, for a release up to its own.
+    No installer drops one (an upgrade carries every entry; a rollback goes back to a record that never
+    had the newer release's), so one gone was taken out by an edit, and an upgrade would then append the
+    line again where the client removed it. Read from git history, which a pull request can only add to,
+    not from what the record says (independent review, 3.1 rounds 43 and 44)."""
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    if not util.in_head(target, record_rel):
+        return []
+    anchor = _latest_added(target, record_rel)
+    commits = util.git(target, ["log", "--format=%H", "--", ":(literal)" + record_rel], check=False).split()
+    if anchor in commits:
+        commits = commits[:commits.index(anchor) + 1]
+    current = util.parse_semver((record.get("release") or {}).get("version") or "")
+    now = {(e.get("path"), e.get("line")) for e in record.get("seed_lines") or []}
+    dropped = set()
+    for commit in commits:
+        raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
+        try:
+            then = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            continue
+        for e in (then.get("seed_lines") if isinstance(then, dict) else None) or []:
+            at = util.parse_semver(e.get("release") or "") if isinstance(e, dict) and isinstance(
+                e.get("release"), str) else None
+            if at and current and at <= current and (e.get("path"), e.get("line")) not in now:
+                dropped.add((str(e.get("path")), str(e.get("line")), commit[:12]))
+    return ["%s: the seed line `%s` was recorded (commit %s) but the record no longer lists it" % d
+            for d in sorted(dropped)]
 
 
 def _config_came_with_adoption(target, config_rel, anchor):

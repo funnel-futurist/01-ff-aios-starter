@@ -3123,6 +3123,100 @@ class ReviewRoundFortyThree(Layout3):
         rev = bump_to_v3(self.source, extra={"START_HERE.md": "# start here\n3.0.1\n"})
         v301 = harness.approve(harness.build_manifest(self.source, rev, "3.0.1"))
         exc = self.refuses_unchanged(self.up, v301)
-        self.assertTrue(any("has no entry for the seed line `%s`" % MAP_LINE in d for d in exc.details), exc.details)
-        problems, _ = install_mod.verify(self.target, source_repo=self.source)
-        self.assertTrue(any("has no entry for the seed line" in p for p in problems), problems)
+        self.assertTrue(any("the seed line `%s` was recorded" % MAP_LINE in d for d in exc.details), exc.details)
+        for kw in ({}, {"source_repo": self.source}):
+            problems, _ = install_mod.verify(self.target, **kw)
+            self.assertTrue(any("no longer lists it" in p for p in problems), problems)
+
+    def test_a_pinned_copy_that_never_recorded_its_lines_still_upgrades(self):
+        """The rehearsal's case: `adopt` pins a copy of a release without recording its seed lines; that's
+        no edit, and its upgrade goes ahead (round 44, after round 43's rule refused it)."""
+        v3 = self.v3  # 3.0.0, which declares the map line
+        copy = os.path.join(self.tmp, "copy")
+        install_mod.install(copy, v3, self.source, harness.config())
+        os.remove(install_mod.install_record_path(copy))
+        record = install_mod.adopt(copy, v3, self.source, harness.config())
+        self.assertNotIn("seed_lines", record)
+        run_git(copy, "init", "-q", "-b", "main")
+        run_git(copy, "config", "user.email", "client@example.com")
+        run_git(copy, "config", "user.name", "client")
+        run_git(copy, "add", "-A")
+        run_git(copy, "commit", "-qm", "a pinned copy of 3.0.0")
+        rev = bump_to_v3(self.source, extra={"START_HERE.md": "# start here\n3.0.1\n"})
+        v301 = harness.approve(harness.build_manifest(self.source, rev, "3.0.1"))
+        install_mod.upgrade(copy, v301, self.source, no_vercel=True)
+        self.assertEqual(install_mod.load_record(copy)["release"]["version"], "3.0.1")
+
+
+def windows_text_mode():
+    """Text-mode writes as Windows does them (every LF written becomes CRLF), on any system: os.fdopen
+    goes through the pure-Python io, which reads os.linesep."""
+    import _pyio
+    from unittest import mock
+
+    class Both(object):
+        def __enter__(self):
+            self.patches = [mock.patch.object(os, "linesep", "\r\n"),
+                            mock.patch("os.fdopen", lambda fd, mode="r", *a, **kw: _pyio.open(fd, mode, *a, **kw))]
+            for p in self.patches:
+                p.start()
+
+        def __exit__(self, *exc):
+            for p in reversed(self.patches):
+                p.stop()
+    return Both()
+
+
+class ReviewRoundFortyFour(Existing):
+    """Codex, 3.1 round 44: records are written and put back byte for byte on Windows too."""
+
+    def test_write_json_writes_lf_and_its_hash_is_the_files(self):
+        path = os.path.join(self.tmp, "x.json")
+        with windows_text_mode():
+            text = util.write_json(path, {"a": [1, 2]})
+        with open(path, "rb") as fh:
+            data = fh.read()
+        self.assertNotIn(b"\r\n", data)
+        self.assertEqual(data, text.encode("utf-8"))
+
+    def test_an_adoption_upgraded_and_rolled_back_on_windows_can_still_be_undone(self):
+        self.adopt()
+        self.commit("adopted on a Mac")  # the record committed with LF
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        with windows_text_mode():
+            install_mod.upgrade(self.target, v31, self.source)
+            self.commit("upgraded on Windows")
+            install_mod.rollback(self.target)
+            self.commit("rolled back on Windows")
+            _r, _s, how = install_mod.rollback(self.target, self.source)
+        self.assertIn("the adoption was undone", how)
+        self.assertFalse(os.path.exists(install_mod.install_record_path(self.target)))
+
+
+class ReviewRoundFortyFourVerify(Layout3):
+    """Codex, 3.1 round 44: the verify command reads no seed-line path outside the workspace."""
+
+    def test_verify_reads_no_seed_line_path_outside_the_workspace(self):
+        self.up()  # 3.0.0 records its map line
+        self.git_commit("on 3.0.0")
+        outside = os.path.join(self.tmp, "outside")
+        write(outside, "secret.md", "%s\n" % MAP_LINE)
+        os.symlink(outside, os.path.join(self.target, "linked"))
+        out_rel = os.path.relpath(os.path.join(outside, "secret.md"), self.target)
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        for rel in (out_rel, "linked/secret.md"):
+            record["seed_lines"].append({"path": rel, "line": MAP_LINE, "state": "present", "release": "3.0.0"})
+        util.write_json(path, record)
+        self.git_commit("a pull request points seed lines outside")
+        self.be("acme-founder")
+        for extra in ((), ("--repo", self.source)):
+            code, out, err = self.cli("verify", "--target", self.target, *extra)
+            self.assertNotEqual(code, 0, out + err)
+            for rel in (out_rel, "linked/secret.md"):
+                self.assertIn("%r not read" % rel, out)
+                self.assertNotIn("%s has `%s`" % (rel, MAP_LINE), out)
+        problems, _ = install_mod.verify(self.target)
+        self.assertTrue(any("unsafe path: %r" % out_rel in p for p in problems), problems)
+        self.assertTrue(any("linked/secret.md is reached through a link" in p for p in problems), problems)

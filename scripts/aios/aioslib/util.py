@@ -62,10 +62,18 @@ def read_json(path):
 
 
 def write_json(path, obj):
-    ensure_parent(path)
     # sort_keys so a manifest is byte-stable across runs and machines: a rebuilt release
     # must hash the same, or "reproducible" is a word we do not get to use.
     text = json.dumps(obj, indent=2, sort_keys=True) + "\n"
+    write_bytes(path, text.encode("utf-8"))
+    return text
+
+
+def write_bytes(path, data):
+    """Write `data` exactly, atomically. Bytes, never text mode: on Windows text mode turns every LF
+    into CRLF, and the installer compares and hashes its records byte for byte (independent review,
+    3.1 round 44)."""
+    ensure_parent(path)
     # Atomic. Mode "w" truncates before writing, so a kill mid-write left a half-written
     # install record that no recovery path could parse - the crash handler itself crashed.
     # The temporary file is new and uniquely named, never a fixed `<name>.tmp` that something else
@@ -75,8 +83,8 @@ def write_json(path, obj):
     fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".", suffix=".tmp",
                                dir=os.path.dirname(os.path.abspath(path)))
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
         os.chmod(tmp, 0o644)
@@ -85,7 +93,6 @@ def write_json(path, obj):
     finally:
         if os.path.lexists(tmp):
             os.remove(tmp)
-    return text
 
 
 # The installer's own state in a workspace. A release may never ship these paths, and adopting
