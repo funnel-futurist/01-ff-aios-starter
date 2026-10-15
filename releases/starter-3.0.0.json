@@ -1,7 +1,8 @@
 {
   "approval": {
-    "approved_at": null,
-    "approved_by": null
+    "approved_at": "2026-10-14T23:13:00Z",
+    "approved_by": "phoenix-ship-it",
+    "basis": "Phoenix's answers in a planning chat on 2026-10-14 at 16:13 PT (23:13Z), committed from his login (phoenix-ship-it, Phoenix Bohannon) as ai-os commit 1eb05f9ca on branch planning/owner-batch-20261014-1613 (ai-os PR #530), file 06_Clients/funnel_futurist/01_foundations/team_ops/planning/lifeos_reset_2026_10_12/client_owner_decisions_2026_10_14_1613.md: 'G95 verbatim: \"Approve starter 3.0.0 at 896a750\"', the exact line the founder brief releases/starter-3.0.0.BRIEF.md asked for; also posted from his login on ff-delegation #81 (comment 6180576626, 23:14:49Z). Relayed through that committed record, not typed in the lane 0.1 Starter session (recorded verbatim in ff-delegation exec/lane01-handoffs-20261004, parallel_handoffs/0.1/PHOENIX_WORDS_2026-10-14_2313Z.md). The approval binds to 896a750bdd01e672cb753d4477e2cf1fc7cab0e6 only (re-cut with release build at that rev: byte-identical to the stored draft, sha256 d02e132b1f4d9b37...). He did not say \"keep 2.10.0\", so 2.10.0 is superseded, as the brief said."
   },
   "compatibility": {
     "breaking": [
@@ -1138,6 +1139,6 @@
     "workspace_health",
     "wrap-up"
   ],
-  "status": "draft",
+  "status": "approved",
   "version": "3.0.0"
 }
