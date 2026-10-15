@@ -1293,3 +1293,64 @@ class ReviewRoundThirteenCodex(Existing):
         self.assertIn("own paths", exc.message)
         self.assertTrue(any(".aios is a link" in d for d in exc.details), exc.details)
         self.assertEqual(sorted(os.listdir(outside)), before)
+
+
+def _tree(root):
+    """Every folder and file under `root` (git's own folder aside), with each file's bytes."""
+    out = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not (dirpath == root and d == ".git")]
+        rel = os.path.relpath(dirpath, root)
+        out[rel + "/"] = None
+        for f in filenames:
+            with open(os.path.join(dirpath, f), "rb") as fh:
+                out[os.path.join(rel, f)] = fh.read()
+    return out
+
+
+class ReviewRoundFourteen(Existing):
+    """Codex, 3.1 round 14."""
+
+    def test_a_failed_journal_write_leaves_no_temporary_copy_and_adoption_can_run_again(self):
+        real = util.write_json
+        journal = install_mod.journal_path(self.target)
+        failed = []
+
+        def disk_full_once(path, obj):
+            if path == journal and isinstance(obj, dict) and obj.get("pending") and not failed:
+                failed.append(path)
+                raise OSError(28, "No space left on device")
+            return real(path, obj)
+
+        util.write_json = disk_full_once
+        try:
+            with self.assertRaises(OSError):
+                self.adopt()
+        finally:
+            util.write_json = real
+        self.assertTrue(failed)
+        backups = os.path.join(self.target, ".aios", "backups")
+        self.assertEqual([n for n in os.listdir(backups) if n.startswith(".write-")]
+                         if os.path.isdir(backups) else [], [], "a temporary copy no journal names was left")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.adopt()  # and it runs again
+        self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
+
+    def test_outside_git_a_refusal_changes_no_folder(self):
+        shutil.rmtree(os.path.join(self.target, ".git"))
+        before = _tree(self.target)
+        with self.assertRaises(Refusal) as ctx:
+            self.adopt()
+        self.assertIn("isn't a git repository", ctx.exception.message)
+        self.assertEqual(_tree(self.target), before)
+
+    def test_without_an_aios_folder_a_refusal_changes_no_folder(self):
+        shutil.rmtree(os.path.join(self.target, ".aios"))
+        self.commit("no .aios at all")
+        before = _tree(self.target)
+        with self.assertRaises(Refusal) as ctx:
+            self.adopt()
+        self.assertIn("no role policy of its own", ctx.exception.message)
+        self.assertEqual(_tree(self.target), before)

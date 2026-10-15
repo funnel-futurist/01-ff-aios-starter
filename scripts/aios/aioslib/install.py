@@ -1859,6 +1859,15 @@ def adopt_existing(target, manifest, source_repo, config, plan_rel=None, aios_lo
     if problems:
         raise Refusal(EXIT_STATE, "the installer's own paths aren't free in this workspace; nothing was "
                                   "changed", problems)
+    # Also before the lock, which creates `.aios` if it's missing and, outside git, its guard in
+    # `.aios/backups`: a refusal must leave every folder as it was (independent review, 3.1 round 14).
+    if not util.is_git_repo(target):
+        raise Refusal(EXIT_STATE, "this isn't a git repository; adopting into an existing instance needs "
+                                  "one, so the plan is committed and git gives a second way back")
+    if not os.path.isdir(os.path.join(target, AIOS_DIR)):
+        raise Refusal(EXIT_STATE, "this instance has no role policy of its own (no %s folder)" % AIOS_DIR,
+                      ["write %s first: upgrade and rollback read it, so without it an adoption "
+                       "couldn't be rolled back" % roles.POLICY_PATH])
     with _Lock(target, "adopt"):
         return _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios_lookup)
 

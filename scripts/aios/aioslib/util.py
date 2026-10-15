@@ -347,8 +347,10 @@ def create_new(target_root, relpath, data, mode, before_link=None):
             os.fsync(fh.fileno())
         os.chmod(tmp, 0o755 if mode == "100755" else 0o644)
         if before_link:
-            journaled = True  # from here the caller's journal names it, and its rollback removes it
             before_link(tmp)
+            # Only once that returned is the journal naming it on disk: if writing it failed, no journal
+            # names it, so it goes below (independent review, 3.1 round 14).
+            journaled = True
         try:
             os.link(tmp, dest)  # fails if anything is at dest, a link included: never a replace
         except FileExistsError:
