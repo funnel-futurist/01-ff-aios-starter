@@ -1623,3 +1623,53 @@ class ReviewRoundNineteen(Existing):
         install_mod.rollback(self.target)
         with open(os.path.join(self.target, ".aios", name)) as fh:
             self.assertEqual(fh.read(), "ours\n")
+
+
+class ReviewRoundTwenty(Existing):
+    """Codex, 3.1 round 20."""
+
+    def test_rollback_never_follows_a_link_out_of_the_repository(self):
+        self.adopt()
+        self.commit("adopted")
+        outside = os.path.join(self.tmp, "outside")
+        with open(os.path.join(self.target, ".claude/skills/start-my-day/SKILL.md"), "rb") as fh:
+            release_bytes = fh.read()
+        write(outside, "start-my-day/SKILL.md", release_bytes.decode("utf-8"))  # identical bytes, outside
+        os.chmod(os.path.join(outside, "start-my-day/SKILL.md"), 0o644)
+        shutil.rmtree(os.path.join(self.target, ".claude", "skills"))
+        os.symlink(outside, os.path.join(self.target, ".claude", "skills"))
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("reached through a link now", out)
+        with open(os.path.join(outside, "start-my-day/SKILL.md"), "rb") as fh:
+            self.assertEqual(fh.read(), release_bytes)
+
+    def test_rollback_never_acts_on_a_journal_path_outside_the_workspace(self):
+        outside = os.path.join(self.tmp, "outside.txt")
+        write(self.tmp, "outside.txt", "not the workspace's\n")
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:adopt.mid_write"})
+        self.assertEqual(code, 137)
+        journal = install_mod.load_journal(self.target)
+        journal["adoption"]["created"].append({"path": "../outside.txt", "mode": 0o644,
+                                               "sha256": util.sha256_file(outside)})
+        util.write_json(install_mod.journal_path(self.target), journal)
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertTrue(os.path.isfile(outside), "a file outside the workspace was removed")
+
+    def test_a_tracked_lock_is_the_repositorys_file(self):
+        write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
+        run_git(self.target, "add", "-f", ".aios/lock")
+        self.commit("a file of ours at that path")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertTrue(any("this repository tracks" in d for d in exc.details), exc.details)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("not the installer's lock", out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/lock")))

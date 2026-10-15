@@ -1341,7 +1341,7 @@ def rollback(target):
     # rollback clears a stale lock. A LIVE holder's lock is never taken: two operations at once
     # would interleave their writes (independent review).
     with _RecoveryGuard(target):  # one recovery at a time decides about a stale lock
-        stale_lock = _reclaim_stale_lock(os.path.join(target, LOCK_PATH))
+        stale_lock = _reclaim_stale_lock(os.path.join(target, LOCK_PATH), target)
     return _rollback_after_reclaim(target, stale_lock)
 
 
@@ -1470,10 +1470,18 @@ def _os_unlock(fd):
         pass
 
 
-def _reclaim_stale_lock(stale):
+def _reclaim_stale_lock(stale, target=None):
     """Clear a lock whose holder is dead. True if one was cleared."""
     if not os.path.exists(stale):
         return False
+    if target is not None and util.is_tracked(target, LOCK_PATH.replace(os.sep, "/")):
+        # The installer's lock is never committed (.aios/.gitignore ignores it): a tracked one is the
+        # repository's own file, whatever it says (independent review, 3.1 round 20).
+        raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's lock"
+                      % LOCK_PATH.replace(os.sep, "/"),
+                      ["if an interrupted operation left it and it was committed by mistake, untrack it "
+                       "(git rm --cached %s), commit, and run this again; otherwise move the repository's "
+                       "own file" % LOCK_PATH.replace(os.sep, "/")])
     text = ""
     ident = None
     try:
@@ -1579,7 +1587,7 @@ def clear_dead_lock(target):
         # after this look is a live holder's.
         return False
     with _RecoveryGuard(target):
-        cleared = _reclaim_stale_lock(os.path.join(target, LOCK_PATH))
+        cleared = _reclaim_stale_lock(os.path.join(target, LOCK_PATH), target)
         if cleared:  # still under the guard, so no new holder is writing yet
             _sweep_temporaries(target)
         return cleared
@@ -1598,7 +1606,7 @@ def _sweep_temporaries(target):
     removed = []
     for rel_dir, pattern in ((AIOS_DIR, _STATE_TEMP), (BACKUP_DIR, _COPY_TEMP)):
         folder = os.path.join(target, rel_dir)
-        if os.path.islink(folder) or not os.path.isdir(folder):
+        if _linked_paths(target, [rel_dir.replace(os.sep, "/") + "/x"]) or not os.path.isdir(folder):
             continue
         for name in sorted(os.listdir(folder)):
             full = os.path.join(folder, name)
@@ -1923,9 +1931,13 @@ def _reserved_before_adoption(target):
     for rel in _linked_paths(target, [LOCK_PATH.replace(os.sep, "/")]):
         out.append("%s is a link or a file of this repository's own; the installer needs that folder" % rel)
     for rel in (LOCK_PATH, os.path.relpath(journal_path(target), target)):
+        rel = rel.replace(os.sep, "/")
         if os.path.lexists(os.path.join(target, rel)):
-            out.append("%s exists: another operation is running, or one was interrupted "
-                       "(`aios rollback` clears it)" % rel.replace(os.sep, "/"))
+            if util.is_tracked(target, rel):
+                out.append("%s is a file this repository tracks; the installer needs that path" % rel)
+            else:
+                out.append("%s exists: another operation is running, or one was interrupted "
+                           "(`aios rollback` clears it)" % rel)
     aios = os.path.join(target, AIOS_DIR)
     if os.path.isdir(aios) and not os.path.islink(aios):
         for name in sorted(os.listdir(aios)):
@@ -2193,6 +2205,13 @@ def _same_bytes_and_mode(target, entry):
     return not _EXEC_BITS or bool(st.st_mode & 0o100) == (entry.get("mode") == "100755")
 
 
+def _reachable(target, rel):
+    """A path the undo may act on: inside the workspace, and reached without a link or a file in a
+    folder's place. The journal and the record are editable, and a folder may since have been
+    replaced by a link out of the repository (independent review, 3.1 round 20)."""
+    return bool(rel) and util.safe_relpath(rel) and not _linked_paths(target, [rel])
+
+
 def _undo_adoption(target, info, pending=None):
     """Take back exactly what an adoption created: the files it recorded, while each is still the
     bytes and mode it wrote, and a file it was creating when killed only if it is still that very
@@ -2210,21 +2229,26 @@ def _undo_adoption(target, info, pending=None):
         dest = os.path.join(target, pending["path"])
         tmp = os.path.join(target, pending["temp"])
         decided.add(pending["path"])
-        if os.path.lexists(dest):
-            st = os.lstat(dest)
-            ours = (stat.S_ISREG(st.st_mode) and sha256_file(dest) == pending.get("sha256")
-                    and stat.S_IMODE(st.st_mode) == pending.get("mode")
-                    and (not os.path.lexists(tmp) or os.path.samestat(st, os.lstat(tmp))))
-            if ours:
-                os.remove(dest)
-                created.append(pending["path"])
-            else:
-                notes.append("%s isn't exactly what an interrupted adoption made, so it was left for you"
-                             % pending["path"])
-        if os.path.lexists(tmp):
-            os.remove(tmp)
+        if not (_reachable(target, pending["path"]) and _reachable(target, pending["temp"])):
+            notes.append("%s is reached through a link now, so it was left" % pending["path"])
+        else:
+            if os.path.lexists(dest):
+                st = os.lstat(dest)
+                ours = (stat.S_ISREG(st.st_mode) and sha256_file(dest) == pending.get("sha256")
+                        and stat.S_IMODE(st.st_mode) == pending.get("mode")
+                        and (not os.path.lexists(tmp) or os.path.samestat(st, os.lstat(tmp))))
+                if ours:
+                    os.remove(dest)
+                    created.append(pending["path"])
+                else:
+                    notes.append("%s isn't exactly what an interrupted adoption made, so it was left for "
+                                 "you" % pending["path"])
+            if os.path.lexists(tmp):
+                os.remove(tmp)
     for i, c in enumerate(info.get("created") or []):
-        if c["path"] not in decided:
+        if c["path"] not in decided and not _reachable(target, c["path"]):
+            notes.append("%s is reached through a link now, so it was left" % c["path"])
+        elif c["path"] not in decided:
             note = _remove_if_ours(target, c["path"], c["sha256"], c.get("mode"))
             if note:
                 notes.append(note)
@@ -2232,7 +2256,8 @@ def _undo_adoption(target, info, pending=None):
             util.fault("adopt.undo_mid")
     record_full = install_record_path(target)
     record_rel = os.path.relpath(record_full, target).replace(os.sep, "/")
-    if record_rel not in decided and os.path.isfile(record_full) and not os.path.islink(record_full):
+    if record_rel not in decided and _reachable(target, record_rel) and os.path.isfile(record_full) \
+            and not os.path.islink(record_full):
         # This adoption's record (it names the plan's hash), and only while it is still what was
         # written: one edited since stays, like any file the adoption made (independent review, 3.1
         # round 12).
@@ -2246,6 +2271,8 @@ def _undo_adoption(target, info, pending=None):
             notes.append("the install record couldn't be read, so it was left")
     _sweep_temporaries(target)  # before the folders, so a backups folder it made can go too
     for d in sorted(info.get("made_dirs") or [], key=lambda e: -e["path"].count("/")):
+        if not _reachable(target, d["path"] + "/x"):  # the folder itself, and each folder on the way
+            continue
         full = os.path.join(target, d["path"])
         try:
             st = os.lstat(full)
