@@ -34,7 +34,8 @@ def lane_from_codeowners(text, parse):
     for _lineno, pattern, owners in parse(text):
         p = pattern.lstrip("/")
         glob = p[:-1] + "/**" if p.endswith("/") else p
-        if any(c in glob[:-3] if glob.endswith("/**") else glob for c in "*?["):
+        base = glob[:-3] if glob.endswith("/**") else glob
+        if any(c in base for c in "*?["):
             continue  # a wildcard rule: GitHub enforces it at review; the check can't prove it
         lane.append(glob)
         reviewers.update(o for o in owners if o.startswith("@") and "/" not in o)
