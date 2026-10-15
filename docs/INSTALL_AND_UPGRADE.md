@@ -45,6 +45,35 @@ with uncommitted work.
 `start` and `verify` are safe to run any time and change nothing. `upgrade` and `rollback` are
 founder-only.
 
+## Upgrading from Starter 2.x to 3.0 (the folder move)
+
+3.0 replaces the numbered folders (`01_Foundations` ... `11_Projects`) with seven domain folders (`00_AIOS` ... `05_Jobs`, `99_Archive`). The upgrade moves your files for you. The exact map is in the release record, so it was approved with the release. `00_AIOS/routing.md` lists every old folder and its new home.
+
+This is the one time an upgrade changes where your files are. It still never changes what's in them.
+
+**What it does:**
+- **Moves every file in an old folder,** including files you made yourself and files git ignores (your `.env`, `node_modules`). Each file keeps its exact bytes, size and permissions: only its path changes. Afterwards every moved file is re-hashed, and `layout_proof.json` in the upgrade's backup lists each file's old path, new path and hash.
+- **Never rewrites a starter file.** Starter files are yours once installed, so the 3.0 wording of a file you already have doesn't replace yours, edited or not. New folders get their new starter files.
+- **Adds one line to your `CLAUDE.md`:** `@00_AIOS/routing.md`, so Claude reads the new folder map. The dry run shows it first. It's added once, never twice, and every other byte of your `CLAUDE.md` stays the same. Rollback takes it back.
+- **Keeps empty folders.** An empty folder of yours moves too.
+- **Sets aside system junk.** `.DS_Store`, `Thumbs.db` and `desktop.ini` aren't moved: they're kept in the upgrade's backup, and rollback puts them back.
+- **Lists what you should check:** files of yours that still mention an old folder. They aren't edited, so update them when you're ready.
+
+**What it refuses, changing nothing:**
+- uncommitted work;
+- a file that would land where something already exists, including a name that differs only in capital letters or accents (a Mac or Windows disk treats `Plan.md` and `plan.md` as one file);
+- two of your files that would land on one name;
+- a symbolic link, a nested repository or submodule, or a file on another disk, inside an old folder;
+- **a Vercel project that still builds a folder it moves.** The upgrade asks Vercel, read-only, with your token (`VERCEL_TOKEN`), and refuses until every such project's Root Directory names the new folder. If this repository isn't deployed by Vercel at all, say so with `--no-vercel` instead; that's recorded with the upgrade, and refused if Vercel's own files are in the folders that move. Card: [Move a Vercel site to its 3.0 folder](human_steps/move_a_vercel_site.md).
+
+**Afterwards:**
+1. Commit. Git shows the change as renames, so the history of each file follows it.
+2. **Restore founder review at the new paths.** `.github/CODEOWNERS` is yours, so the upgrade doesn't rewrite it, and it still names the old founder-only folder. Until you fix it, GitHub doesn't ask a founder about changes there, and `aios instance check` fails. Card: [Restore founder review after the 3.0 move](human_steps/restore_founder_review.md).
+
+**If it's interrupted** (power cut, killed terminal): the whole move was written down before the first file moved. `rollback` puts every file back from wherever it stopped.
+
+**Going back:** `rollback` reverses every move, puts the set-aside files back, removes the 3.0 starter files you haven't touched, and takes back the `CLAUDE.md` line. Right after an upgrade, the workspace comes back exactly as it was. A file you edited after upgrading goes back to its old path with your edit; one you deleted stays deleted. If something of yours now sits at an old path, rollback refuses before changing anything.
+
 ## Getting an exact release
 
 Every release is a record, `releases/starter-X.Y.Z.json`, plus a tag, `starter-X.Y.Z`. The
@@ -82,6 +111,18 @@ The target must be clean. The installer materialises every file from the pinned 
 verifies the result by **re-hashing what landed on disk**, and writes `.aios/install.json`
 recording exactly what you have. If the readback disagrees with the manifest, the install fails
 - "the installer said it worked" is not evidence.
+
+It checks everything before it writes the first file, and refuses with nothing changed if:
+- a release file is already in the target;
+- you already have a `CODEOWNERS` file (in `.github/`, the top folder or `docs/`). Yours is never
+  replaced, and never shadowed by one GitHub would read first;
+- `.aios/config.json` holds a different config;
+- a folder it would write into is a link;
+- an owner in `code_owners` isn't `@user`, `@org/team` or an email, or isn't one of your `people`.
+  GitHub silently ignores such an owner, so the rule would protect nothing.
+
+A starter file you already have, such as your own `README.md`, stays exactly as it is and is
+recorded as yours.
 
 Anything you have to do by hand along the way (2FA, a scoped token, a backup, connecting Vercel, removing someone, running a command Claude gives you) has a click-by-click card in [`docs/human_steps/`](human_steps/README.md).
 
@@ -129,7 +170,7 @@ version you have. `start` will say `UNPINNED`. To put it on the contract:
 python3 scripts/aios/aios.py adopt --release releases/starter-X.Y.Z.json --target . --config .aios/config.json
 ```
 
-Adopt succeeds only if your files match that release byte for byte. If it refuses, you have
+Adopt succeeds only if your files match that release byte for byte, executable bits included. If it refuses, you have
 local changes to the system layer - that is information, not a failure.
 
 ## What upgrade actually does
@@ -254,9 +295,12 @@ Without `--repo` it asks *"does this workspace still match what was installed?"*
 in `.aios/install.json`. That record lives in your own repo, so a determined local editor could
 change a managed file **and** its recorded hash, and the check would agree with itself.
 
-With `--repo` it also re-derives every hash from the pinned commit in the source repository, which
-catches exactly that. The output always says which of the two it ran. Use `--repo` when the answer
-matters to somebody other than you.
+With `--repo` it also checks the record against the source repository. It re-derives every hash
+and executable bit from the pinned commit, which catches exactly that. It takes the list of
+release files from the release itself, so a file dropped from the record and the disk together is
+caught. It checks the pin against the source's own record of the release (its tag, then the
+checked-out `releases/` folder), and says when the source has no such record. The output always
+says which of the two it ran. Use `--repo` when the answer matters to somebody other than you.
 
 ## Hearing about a new release
 

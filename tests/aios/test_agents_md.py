@@ -50,7 +50,7 @@ class Drift(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        for rel in ("CLAUDE.md", CORE, "AGENTS.md"):
+        for rel in ("CLAUDE.md", CORE, "00_AIOS/routing.md", "AGENTS.md"):
             dst = os.path.join(self.tmp, rel)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(os.path.join(ROOT, rel), dst)

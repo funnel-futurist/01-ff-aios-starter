@@ -90,7 +90,7 @@ An upload is not integration. Do not delete the original because a summary exist
 - After an approved communication-rule release merges, prepare a short team notice with the exact version, change, source and existing approved-version update route. Ask before sending unless that notice and audience are already authorized. Teammates preserve local work, inspect the approved version and follow their established installer/release flow; never blindly pull an unreviewed branch or unapproved package. Verify the installed version and a fresh-session behavior check before calling adoption complete.
 
 ## 9. Writing standard (referenced, not copied)
-Canonical source: your own voice rules in `03_Quality_Control/qc_preferences.md`, applied with the `/humanize` skill (`.claude/skills/humanize/SKILL.md`). Load them for any prose of real length. Must-haves:
+Canonical source: your own voice rules in `00_AIOS/review_queue/qc_preferences.md`, applied with the `/humanize` skill (`.claude/skills/humanize/SKILL.md`). Load them for any prose of real length. Must-haves:
 - Find the thought first; keep the train of thought continuous so it still makes sense read aloud.
 - Reasons travel with claims; keep complete causal chains; say what things are.
 - Short paragraphs, minimal commas, no em dashes, no manufactured drama or profundity.

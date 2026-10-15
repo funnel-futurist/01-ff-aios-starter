@@ -631,9 +631,17 @@ class Concurrency(Sandbox):
     def test_rollback_clears_a_lock_left_by_a_killed_holder(self):
         install_mod.upgrade(self.target, self.v2, self.source)
         harness.write(self.target, install_mod.LOCK_PATH, "upgrade pid=99999 (killed)\n")
+        # A killed upgrade with no journal never changed anything (the journal is written before
+        # the first change), so the first rollback clears its lock and rolls NOTHING back. Until
+        # 3.0 it went on to undo the previous, successful upgrade, which nobody asked for; the 3.0
+        # rehearsal's real SIGKILLs during planning found it.
+        record, summary, how = install_mod.rollback(self.target)
+        self.assertEqual(summary["version"], "1.1.0")
+        self.assertIn("rolled nothing back", how)
+        self.assertFalse(os.path.exists(os.path.join(self.target, install_mod.LOCK_PATH)))
+        # Asked again, on purpose, it goes back to the previous release as always.
         record, summary, _how = install_mod.rollback(self.target)
         self.assertEqual(summary["version"], "1.0.0")
-        self.assertFalse(os.path.exists(os.path.join(self.target, install_mod.LOCK_PATH)))
 
     def test_the_lock_is_released_on_success_and_on_refusal(self):
         install_mod.upgrade(self.target, self.v2, self.source)

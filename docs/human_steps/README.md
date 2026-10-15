@@ -10,6 +10,8 @@ One card for each thing a person has to do by hand. When Claude needs you to act
 | [create_a_supabase_token.md](create_a_supabase_token.md) | A scoped Supabase access token |
 | [download_a_supabase_backup.md](download_a_supabase_backup.md) | A backup of a Supabase database on your computer |
 | [connect_vercel_to_a_repo.md](connect_vercel_to_a_repo.md) | Deploying a site from GitHub with Vercel |
+| [move_a_vercel_site.md](move_a_vercel_site.md) | Keeping a Vercel site deploying when the 3.0 upgrade moves its folder |
+| [restore_founder_review.md](restore_founder_review.md) | Founder review on the founder lane after the 3.0 folder move |
 
 Every card has: the exact address, numbered clicks, what success looks like, what to send back (never a secret), the official page it was checked against and the date it was read, what that page doesn't state, and a video whose transcript was checked against the steps, or "still to find" if none matched yet.
 

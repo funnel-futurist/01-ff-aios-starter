@@ -49,7 +49,7 @@ class OperatorCorePins(unittest.TestCase):
 
     def test_the_writing_standard_points_at_files_the_client_has(self):
         text = self.core.decode("utf-8")
-        for rel in ("03_Quality_Control/qc_preferences.md", ".claude/skills/humanize/SKILL.md"):
+        for rel in ("00_AIOS/review_queue/qc_preferences.md", ".claude/skills/humanize/SKILL.md"):
             self.assertIn(rel, text)
             self.assertTrue(os.path.isfile(os.path.join(ROOT, rel)), rel)
         # The source edition's section 9 names a repository clients can't open.
