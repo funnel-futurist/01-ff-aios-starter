@@ -268,12 +268,21 @@ def _adopted_subset(target, info, shipped, managed, problems):
     classifies them, not as the install record's own copy of the plan says. That copy is as editable
     as the record, so a file dropped with its entry, and reclassified there, would otherwise pass
     (independent review, 3.1 round 11)."""
-    rel = info.get("plan") or ADOPTION_PLAN
+    rel = (info.get("plan") or ADOPTION_PLAN).replace(os.sep, "/")
     try:
         plan, plan_sha = load_adoption_plan(target, rel)
     except Refusal as exc:
         problems.append("cannot read the adoption plan: %s" % exc.message)
         return {p for p in managed if _adoption_class(info, p) == "adopt"}
+    # Only as committed: an untracked or locally edited plan could say anything (independent review,
+    # 3.1 round 16).
+    if not util.is_tracked(target, rel):
+        problems.append("the adoption plan %s isn't committed" % rel)
+    else:
+        committed = util.git(target, ["show", "HEAD:" + rel], binary=True, check=False)
+        with open(os.path.join(target, rel), "rb") as fh:
+            if fh.read() != committed:
+                problems.append("the adoption plan %s has changes that aren't committed" % rel)
     if plan_sha != info.get("plan_sha256"):
         problems.append("the adoption plan %s isn't the one this instance was adopted or last upgraded "
                         "with (upgrade to apply a changed plan)" % rel)
@@ -1991,24 +2000,14 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     creds = orgconfig.resolve(manifest.get("credentials"), config, target)
     orgconfig.require_resolved(creds)
 
-    planned = sorted([e["path"] for e in adopt] + [config_rel, record_rel])
-    pre_dirs = set()
-    # The backups folder too: the temporary copies are made there, and the undo prunes it only if this
-    # adoption made it and it's empty again.
-    for rel in planned + [_IN_BACKUPS]:
-        parts = rel.split("/")[:-1]
-        for i in range(1, len(parts) + 1):
-            d = "/".join(parts[:i])
-            if os.path.isdir(os.path.join(target, d)):
-                pre_dirs.add(d)
     info = {
         "plan": plan_rel, "plan_sha256": plan_sha,
         "adopt": plan["adopt"], "instance_owned": plan["instance_owned"], "exclude": plan["exclude"],
-        # Every path it may create, journaled before the first: a create that fails after making its
-        # folders still has them pruned, as long as they are empty and weren't there before
-        # (independent review, 3.1 round 15).
-        "planned": planned,
-        "created": [], "pre_dirs": sorted(pre_dirs),
+        # Each folder this adoption makes, by identity, journaled as it's made: the undo removes only
+        # those very folders, and only while they're empty. A folder it can't prove it made stays
+        # (independent review, 3.1 rounds 15 and 16).
+        "made_dirs": [],
+        "created": [],
     }
     journal = {
         "op": "adopt-existing", "phase": "writing", "started_at": util.now_iso(),
@@ -2024,7 +2023,21 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     util.write_json(journal_path(target), journal)
     util.fault("adopt.after_journal")
 
+    def make_dirs(rel_dir):
+        parts = rel_dir.split("/")
+        for i in range(1, len(parts) + 1):
+            d = "/".join(parts[:i])
+            full = os.path.join(target, d)
+            if not os.path.lexists(full):
+                os.mkdir(full)
+                st = os.lstat(full)
+                info["made_dirs"].append({"path": d, "dev": st.st_dev, "ino": st.st_ino})
+                util.write_json(journal_path(target), journal)
+
     def create(rel, data, mode, provenance=True):
+        if "/" in rel:
+            make_dirs(rel.rsplit("/", 1)[0])
+
         def pending(tmp):
             journal["pending"] = {"path": rel, "temp": os.path.relpath(tmp, target).replace(os.sep, "/"),
                                   "sha256": sha256_bytes(data), "mode": stat.S_IMODE(os.lstat(tmp).st_mode)}
@@ -2049,6 +2062,7 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
         util.write_json(journal_path(target), journal)
 
     try:
+        make_dirs(BACKUP_DIR.replace(os.sep, "/"))  # where the temporary copies are made
         if config_created:  # first, so a rollback after any later kill can tell who is asking
             create(config_rel, _config_text(config), "100644")
         managed, seeded, written = [], [], 0
@@ -2131,10 +2145,6 @@ def _same_bytes_and_mode(target, entry):
     return not _EXEC_BITS or bool(st.st_mode & 0o100) == (entry.get("mode") == "100755")
 
 
-# A name inside the backups folder, so _prune_parents considers the folder itself.
-_IN_BACKUPS = BACKUP_DIR.replace(os.sep, "/") + "/x"
-
-
 def _undo_adoption(target, info, pending=None):
     """Take back exactly what an adoption created: the files it recorded, while each is still the
     bytes and mode it wrote, and a file it was creating when killed only if it is still that very
@@ -2186,8 +2196,15 @@ def _undo_adoption(target, info, pending=None):
                     notes.append("%s changed since the adoption wrote it, so it was left for you" % record_rel)
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
-    _prune_parents(target, created + list(info.get("planned") or []) + [record_rel, _IN_BACKUPS],
-                   keep=info.get("pre_dirs"))
+    for d in sorted(info.get("made_dirs") or [], key=lambda e: -e["path"].count("/")):
+        full = os.path.join(target, d["path"])
+        try:
+            st = os.lstat(full)
+            if (stat.S_ISDIR(st.st_mode) and (st.st_dev, st.st_ino) == (d["dev"], d["ino"])
+                    and not os.listdir(full)):
+                os.rmdir(full)
+        except OSError:
+            pass
     return notes
 
 

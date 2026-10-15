@@ -169,13 +169,18 @@ def cmd_adopt(args):
     target = os.path.abspath(args.target)
 
     # `adopt` is listed as a founder lifecycle action, and the CLI simply did not check -
-    # both review families found it. The policy travels in the release, because an
-    # unpinned workspace's own copy is the thing being adopted.
+    # both review families found it. For a plain adopt the policy travels in the release, because
+    # an unpinned workspace's own copy is the thing being adopted. An existing instance keeps its
+    # own policy, which must be committed before anything is written: that one decides who may
+    # adopt into it (independent review, 3.1 round 16).
     policy = None
-    for path, _mode, data in util.read_tree(repo, manifest["created_from"]["git_rev"]):
-        if path == roles.POLICY_PATH.replace(os.sep, "/"):
-            policy = json.loads(data.decode("utf-8"))
-            break
+    if args.existing:
+        policy = roles.load_policy(target)
+    else:
+        for path, _mode, data in util.read_tree(repo, manifest["created_from"]["git_rev"]):
+            if path == roles.POLICY_PATH.replace(os.sep, "/"):
+                policy = json.loads(data.decode("utf-8"))
+                break
     if policy is None:
         raise Refusal(util.EXIT_ROLE, "the release ships no %s, so no role can be checked"
                       % roles.POLICY_PATH)

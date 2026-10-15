@@ -1432,3 +1432,79 @@ class ReviewRoundFifteen(Existing):
         code, out, err = self.cli("rollback", "--target", self.target)
         self.assertEqual(code, 0, out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
+
+
+class ReviewRoundSixteen(Existing):
+    """Codex, 3.1 round 16."""
+
+    def cli_adopt(self, config=None):
+        cfg = self.write_json("org.json", config or harness.config())
+        rel = self.write_json("release.json", self.v)
+        return self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                        "--config", cfg, "--repo", self.source)
+
+    def test_the_instances_own_policy_decides_who_may_adopt_into_it(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["roles"]["founder"]["lifecycle"] = ["install", "upgrade", "rollback", "governance"]  # no adopt
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        self.commit("in our instance, nobody adopts")
+        before = _tree(self.target)
+        self.be("acme-founder")  # the release's own policy lets a founder adopt
+        code, out, err = self.cli_adopt()
+        self.assertEqual(code, util.EXIT_ROLE, out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_role_only_the_instances_policy_lets_adopt_may(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["roles"]["operator"]["lifecycle"] = ["adopt"]  # the release's policy doesn't allow it
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        self.commit("in our instance, an operator may adopt")
+        self.be("acme-va")
+        code, out, err = self.cli_adopt()
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("by:       acme-va (operator)", out)
+
+    def test_verify_repo_refuses_a_plan_that_isnt_committed(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        dropped = record["managed"][0]["path"]
+        alt = json.loads(json.dumps(PLAN))
+        alt["exclude"].append(dropped)
+        alt["adopt"] = [p for p in alt["adopt"] if not util.match_any([p], dropped)] + \
+            [e["path"] for e in record["managed"][1:]]
+        write(self.target, ".aios/local_plan.json", json.dumps(alt, indent=2))  # never committed
+        record["managed"] = record["managed"][1:]
+        record["adoption"]["plan"] = ".aios/local_plan.json"
+        record["adoption"]["plan_sha256"] = install_mod.load_adoption_plan(self.target, ".aios/local_plan.json")[1]
+        for cls in ("adopt", "instance_owned", "exclude"):
+            record["adoption"][cls] = alt[cls]
+        util.write_json(path, record)
+        os.remove(os.path.join(self.target, dropped))
+        problems = install_mod.verify(self.target, source_repo=self.source)[0]
+        self.assertTrue(any("isn't committed" in p for p in problems), problems)
+
+    def test_verify_repo_refuses_a_plan_edited_since_its_commit(self):
+        self.adopt()
+        self.commit("adopted")
+        plan_path = os.path.join(self.target, ".aios/adoption.json")
+        with open(plan_path, "a") as fh:
+            fh.write("\n")
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["adoption"]["plan_sha256"] = install_mod.load_adoption_plan(self.target)[1]  # hides the edit
+        util.write_json(path, record)
+        problems = install_mod.verify(self.target, source_repo=self.source)[0]
+        self.assertTrue(any("aren't committed" in p for p in problems), problems)
+
+    def test_a_folder_the_adoption_made_but_since_replaced_stays(self):
+        self.adopt()
+        self.commit("adopted")
+        skills = os.path.join(self.target, ".claude", "skills")
+        old = os.path.join(self.target, ".claude", "skills_old")
+        os.rename(skills, old)  # the old folders keep their inodes while the new ones are made
+        os.makedirs(os.path.join(skills, "start-my-day"))
+        shutil.rmtree(old)
+        install_mod.rollback(self.target)
+        self.assertTrue(os.path.isdir(os.path.join(skills, "start-my-day")), "a folder it didn't make was removed")

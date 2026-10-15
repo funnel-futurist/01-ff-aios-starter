@@ -197,7 +197,8 @@ the release ships under exactly one heading:
   now or on any upgrade. They must exist.
 - **exclude:** never written. The release's copy simply isn't used here.
 
-Then commit your own role policy (`.aios/roles.json`) and run:
+Then commit your own role policy (`.aios/roles.json`) and run it as someone that policy lets
+`adopt` (your instance's policy decides, not the release's):
 
 ```bash
 python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.json --target . --config my-org.json
@@ -228,6 +229,8 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - A file you've changed since is left in place, and the message says so. That includes the
   install record (`.aios/install.json`): if you've edited it, rollback leaves it and says so, and
   the workspace stays pinned until you delete it.
+- Folders the adoption made are removed once they're empty again; a folder it can't prove it
+  made (one you replaced, say) is left.
 - A lock left by an adoption killed before it changed anything is cleared by `aios rollback`
   with no role needed. A running operation's lock is never taken; one that names no process
   (its holder was killed while writing it) is cleared like any dead one.
@@ -238,7 +241,7 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - Your role policy must still let someone in the people map both upgrade and roll back, or the
   upgrade refuses.
 - `aios verify --repo` takes the adopted files from your committed plan, not from the install
-  record. A plan you've changed since the last adoption or upgrade is reported until an upgrade
+  record, and reports a plan that isn't committed or has uncommitted changes. A plan you've changed since the last adoption or upgrade is reported until an upgrade
   applies it.
 
 ## What upgrade actually does
