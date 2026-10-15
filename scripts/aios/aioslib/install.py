@@ -245,9 +245,15 @@ def load_journal(target):
     never committed: .aios/.gitignore ignores it), a link or a folder, one that can't be read, or one
     that isn't a non-empty JSON object (independent review, 3.1 rounds 25 to 27)."""
     path = journal_path(target)
+    rel = os.path.relpath(path, target).replace(os.sep, "/")
+    # The folders on the way first, before anything there is looked at: through a linked `.aios` the
+    # "journal" would be a file from anywhere (independent review, 3.1 round 46).
+    if _linked_paths(target, [rel]):
+        raise Refusal(EXIT_STATE, "%s is reached through a link or a file in a folder's place; nothing was "
+                                  "changed" % rel, ["make .aios a real folder again (restore it from git), then "
+                                                    "run this again"])
     if not os.path.lexists(path):
         return None
-    rel = os.path.relpath(path, target).replace(os.sep, "/")
     if util.is_tracked(target, rel) or util.in_head(target, rel):
         raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's journal; nothing "
                                   "was changed" % rel,
@@ -313,6 +319,13 @@ def _check_state(target):
     (when this workspace has that note: a fresh clone has none, and no snapshots either)."""
     full = os.path.join(target, STATE_PATH)
     rel = STATE_PATH.replace(os.sep, "/")
+    record_rel = INSTALL_PATH.replace(os.sep, "/")
+    # Neither the note nor the record is read through a link: each, and the folders on the way, are
+    # checked first (independent review, 3.1 round 46).
+    if os.path.islink(install_record_path(target)) or _linked_paths(target, [record_rel, rel]):
+        raise Refusal(EXIT_STATE, "the install record or the installer's note is a link, or is reached through "
+                                  "one; nothing was changed", ["restore .aios from git as real files, then run "
+                                                               "this again"])
     if not os.path.lexists(full):
         return
     if _repo_owned(target, rel) or os.path.islink(full) or not os.path.isfile(full):

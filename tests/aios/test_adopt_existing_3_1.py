@@ -3321,3 +3321,36 @@ class ReviewRoundFortyFiveVerify(Layout3):
             self.assertIn("'D:secret.md' not read", out)
         problems, _ = install_mod.verify(self.target)
         self.assertTrue(any("unsafe path: 'D:secret.md'" in p for p in problems), problems)
+
+
+class ReviewRoundFortySix(Existing):
+    """Codex, 3.1 round 46: no state file is read through a link, the journal and the note included."""
+
+    def test_verify_never_reads_a_journal_through_a_linked_folder(self):
+        self.adopt()
+        self.commit("adopted")
+        moved = os.path.join(self.tmp, "elsewhere")
+        os.rename(os.path.join(self.target, ".aios"), moved)
+        util.write_json(os.path.join(moved, "txn.json"), {"op": "upgrade", "from_version": "6.6.6",
+                                                         "to_version": "7.7.7"})
+        os.symlink(moved, os.path.join(self.target, ".aios"))
+        self.be("acme-founder")
+        code, out, err = self.cli("verify", "--target", self.target)
+        self.assertNotEqual(code, 0)
+        self.assertIn("is reached through a link", out + err)
+        self.assertNotIn("6.6.6", out + err)
+
+    def test_rollback_never_hashes_a_linked_record(self):
+        self.adopt()
+        self.commit("adopted")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")),
+                            self.source)
+        self.commit("upgraded")
+        path = install_mod.install_record_path(self.target)
+        outside = os.path.join(self.tmp, "outside.json")
+        shutil.copy(path, outside)  # the same bytes, so only the link check can refuse it
+        os.remove(path)
+        os.symlink(outside, path)
+        exc = self.refuses_unchanged(install_mod.rollback, self.target)
+        self.assertIn("is a link, or is reached through one", exc.message)
