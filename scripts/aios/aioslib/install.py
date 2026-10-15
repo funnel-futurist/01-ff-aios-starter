@@ -205,14 +205,14 @@ def verify(target, record=None, source_repo=None):
             # per-entry checks above have nothing to say. The release's own file set at the pin
             # is the list (independent review).
             try:
-                want_managed = {p for p, c, _m, _s in release_mod.select_files(
-                    source_repo, rev, release_mod.load_spec(source_repo, rev)) if c == "managed"}
+                shipped = release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))
+                want_managed = {p for p, c, _m, _s in shipped if c == "managed"}
             except Refusal as exc:
                 problems.append("cannot derive the release's files at %s: %s" % (rev[:12], exc.message))
                 want_managed = None
             if want_managed is not None and record.get("adoption"):
-                want_managed = {p for p in want_managed
-                                if _adoption_class(record["adoption"], p) == "adopt"}
+                want_managed = _adopted_subset(target, record["adoption"], {p for p, _c, _m, _s in shipped},
+                                               want_managed, problems)
             if want_managed is not None:
                 listed = {e["path"] for e in record.get("managed") or []}
                 for path in sorted(want_managed - listed):
@@ -255,6 +255,27 @@ def verify(target, record=None, source_repo=None):
         "pin_confirmed_by": summary_pin,
     }
     return problems, summary
+
+
+def _adopted_subset(target, info, shipped, managed, problems):
+    """Which of the release's managed files an adopted instance must have: as its committed plan
+    classifies them, not as the install record's own copy of the plan says. That copy is as editable
+    as the record, so a file dropped with its entry, and reclassified there, would otherwise pass
+    (independent review, 3.1 round 11)."""
+    rel = info.get("plan") or ADOPTION_PLAN
+    try:
+        plan, plan_sha = load_adoption_plan(target, rel)
+    except Refusal as exc:
+        problems.append("cannot read the adoption plan: %s" % exc.message)
+        return {p for p in managed if _adoption_class(info, p) == "adopt"}
+    if plan_sha != info.get("plan_sha256"):
+        problems.append("the adoption plan %s isn't the one this instance was adopted or last upgraded "
+                        "with (upgrade to apply a changed plan)" % rel)
+    if any(plan.get(c) != info.get(c) for c in ADOPTION_CLASSES):
+        problems.append("the install record's copy of the adoption plan differs from %s" % rel)
+    classes, unclassified = classify_adoption(plan, shipped)
+    problems.extend("adoption plan: %s" % p for p in unclassified)
+    return {p for p in managed if classes.get(p) == "adopt"}
 
 
 def _pin_confirmation(source_repo, release_id, rev, problems):
@@ -1280,12 +1301,13 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
 # ─── rollback ───────────────────────────────────────────────────────────────
 
 def _holder_alive(text):
-    """Is the process named in a lock file still running on this machine? A lock that names no
-    process (empty: its holder may be writing it this instant) counts as alive: it is never
-    reclaimed automatically (independent review)."""
+    """Is the process named in a lock file still running on this machine? Only ever asked under the
+    workspace guard, which every holder takes while it creates and writes its lock: so a lock that
+    names no process lost its holder between the two, and is dead as well (independent review, 3.1
+    round 11; before the lock was taken under the guard, such a lock had to count as alive)."""
     m = re.search(r"pid=(\d+)", text or "")
     if not m:
-        return True
+        return False
     try:
         os.kill(int(m.group(1)), 0)
     except ProcessLookupError:
@@ -1950,7 +1972,7 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             info["created"].append({"path": rel, "sha256": sha256_bytes(data),
                                     "mode": stat.S_IMODE(st.st_mode)})
             util.write_json(journal_path(target), journal)
-        util.fault("adopt.after_link")
+        util.fault("adopt.after_link" if provenance else "adopt.record_after_link")
         # The temporary copy goes before `pending` is cleared, so a kill in between still names it
         # and rollback removes it (independent review, 3.1 round 2).
         os.remove(tmp)
@@ -2052,6 +2074,7 @@ def _undo_adoption(target, info, pending=None):
             notes.append(note)
         if i == 0:
             util.fault("adopt.undo_mid")
+    kept = set()
     if pending:
         dest = os.path.join(target, pending["path"])
         tmp = os.path.join(target, pending["temp"])
@@ -2065,17 +2088,20 @@ def _undo_adoption(target, info, pending=None):
                     os.remove(dest)
                     created.append(pending["path"])
                 else:
+                    kept.add(pending["path"])
                     notes.append("%s changed after an interrupted adoption made it, so it was left for you"
                                  % pending["path"])
             os.remove(tmp)
     record_full = install_record_path(target)
-    if os.path.isfile(record_full) and not os.path.islink(record_full):
+    record_rel = os.path.relpath(record_full, target).replace(os.sep, "/")
+    # The record kept just above as changed stays kept, whatever its plan hash says (independent
+    # review, 3.1 round 11).
+    if record_rel not in kept and os.path.isfile(record_full) and not os.path.islink(record_full):
         try:
             if (util.read_json(record_full).get("adoption") or {}).get("plan_sha256") == info.get("plan_sha256"):
                 os.remove(record_full)
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
-    record_rel = os.path.relpath(record_full, target).replace(os.sep, "/")
     _prune_parents(target, created + [record_rel], keep=info.get("pre_dirs"))
     return notes
 

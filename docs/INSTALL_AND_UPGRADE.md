@@ -227,13 +227,17 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   finished or was killed partway.
 - A file you've changed since is left in place, and the message says so.
 - A lock left by an adoption killed before it changed anything is cleared by `aios rollback`
-  with no role needed. A running operation's lock is never taken.
+  with no role needed. A running operation's lock is never taken; one that names no process
+  (its holder was killed while writing it) is cleared like any dead one.
 
 **Upgrades** write only what the plan adopts:
 - A new path the release ships must be added to the plan first, or the upgrade refuses.
 - A file you move from `adopt` to `instance_owned` stays where it is and becomes yours.
 - Your role policy must still let someone in the people map both upgrade and roll back, or the
   upgrade refuses.
+- `aios verify --repo` takes the adopted files from your committed plan, not from the install
+  record. A plan you've changed since the last adoption or upgrade is reported until an upgrade
+  applies it.
 
 ## What upgrade actually does
 

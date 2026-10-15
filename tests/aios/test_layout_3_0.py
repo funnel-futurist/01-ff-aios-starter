@@ -1026,12 +1026,35 @@ class SecondReviewRegressions(Layout3):
         self.assertEqual(os.listdir(outside), [])
         self.assertEqual(diff(before, snapshot(self.target)), [])
 
-    def test_r2_2_an_unnamed_lock_is_never_reclaimed(self):
+    def test_r2_2_a_lock_its_holder_is_still_writing_is_never_reclaimed(self):
+        # Round 2 refused every lock that named no process, since its holder might be writing it.
+        # Since round 10 a holder creates and writes its lock under the workspace guard, so a recovery
+        # waits until the name is there; a lock still unnamed after that lost its holder, and is
+        # cleared (3.1 round 11). Here a live holder is still writing its lock when rollback starts.
         self.up()
-        write(self.target, ".aios/lock", "")  # its holder hasn't written its name yet
-        with self.assertRaises(Refusal) as ctx:
-            install_mod.rollback(self.target)
-        self.assertIn("still running", ctx.exception.message)
+        holder = (
+            "import os, sys, time\n"
+            "sys.path.insert(0, %r)\n"
+            "from aioslib import install\n"
+            "with install._RecoveryGuard(%r):\n"
+            "    fd = os.open(%r, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)\n"
+            "    print('unnamed', flush=True)\n"
+            "    time.sleep(1.0)\n"
+            "    os.write(fd, ('upgrade pid=%%d at now\\n' %% os.getpid()).encode())\n"
+            "time.sleep(3.0)\n"
+        ) % (harness.AIOS_DIR, self.target, os.path.join(self.target, ".aios", "lock"))
+        proc = subprocess.Popen([sys.executable, "-c", holder], stdout=subprocess.PIPE)
+        try:
+            self.assertEqual(proc.stdout.readline().strip(), b"unnamed")
+            with open(os.path.join(self.target, ".aios/lock")) as fh:
+                self.assertEqual(fh.read(), "")  # unnamed as rollback starts
+            with self.assertRaises(Refusal) as ctx:
+                install_mod.rollback(self.target)
+            self.assertIn("still running", ctx.exception.message)
+            self.assertTrue(os.path.lexists(os.path.join(self.target, ".aios/lock")))
+        finally:
+            proc.wait()
+            proc.stdout.close()
 
     def test_r2_2_a_lock_removes_only_itself(self):
         lock = install_mod._Lock(self.target, "upgrade")

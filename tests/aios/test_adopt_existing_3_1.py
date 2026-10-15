@@ -954,3 +954,86 @@ class ReviewRoundTen(Existing):
         v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
         exc = self.refuses_unchanged(install_mod.upgrade, self.target, v31, self.source)
         self.assertIn("upgrade and roll back", exc.message)
+
+
+class ReviewRoundEleven(Existing):
+    """Codex, 3.1 round 11."""
+
+    def adopted(self):
+        self.adopt()
+        self.commit("adopted")
+
+    def test_an_install_record_edited_after_a_kill_at_its_link_is_kept(self):
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source,
+                                env={"AIOS_FAULT": "crash:adopt.record_after_link"})
+        self.assertEqual(code, 137)
+        pending = install_mod.load_journal(self.target)["pending"]
+        self.assertEqual(pending["path"], ".aios/install.json")
+        record = os.path.join(self.target, ".aios/install.json")
+        with open(record, "a") as fh:  # in place; the plan hash inside is unchanged
+            fh.write("\n")
+        with open(record, "rb") as fh:
+            edited = fh.read()
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn(".aios/install.json changed after an interrupted adoption", out)
+        with open(record, "rb") as fh:
+            self.assertEqual(fh.read(), edited)
+        for path in ADOPTED:  # everything else it made, unchanged, is gone
+            self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
+
+    def test_verify_repo_takes_the_adopted_files_from_the_committed_plan(self):
+        self.adopted()
+        self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        dropped = record["managed"][0]["path"]
+        record["managed"] = record["managed"][1:]
+        record["adoption"]["exclude"].append(dropped)  # the record's own copy of the plan, edited
+        util.write_json(path, record)
+        os.remove(os.path.join(self.target, dropped))
+        problems = install_mod.verify(self.target, source_repo=self.source)[0]
+        self.assertTrue(any(dropped in p and "doesn't list it" in p for p in problems), problems)
+        self.assertTrue(any("record's copy of the adoption plan" in p for p in problems), problems)
+
+    def test_verify_repo_reports_a_plan_changed_since_the_last_upgrade_until_one_applies_it(self):
+        self.adopted()
+        plan = json.loads(json.dumps(PLAN))
+        plan["adopt"].remove("START_HERE.md")
+        plan["instance_owned"].append("START_HERE.md")
+        self.write_plan(plan)
+        self.commit("START_HERE.md is ours now")
+        problems = install_mod.verify(self.target, source_repo=self.source)[0]
+        self.assertTrue(any("isn't the one this instance was adopted" in p for p in problems), problems)
+        rev = harness.bump_source(self.source, {"scripts/team/git-safety-check.sh": "#!/bin/sh\necho v31\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        install_mod.upgrade(self.target, v31, self.source)
+        self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
+
+    def test_a_lock_that_names_no_process_is_cleared_by_rollback(self):
+        for words in ("", "adopt pid="):
+            with self.subTest(words=words):
+                write(self.target, ".aios/lock", words)
+                self.be("acme-founder")
+                code, out, err = self.cli("rollback", "--target", self.target)
+                self.assertEqual(code, 0, out + err)
+                self.assertIn("cleared a dead operation's lock", out)
+                self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))
+
+    def test_windows_aliases_of_the_installers_paths_are_reserved(self):
+        for path in (".aios/lock.", ".aios/config.json ", ".aios/txn.json::$DATA", ".aios/install.json:x",
+                     ".aios./lock", ".aios /lock", ".aios/backups./x", ".AIOS/Backups /x",
+                     "AIOS~1/lock", ".aios/INSTAL~1.JSO", ".aios/CONFIG~1.JSO"):
+            self.assertTrue(util.is_reserved(path), path)
+        for path in (".aios/roles.json", ".aios/.gitignore", ".aios/operator_core/OPERATOR_CORE.md",
+                     "notes~1.md", "docs/v1.0/guide.md", "scripts/aios/install.py"):
+            self.assertFalse(util.is_reserved(path), path)
+        from aioslib import release
+        for alias in (".aios/lock.", ".aios/config.json "):
+            man = json.loads(json.dumps(self.v))
+            man["files"].append({"path": alias, "class": "managed", "mode": "100644", "sha256": "0" * 64})
+            self.assertTrue(any("installer's own state" in p for p in release.check_shape(man)), alias)

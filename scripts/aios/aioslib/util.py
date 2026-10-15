@@ -93,13 +93,24 @@ TOOL_RESERVED = (".aios/install.json", ".aios/config.json", ".aios/txn.json", ".
                  ".aios/backups/**")
 
 
+# A Windows short (8.3) name, such as AIOS~1 or INSTAL~1.JSO: it can stand for a long name.
+_SHORT_NAME = re.compile(r"^[^.~]{1,6}~[0-9]{1,6}(\.[^.]{0,3})?$")
+
+
 def is_reserved(path):
     """Whether `path` is, or would be on a Mac or Windows disk, one of the installer's own state paths:
-    compared case- and Unicode-folded, with either separator (independent review, 3.1 round 3)."""
+    compared case- and Unicode-folded, with either separator (independent review, 3.1 round 3). As
+    Windows resolves a name, a stream suffix (`lock:x`) names the file itself and trailing periods and
+    spaces are dropped; and a short name (`AIOS~1`) could be any long name, so a release path with
+    one under `.aios` is refused too (independent review, 3.1 round 11)."""
     import unicodedata
 
     key = unicodedata.normalize("NFC", (path or "").replace("\\", "/")).casefold().lstrip("/")
-    return match_any(TOOL_RESERVED, key)
+    parts = [p.split(":", 1)[0].rstrip(". ") for p in key.split("/")]
+    if len(parts) > 1 and (parts[0] == ".aios" or _SHORT_NAME.match(parts[0])) and any(
+            _SHORT_NAME.match(p) for p in parts):
+        return True
+    return match_any(TOOL_RESERVED, "/".join(parts))
 
 
 def read_json_safe(path, what="file"):
