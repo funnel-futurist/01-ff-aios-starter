@@ -633,12 +633,13 @@ class ReviewRoundTwo(Existing):
         import subprocess
         keep = os.path.join(self.tmp, "keep")
         write(keep, "precious.txt", "mine\n")
-        script = os.path.join(harness.REPO_ROOT, "evidence/dispatch/p22-starter/release-3.1.0/rehearse_310_aios.py")
-        proc = subprocess.run([sys.executable, script, keep, "--aios", self.target],
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        self.assertNotEqual(proc.returncode, 0)
-        with open(os.path.join(keep, "precious.txt")) as fh:
-            self.assertEqual(fh.read(), "mine\n")
+        for name, extra in (("rehearse_310_aios.py", ["--aios", self.target]), ("rehearse_310.py", [])):
+            script = os.path.join(harness.REPO_ROOT, "evidence/dispatch/p22-starter/release-3.1.0", name)
+            proc = subprocess.run([sys.executable, script, keep] + extra,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.assertNotEqual(proc.returncode, 0, name)
+            with open(os.path.join(keep, "precious.txt")) as fh:
+                self.assertEqual(fh.read(), "mine\n", name)
 
 
 class BoundaryDeclaredListIsTheWholePermission(BoundaryHonoursDeclaredReviewers):

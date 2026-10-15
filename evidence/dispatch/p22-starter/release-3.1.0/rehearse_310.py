@@ -293,7 +293,20 @@ class Rehearsal(object):
             say(out)
             sys.exit(1)
         say(sh(["git", "-C", self.starter, "log", "--oneline", "-1"])[1].strip())
-        m = json.load(open(os.path.join(self.starter, "releases/starter-%s.json" % TARGET)))
+        record = os.path.join(self.starter, "releases/starter-%s.json" % TARGET)
+        if not os.path.isfile(record):
+            # The bare code pin, before its record commit: build the draft the same way the release
+            # does, so the rehearsal runs on any commit of the branch (independent review).
+            pin = sh(["git", "-C", self.starter, "rev-parse", "HEAD"])[1].strip()
+            record = os.path.join(self.R, "draft-%s.json" % TARGET)
+            code, out = sh([sys.executable, os.path.join(self.starter, "scripts/aios/aios.py"), "release", "build",
+                            "--repo", self.starter, "--version", TARGET, "--rev", pin, "--branch", self.branch,
+                            "--credentials", os.path.join(self.starter, "release/credential_refs.json"),
+                            "--min-upgrade-from", "2.6.0", "--out", record])
+            if code:
+                say(out)
+                sys.exit(1)
+        m = json.load(open(record))
         say("record: %s, pin %s, %s" % (m["status"], m["created_from"]["git_rev"], m["counts"]))
         self.layout = m["layout"]
         self.candidate = self.approval_copy(m, TARGET)
@@ -724,7 +737,9 @@ if __name__ == "__main__":
     ap.add_argument("--branch", default="exec/lane01-starter-3.1.0-20261015")
     ap.add_argument("--quick", action="store_true", help="skip the failure copies, the heavy run and the disk image")
     a = ap.parse_args()
-    if os.path.exists(a.root):
-        shutil.rmtree(a.root)
-    os.makedirs(a.root)
+    root = os.path.abspath(a.root)
+    # Never deletes anything it didn't make: the root must be new or empty (independent review).
+    if os.path.lexists(root) and (not os.path.isdir(root) or os.path.islink(root) or os.listdir(root)):
+        sys.exit("refusing: %s exists and isn't an empty folder; name a new scratch folder" % root)
+    os.makedirs(root, exist_ok=True)
     sys.exit(Rehearsal(a.root, a.source, a.branch, a.quick).run())
