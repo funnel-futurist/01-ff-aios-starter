@@ -2336,3 +2336,58 @@ class ReviewRoundThirtyOne(ReviewRoundTwentyFour):
         self.assertNotEqual(code, 0, out + err)
         self.assertIn("is committed as .aios/INSTALL.JSON", out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
+
+
+class ReviewRoundThirtyTwo(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 32."""
+
+    def test_every_equivalent_folder_is_followed(self):
+        self.adopt()
+        self.commit("adopted")
+        blob = util.git(self.target, ["hash-object", "-w", ".aios/install.json"])
+        run_git(self.target, "update-index", "--add", "--cacheinfo", "100644,%s,.AIOS/INSTALL.JSON" % blob)
+        run_git(self.target, "commit", "-qm", "the record under another folder spelling too")
+        self.assertEqual(util.head_spellings(self.target, ".aios/install.json"),
+                         [".AIOS/INSTALL.JSON", ".aios/install.json"])
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("not just .aios/install.json", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def upgraded(self):
+        self.adopt()
+        self.commit("adopted")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        install_mod.upgrade(self.target, v31, self.source)
+        self.commit("upgraded")
+        return install_mod.install_record_path(self.target)
+
+    def test_a_record_changed_after_an_upgrade_is_never_trusted_by_its_rollback(self):
+        write(self.target, ".env", "SECRET=ours\n")  # ignored, local
+        record_path = self.upgraded()
+        record = util.read_json(record_path)
+        record["managed"].append({"path": ".env", "sha256": "0" * 64, "exec": False})
+        util.write_json(record_path, record)
+        self.commit("a pull request adds .env to the record")
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target, self.source)
+        self.assertIn("changed since the upgrade wrote it", ctx.exception.message)
+        with open(os.path.join(self.target, ".env")) as fh:
+            self.assertEqual(fh.read(), "SECRET=ours\n")
+
+    def test_an_adopted_upgrade_without_its_record_copy_is_refused(self):
+        record_path = self.upgraded()
+        backup = util.read_json(record_path)["previous"]["backup"]
+        os.remove(os.path.join(self.target, backup, "after.json"))
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target, self.source)
+        self.assertIn("kept no copy of the record it wrote", ctx.exception.message)
+
+    def test_an_untouched_upgrade_still_rolls_back(self):
+        self.upgraded()
+        install_mod.rollback(self.target, self.source)
+        with open(os.path.join(self.target, "START_HERE.md")) as fh:
+            self.assertNotIn("new.", fh.read())

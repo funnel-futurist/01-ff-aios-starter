@@ -409,45 +409,57 @@ def is_tracked(repo, relpath):
     return False
 
 
-def head_spelling(repo, relpath):
-    """How the HEAD commit spells `relpath`, or None if HEAD has no such path: each component matched
-    as a Mac or Windows disk would (case and Unicode folded), preferring the exact spelling. So a file
-    committed as `.AIOS/INSTALL.JSON` is found for `.aios/install.json` (independent review, 3.1 round 31)."""
+def head_spellings(repo, relpath):
+    """Every path in the HEAD commit that a Mac or Windows disk would take for `relpath` (each component
+    matched case- and Unicode-folded), found by following every equivalent folder, not just the first:
+    `.aios/` and `.AIOS/` share one folder there (independent review, 3.1 rounds 31 and 32). Sorted."""
     import unicodedata
 
     def fold(name):
         return unicodedata.normalize("NFC", name).casefold()
 
-    tree, spelled = "HEAD", []
-    parts = relpath.replace(os.sep, "/").split("/")
-    for i, part in enumerate(parts):
+    def entries(tree):
         proc = subprocess.run(["git", "-C", repo, "ls-tree", "-z", tree], stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE)
         if proc.returncode != 0:
-            return None
-        entries = []
+            return []
+        out = []
         for raw in proc.stdout.split(b"\0"):
             if not raw:
                 continue
             meta, _, name = raw.partition(b"\t")
             fields = meta.split()
-            entries.append((name.decode("utf-8", "surrogateescape"), fields[1].decode(), fields[2].decode()))
-        hits = [e for e in entries if fold(e[0]) == fold(part)]
-        if not hits:
-            return None
-        exact = [e for e in hits if e[0] == part]
-        name, kind, sha = (exact or hits)[0]
-        if i < len(parts) - 1 and kind != "tree":
-            return None
-        spelled.append(name)
-        tree = sha
-    return "/".join(spelled)
+            out.append((name.decode("utf-8", "surrogateescape"), fields[1].decode(), fields[2].decode()))
+        return out
+
+    parts = relpath.replace(os.sep, "/").split("/")
+    frontier, found = [("HEAD", [])], []
+    for i, part in enumerate(parts):
+        last = i == len(parts) - 1
+        nxt = []
+        for tree, spelled in frontier:
+            for name, kind, sha in entries(tree):
+                if fold(name) != fold(part):
+                    continue
+                if last:
+                    found.append("/".join(spelled + [name]))
+                elif kind == "tree":
+                    nxt.append((sha, spelled + [name]))
+        frontier = nxt
+    return sorted(set(found))
+
+
+def head_spelling(repo, relpath):
+    """HEAD's one spelling of `relpath`, or None if it has none; the exact spelling if it is the only one,
+    else the first other: callers that need the exact path refuse anything but [relpath] (round 32)."""
+    found = head_spellings(repo, relpath)
+    return None if not found else (relpath if found == [relpath] else [f for f in found if f != relpath][0])
 
 
 def in_head(repo, relpath):
     """Whether `relpath` is in the HEAD commit's tree, committed, not merely staged (independent review,
-    3.1 round 27), under any spelling a Mac or Windows disk would take for it (round 31)."""
-    return head_spelling(repo, relpath) is not None
+    3.1 round 27), under any spelling a Mac or Windows disk would take for it (rounds 31 and 32)."""
+    return bool(head_spellings(repo, relpath))
 
 
 def private_temp(target_root):
