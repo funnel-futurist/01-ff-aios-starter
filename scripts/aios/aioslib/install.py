@@ -52,7 +52,54 @@ def load_record(target):
     if not os.path.isfile(path):
         raise Refusal(EXIT_STATE, "no install record at %s; this workspace was never installed "
                                   "from a release" % path)
-    return util.read_json_safe(path, "install record")
+    record = util.read_json_safe(path, "install record")
+    problems = _record_shape_problems(record)
+    if problems:
+        raise Refusal(EXIT_STATE, "the install record at %s isn't in the shape the installer writes; nothing "
+                                  "was changed" % path, problems[:20] + ["restore it from git"])
+    return record
+
+
+def _record_shape_problems(record):
+    """What makes a record not the shape the installer writes. The record is committed, so a pull request
+    could put any JSON there; a wrong type must refuse, not crash halfway (independent review, 3.1 round 41)."""
+    if not isinstance(record, dict):
+        return ["it isn't a JSON object"]
+    problems = []
+    rel = record.get("release")
+    if not isinstance(rel, dict):
+        problems.append("'release' isn't an object")
+    else:
+        problems += ["release.%s isn't text" % k for k in ("release_id", "version", "git_rev")
+                     if rel.get(k) is not None and not isinstance(rel.get(k), str)]
+    for kind in ("managed", "rendered", "seeded", "seed_lines", "seed_lines_added", "credentials"):
+        entries = record.get(kind)
+        if entries is None:
+            continue
+        if not isinstance(entries, list):
+            problems.append("'%s' isn't a list" % kind)
+            continue
+        for i, entry in enumerate(entries):
+            if kind == "credentials":
+                if not isinstance(entry, dict):
+                    problems.append("credentials[%d] isn't an object" % i)
+            elif not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                problems.append("%s[%d] has no path" % (kind, i))
+            elif kind == "managed" and (not isinstance(entry.get("sha256"), str)
+                                        or ("exec" in entry and not isinstance(entry["exec"], bool))):
+                problems.append("managed %s has no hash, or an executable bit that isn't true or false"
+                                % entry["path"])
+            elif kind in ("seed_lines", "seed_lines_added") and (
+                    not isinstance(entry.get("line"), str)
+                    or ("appended" in entry and not isinstance(entry["appended"], str))
+                    or (kind == "seed_lines_added" and not isinstance(entry.get("appended"), str))):
+                problems.append("%s[%d] has no line, or appended bytes that aren't text" % (kind, i))
+    history = record.get("seed_history")
+    if history is not None and not (isinstance(history, list) and all(isinstance(p, str) for p in history)):
+        problems.append("'seed_history' isn't a list of paths")
+    if record.get("adoption") is not None and not isinstance(record["adoption"], dict):
+        problems.append("'adoption' isn't an object")
+    return problems
 
 
 def journal_path(target):
@@ -364,7 +411,7 @@ def verify(target, record=None, source_repo=None):
         rel = record.get("release") or {}
         rev = rel.get("git_rev")
         pin_problems, shipped = _pinned_release(record, source_repo)
-        problems.extend(pin_problems)
+        problems.extend(pin_problems + _seed_line_problems(record, source_repo))
         if shipped is not None:
             if _EXEC_BITS:
                 # The record's own exec field is the operator's to edit, like its hashes; what the
@@ -534,6 +581,42 @@ def _pinned_release(record, source_repo):
 def _managed_match_pin(record, source_repo):
     """The problems `_pinned_release` finds."""
     return _pinned_release(record, source_repo)[0]
+
+
+_SEED_LINE_STATES = ("added", "present", "absent", "link", "missing")
+
+
+def _seed_line_problems(record, source_repo):
+    """Problems with the seed lines a record says releases appended. The record is committed, so a pull
+    request could add an entry that names any file and any bytes, which a later rollback would then cut
+    from that file. Each entry must be a line a release up to this workspace's own declared, in its
+    source record, with exactly the bytes the installer appends; the lines the last upgrade appended
+    must be its own release's (independent review, 3.1 round 41)."""
+    version = (record.get("release") or {}).get("version")
+    current = util.parse_semver(version or "")
+    declared = {}
+    problems = []
+
+    def declares(release):
+        if release not in declared:
+            src = _source_release(source_repo, "starter-%s" % release)
+            declared[release] = {(sl.get("path"), sl.get("line")) for sl in (src or {}).get("seed_lines") or []
+                                 if isinstance(sl, dict)}
+        return declared[release]
+
+    for kind in ("seed_lines", "seed_lines_added"):
+        for entry in record.get(kind) or []:
+            path, line, release = entry.get("path"), entry.get("line"), entry.get("release")
+            at = util.parse_semver(release or "") if isinstance(release, str) else None
+            if not current or not at or at > current or (kind == "seed_lines_added" and release != version):
+                problems.append("%s: a seed line recorded for release %r, which this workspace hasn't had"
+                                % (path, release))
+            elif (path, line) not in declares(release):
+                problems.append("%s: a seed line release %s never declared" % (path, release))
+            elif (kind == "seed_lines" and entry.get("state") not in _SEED_LINE_STATES) or (
+                    "appended" in entry and entry["appended"] not in ("\n%s\n" % line, "\n\n%s\n" % line)):
+                problems.append("%s: a seed line recorded with bytes or a state the installer never writes" % path)
+    return problems
 
 
 def _pin_confirmation(source_repo, release_id, rev, problems):
@@ -1257,7 +1340,7 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # Every workspace, not only one whose record says it's adopted: a pull request could drop that key
     # (independent review, 3.1 round 39). An untouched record always passes: its managed files are its
     # pinned release's own.
-    pinned_problems = _managed_match_pin(record, source_repo)
+    pinned_problems = _managed_match_pin(record, source_repo) + _seed_line_problems(record, source_repo)
     if pinned_problems:
         raise Refusal(EXIT_VERIFY, "this workspace's install record doesn't match the release it's pinned to; "
                                    "nothing was changed", pinned_problems[:20])
@@ -1515,6 +1598,9 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
                                             | {p for p, e in files.items() if e["class"] == "seed"})
         if seed_lines_kept or seed_lines_add or seed_lines_settled:
             new_record["seed_lines"] = seed_lines_kept + seed_lines_settled + seed_lines_add
+        # What this upgrade alone appended, written fresh by each upgrade: its rollback takes back these
+        # and nothing carried in the record from before (independent review, 3.1 round 41).
+        new_record["seed_lines_added"] = seed_lines_add
         new_record["credentials"] = [{"name": c["name"], "ref": c["ref"],
                                       "required": c["required"], "resolved": c["resolved"]}
                                      for c in creds]
@@ -2176,8 +2262,14 @@ def _finish_rollback(target, journal, resumed=False):
                      provenance={e["path"]: [e["sha256"], e.get("mode")] for e in created})
     util.fault("rollback.after_restore")
     version = (current.get("release") or {}).get("version")
-    notes += _undo_seed_lines(target, [e for e in current.get("seed_lines") or []
-                                       if e.get("state") == "added" and e.get("release") == version])
+    if "seed_lines_added" in current:
+        # Exactly what that upgrade appended, recorded by it alone: an entry carried in the record from
+        # before the upgrade, which a pull request could have written, is never acted on (independent
+        # review, 3.1 round 41). The record here is the one the upgrade wrote (checked above).
+        undo = current.get("seed_lines_added") or []
+    else:  # a record an earlier installer wrote
+        undo = [e for e in current.get("seed_lines") or [] if e.get("state") == "added" and e.get("release") == version]
+    notes += _undo_seed_lines(target, undo)
     if the_plan:
         layout_mod.reverse(target, the_plan, journal["backup"])
     util.fault("rollback.after_reverse")

@@ -2524,7 +2524,8 @@ class ReviewRoundThirtyFour(ReviewRoundThirtyTwo):
         self.forget_state()
         with self.assertRaises(Refusal) as ctx:
             install_mod.rollback(self.target, self.source)
-        self.assertIn("outside the workspace", ctx.exception.message)
+        # Since round 41 the record's shape is checked when it's read, before anything else.
+        self.assertIn("isn't in the shape the installer writes", ctx.exception.message)
 
 
 class ReviewRoundThirtyFive(ReviewRoundThirtyTwo):
@@ -2880,3 +2881,78 @@ class ReviewRoundForty(ReviewRoundThirtyNine):
                                                         "exec": False}), "our file, called the release's", plain)
         problems, _ = install_mod.verify(plain, source_repo=self.source)
         self.assertTrue(any("%s isn't a managed file of the pinned release" % rel in p for p in problems), problems)
+
+
+class ReviewRoundFortyOne(Existing):
+    """Gemini, 3.1 round 41: a committed record with the wrong JSON types refuses, never crashes."""
+
+    def test_wrong_types_refuse_with_nothing_changed(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        good = util.read_json(path)
+        forged = [("managed", True), ("release", "3.1.0"), ("managed", [{"path": ["a"], "sha256": "x"}]),
+                  ("managed", [{"path": "START_HERE.md", "sha256": "x", "exec": "yes"}]),
+                  ("adoption", True), ("seed_history", "x"), ("seed_lines", [{"path": "CLAUDE.md"}])]
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        for key, value in forged:
+            record = dict(good, **{key: value})
+            util.write_json(path, record)
+            for fn in (lambda: install_mod.verify(self.target),
+                       lambda: install_mod.verify(self.target, source_repo=self.source),
+                       lambda: install_mod.upgrade(self.target, v31, self.source)):
+                exc = self.refuses_unchanged(fn)
+                self.assertIn("isn't in the shape the installer writes", exc.message, (key, value))
+        util.write_json(path, good)
+        self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
+
+    CLIENT_FILE = "06_Clients/acme/notes.md"  # "# client work\n", the instance's own
+
+    def forge_seed_line(self, **entry):
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record.setdefault("seed_lines", []).append(dict({"path": self.CLIENT_FILE, "line": "work",
+                                                         "state": "added", "appended": "work\n"}, **entry))
+        util.write_json(path, record)
+        self.commit("a pull request records a seed line no release appended")
+        self.forget_state()  # a fresh clone: no local note
+
+    def v31(self):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        return harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+
+    def test_a_seed_line_from_a_release_not_yet_had_is_refused(self):
+        """Codex, round 41: the entry names the very release the upgrade installs."""
+        self.adopt()
+        self.commit("adopted")
+        self.forge_seed_line(release="3.1.0")
+        v31 = self.v31()
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, v31, self.source)
+        self.assertTrue(any("which this workspace hasn't had" in d for d in exc.details), exc.details)
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertTrue(any("which this workspace hasn't had" in p for p in problems), problems)
+
+    def test_a_seed_line_no_release_declared_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        self.forge_seed_line(release="3.0.0")
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, self.v31(), self.source)
+        self.assertTrue(any("a seed line release 3.0.0 never declared" in d for d in exc.details), exc.details)
+
+    def test_rollback_takes_back_only_what_its_own_upgrade_appended(self):
+        """Even if the check above missed one, a rollback acts only on the lines its upgrade appended."""
+        from unittest import mock
+        self.adopt()
+        self.commit("adopted")
+        with open(os.path.join(self.target, self.CLIENT_FILE), "rb") as fh:
+            ours = fh.read()
+        self.forge_seed_line(release="3.1.0")
+        with mock.patch.object(install_mod, "_seed_line_problems", lambda *a: [], create=True):
+            install_mod.upgrade(self.target, self.v31(), self.source)
+        self.commit("upgraded")
+        self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.1.0")
+        install_mod.rollback(self.target)
+        self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.0.0")
+        with open(os.path.join(self.target, self.CLIENT_FILE), "rb") as fh:
+            self.assertEqual(fh.read(), ours)

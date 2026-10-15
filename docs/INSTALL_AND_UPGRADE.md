@@ -269,6 +269,11 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   release source: the source's own record of that release names the same commit and version, and
   each file the record calls managed is one that release ships as managed, with its bytes and
   executable bit.
+- A seed line the record says a release appended must be one that release (yours or an earlier one)
+  declared, with exactly the bytes the installer appends. Rolling back an upgrade takes back only the
+  lines that upgrade itself appended, never one carried in the record from before.
+- A record that isn't in the shape the installer writes (a list that isn't a list, a path that isn't
+  text) is refused when it's read, before anything else.
 - Whether a workspace was adopted comes from git history, not from the record: if any commit added
   the record with an adoption in it, the record must still say so, naming the same plan. A record
   that says adopted when no commit added it that way is refused too. A shallow clone can't show
