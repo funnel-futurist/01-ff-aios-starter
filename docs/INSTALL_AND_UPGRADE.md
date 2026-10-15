@@ -430,12 +430,18 @@ Without `--repo` it asks *"does this workspace still match what was installed?"*
 in `.aios/install.json`. That record lives in your own repo, so a determined local editor could
 change a managed file **and** its recorded hash, and the check would agree with itself.
 
-With `--repo` it also checks the record against the source repository. It re-derives every hash
-and executable bit from the pinned commit, which catches exactly that. It takes the list of
-release files from the release itself, so a file dropped from the record and the disk together is
-caught. It checks the pin against the source's own record of the release (its tag, then the
-checked-out `releases/` folder), and says when the source has no such record. The output always
-says which of the two it ran. Use `--repo` when the answer matters to somebody other than you.
+With `--repo` it also checks the record against the source repository, with the same checks an
+upgrade makes. Every file the record calls managed must be one the release ships as managed, with
+the release's hash and executable bit, which catches exactly that. It takes the list of release
+files from the source's own record of the release (its tag, then the checked-out `releases/`
+folder), so a file dropped from the record and the disk together is caught. That record must name
+the same commit and version as yours, and verify says when the source has no such record. The
+output always says which of the two it ran. Use `--repo` when the answer matters to somebody other
+than you.
+
+Either way, a path in the record that would lead outside the workspace (an absolute path, `..`, or
+a folder that is a link) is reported without reading anything there, and a record whose adoption
+doesn't match git history (see "What adoption and its rollback trust") is reported.
 
 ## Hearing about a new release
 

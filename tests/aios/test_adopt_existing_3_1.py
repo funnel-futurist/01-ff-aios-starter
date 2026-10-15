@@ -2785,13 +2785,12 @@ class ReviewRoundThirtyNine(ReviewRoundThirtyEight):
                 if entry["path"] == rel:
                     entry["exec"] = True
         self.edit_record(flip, "a pull request makes it executable")
-        self.refused("%s's executable bit isn't the pinned release's" % rel)
+        self.refused("executable permission of %s does not match the pinned release" % rel)
 
     def test_a_version_the_release_record_doesnt_give_is_refused(self):
         self.adopted()
         self.edit_record(lambda r: r["release"].update(version="2.9.0"), "a pull request says we're older")
-        self.refused("doesn't match the release it's pinned to", "disagree",
-                     "names another pin or version")
+        self.refused("doesn't match the release it's pinned to", "disagree", "is version 3.0.0, not 2.9.0")
 
     def test_a_shallow_clone_cant_say_whether_it_was_adopted(self):
         self.adopted()
@@ -2812,3 +2811,72 @@ class ReviewRoundThirtyNine(ReviewRoundThirtyEight):
         write(self.source, "releases/%s.json" % rid, json.dumps(bare, indent=2))
         run_git(self.source, "commit", "-qam", "a record without its file list")
         self.test_a_file_the_release_excludes_is_never_managed()
+
+
+class ReviewRoundForty(ReviewRoundThirtyNine):
+    """Codex, 3.1 round 40: `verify --repo` uses the same checks as the upgrade, and reads nothing on disk
+    for a path the record names until the path is known to be inside the workspace."""
+
+    def verified(self, *texts):
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        for text in texts:
+            self.assertTrue(any(text in p for p in problems), (text, problems))
+        self.be("acme-founder")
+        code, out, err = self.cli("verify", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        return problems
+
+    def test_verify_refuses_a_file_the_release_excludes(self):
+        self.adopted()
+        rel = "evidence/notes.md"
+        data = util.git(self.source, ["show", "%s:%s" % (self.v["created_from"]["git_rev"], rel)], binary=True)
+        write(self.target, rel, data)
+        self.edit_record(lambda r: r["managed"].append({"path": rel, "sha256": util.sha256_bytes(data),
+                                                        "exec": False}), "our file, called the release's")
+        self.verified("%s isn't a managed file of the pinned release" % rel)
+
+    def test_verify_refuses_a_version_the_release_record_doesnt_give(self):
+        self.adopted()
+        self.edit_record(lambda r: r["release"].update(version="2.9.0"), "a pull request says we're older")
+        self.verified("disagree", "is version 3.0.0, not 2.9.0")
+
+    def test_verify_refuses_an_adoption_the_record_dropped(self):
+        self.adopted()
+        self.edit_record(self.unadopt, "a pull request drops the adoption")
+        self.verified("doesn't say so any more")
+        problems, _ = install_mod.verify(self.target)  # without the source too: it's git history
+        self.assertTrue(any("doesn't say so any more" in p for p in problems), problems)
+
+    def test_verify_reads_nothing_outside_the_workspace(self):
+        self.adopted()
+        outside = os.path.join(self.tmp, "outside")
+        write(outside, "secret.txt", "not the workspace's\n")
+        digest = util.sha256_file(os.path.join(outside, "secret.txt"))
+        os.symlink(outside, os.path.join(self.target, "linked"))
+        out_rel = os.path.relpath(os.path.join(outside, "secret.txt"), self.target)
+
+        def forge(record):
+            for rel in (out_rel, "linked/secret.txt"):
+                record["managed"].append({"path": rel, "sha256": "0" * 64, "exec": False})
+        self.edit_record(forge, "a pull request points the record outside")
+        problems = self.verified("the install record names an unsafe path: %r" % out_rel,
+                                 "the install record's linked/secret.txt is reached through a link")
+        self.assertFalse(any(digest[:12] in p for p in problems), problems)
+        problems, _ = install_mod.verify(self.target)
+        self.assertFalse(any(digest[:12] in p for p in problems), problems)
+
+    def test_verify_refuses_an_excluded_file_in_a_plain_workspace_too(self):
+        plain = os.path.join(self.tmp, "plain")
+        install_mod.install(plain, self.v, self.source, harness.config())
+        run_git(plain, "init", "-q", "-b", "main")
+        run_git(plain, "config", "user.email", "client@example.com")
+        run_git(plain, "config", "user.name", "client")
+        run_git(plain, "add", "-A")
+        run_git(plain, "commit", "-qm", "installed")
+        rel = "evidence/notes.md"
+        data = util.git(self.source, ["show", "%s:%s" % (self.v["created_from"]["git_rev"], rel)], binary=True)
+        write(plain, rel, data)
+        self.edit_record(lambda r: r["managed"].append({"path": rel, "sha256": util.sha256_bytes(data),
+                                                        "exec": False}), "our file, called the release's", plain)
+        problems, _ = install_mod.verify(plain, source_repo=self.source)
+        self.assertTrue(any("%s isn't a managed file of the pinned release" % rel in p for p in problems), problems)

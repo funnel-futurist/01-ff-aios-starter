@@ -345,61 +345,61 @@ def verify(target, record=None, source_repo=None):
     problems = []
     checked = 0
     summary_pin = None
+    # Every path the record names is checked before anything on disk is read: the record is committed,
+    # so a pull request could point it outside the workspace (independent review, 3.1 round 40).
+    unsafe = set()
+    for kind in ("managed", "rendered", "seeded"):
+        for entry in record.get(kind) or []:
+            path = entry.get("path") if isinstance(entry, dict) else None
+            if not isinstance(path, str) or not util.safe_relpath(path):
+                problems.append("the install record names an unsafe path: %r" % (path,))
+                unsafe.add(path if isinstance(path, str) else None)
+            elif _linked_paths(target, [path]):
+                problems.append("the install record's %s is reached through a link or a file" % path)
+                unsafe.add(path)
+    lineage = _lineage_problem(target, record)
+    if lineage:
+        problems.append(lineage[0])
     if source_repo:
         rel = record.get("release") or {}
         rev = rel.get("git_rev")
-        if not rev or not util.rev_exists(source_repo, rev):
-            problems.append("cannot cross-check: commit %s is not in %s" % (rev, source_repo))
-        else:
-            pinned, pinned_exec = {}, {}
-            for path, mode, data in util.read_tree(source_repo, rev):
-                pinned[path] = sha256_bytes(data)
-                pinned_exec[path] = mode == "100755"
-            for entry in record.get("managed") or []:
-                want = pinned.get(entry["path"])
-                if want is None:
-                    problems.append("install record claims %s, which is not in the pinned "
-                                    "release" % entry["path"])
-                elif want != entry["sha256"]:
-                    problems.append("install record for %s does not match the pinned release "
-                                    "(record %s, release %s)"
-                                    % (entry["path"], entry["sha256"][:12], want[:12]))
-                elif _EXEC_BITS:
-                    # The record's own exec field is the operator's to edit, like its hashes; the
-                    # pinned tree is not (independent review).
-                    full = os.path.join(target, entry["path"])
-                    on_disk = (os.path.isfile(full) and not os.path.islink(full)
-                               and bool(os.lstat(full).st_mode & 0o100))
-                    if ("exec" in entry and entry["exec"] != pinned_exec[entry["path"]]) or (
-                            os.path.isfile(full) and on_disk != pinned_exec[entry["path"]]):
-                        problems.append("executable permission of %s does not match the pinned "
-                                        "release" % entry["path"])
+        pin_problems, shipped = _pinned_release(record, source_repo)
+        problems.extend(pin_problems)
+        if shipped is not None:
+            if _EXEC_BITS:
+                # The record's own exec field is the operator's to edit, like its hashes; what the
+                # release shipped is not (independent review).
+                for entry in record.get("managed") or []:
+                    path = entry.get("path") if isinstance(entry, dict) else None
+                    info = shipped.get(path)
+                    if path in unsafe or not info or info[0] != "managed":
+                        continue
+                    full = os.path.join(target, path)
+                    if (os.path.isfile(full) and not os.path.islink(full)
+                            and bool(os.lstat(full).st_mode & 0o100) != (info[1] == "100755")):
+                        problems.append("executable permission of %s does not match the pinned release" % path)
             # The record's list is the operator's to edit too: drop a file and its entry and the
-            # per-entry checks above have nothing to say. The release's own file set at the pin
-            # is the list (independent review).
-            try:
-                shipped = release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))
-                want_managed = {p for p, c, _m, _s in shipped if c == "managed"}
-            except Refusal as exc:
-                problems.append("cannot derive the release's files at %s: %s" % (rev[:12], exc.message))
-                want_managed = None
-            if want_managed is not None and record.get("adoption"):
-                want_managed = _adopted_subset(target, record["adoption"], {p for p, _c, _m, _s in shipped},
-                                               want_managed, problems)
-            if want_managed is not None:
-                listed = {e["path"] for e in record.get("managed") or []}
-                for path in sorted(want_managed - listed):
-                    problems.append("the pinned release manages %s, but the install record doesn't "
-                                    "list it" % path)
-                if record.get("adoption"):
-                    # Both ways for an adopted instance: a managed file its plan doesn't adopt is one
-                    # the record shouldn't claim (independent review, 3.1 round 12).
-                    for path in sorted(listed - want_managed):
-                        problems.append("the install record lists %s as managed, but the adoption plan "
-                                        "doesn't adopt it" % path)
-            # And the pin itself: the source's own record of this release names it.
-            summary_pin = _pin_confirmation(source_repo, rel.get("release_id"), rev, problems)
+            # per-entry checks above have nothing to say. What the release shipped is the list
+            # (independent review).
+            want_managed = {p for p, info in shipped.items() if info[0] == "managed"}
+            if record.get("adoption"):
+                want_managed = _adopted_subset(target, record["adoption"], set(shipped), want_managed, problems)
+            listed = {e.get("path") for e in record.get("managed") or [] if isinstance(e, dict)}
+            for path in sorted(want_managed - listed):
+                problems.append("the pinned release manages %s, but the install record doesn't "
+                                "list it" % path)
+            if record.get("adoption"):
+                # Both ways for an adopted instance: a managed file its plan doesn't adopt is one
+                # the record shouldn't claim (independent review, 3.1 round 12).
+                for path in sorted(p for p in listed - want_managed if isinstance(p, str)):
+                    problems.append("the install record lists %s as managed, but the adoption plan "
+                                    "doesn't adopt it" % path)
+        # And the pin itself: where the source's own record of this release names it.
+        if rev and util.rev_exists(source_repo, rev):
+            summary_pin = _pin_confirmation(source_repo, rel.get("release_id"), rev, [])
     for entry in record.get("managed") or []:
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or entry["path"] in unsafe:
+            continue  # reported above
         path = os.path.join(target, entry["path"])
         if not os.path.isfile(path):
             problems.append("missing managed file: %s" % entry["path"])
@@ -410,9 +410,9 @@ def verify(target, record=None, source_repo=None):
             continue
         actual = sha256_file(path)
         checked += 1
-        if actual != entry["sha256"]:
+        if actual != entry.get("sha256"):
             problems.append("modified managed file: %s (on disk %s, release %s)"
-                            % (entry["path"], actual[:12], entry["sha256"][:12]))
+                            % (entry["path"], actual[:12], str(entry.get("sha256"))[:12]))
         # Permissions: only what git itself keeps (the executable bit), so a teammate's clone with
         # another umask still verifies; and never setuid, setgid or sticky (independent review).
         if st.st_mode & 0o7000:
@@ -420,12 +420,11 @@ def verify(target, record=None, source_repo=None):
         elif _EXEC_BITS and "exec" in entry and bool(st.st_mode & 0o100) != entry["exec"]:
             problems.append("managed file's executable permission changed: %s" % entry["path"])
     for entry in record.get("rendered") or []:
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str) or entry["path"] in unsafe:
+            continue
         if not os.path.isfile(os.path.join(target, entry["path"])):
             problems.append("missing rendered file: %s" % entry["path"])
-    for entry in record.get("seeded") or []:
-        if not os.path.isfile(os.path.join(target, entry["path"])):
-            # Seeds are yours, including the right to delete them. Report, never fail.
-            pass
+    # Seeds are yours, including the right to delete them: never checked here.
     summary = {
         "release_id": (record.get("release") or {}).get("release_id"),
         "version": (record.get("release") or {}).get("version"),
@@ -480,44 +479,61 @@ def _source_release(source_repo, release_id):
     return None
 
 
-def _managed_match_pin(record, source_repo):
-    """Problems if the record isn't exactly a release the source knows: its id is starter-<its version>,
-    the source's own record of that release names the same pin and version, and every managed entry is
-    a file that release ships as managed, with that release's bytes and executable bit. A pull request
-    can't change the release source, so a record claiming a file of the instance's, a file the release
-    doesn't ship, or another version, fails here (independent review, 3.1 rounds 38 and 39)."""
+def _shipped_by(source_repo, rev, source):
+    """What a release shipped, {path: (class, mode, sha256)}: its record's file list in the source, the
+    very list its installer was given (each release's own code decided it, so it's never recomputed with
+    this one's); a record without one is read from the pinned commit with the release's own package
+    spec. Raises Refusal when neither can be read."""
+    listed = source.get("files") if isinstance(source, dict) else None
+    if isinstance(listed, list) and all(isinstance(f, dict) for f in listed):
+        return {f.get("path"): (f.get("class"), f.get("mode"), f.get("sha256")) for f in listed}
+    return {p: (c, m, sha) for p, c, m, sha in
+            release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))}
+
+
+def _pinned_release(record, source_repo):
+    """(problems, shipped): whether the record is exactly a release the source knows, and what that
+    release shipped ({path: (class, mode, sha256)}, or None when it can't be read). Its id must be
+    starter-<its version>; the source's own record of that release must name the same pin and version;
+    every managed entry must be a file that release ships as managed, with its bytes and executable bit.
+    A pull request can't change the release source, so a record claiming a file of the instance's, a file
+    the release doesn't ship, or another version, fails here. Upgrade and `verify --repo` both use it
+    (independent review, 3.1 rounds 38 to 40)."""
     rel = record.get("release") or {}
     rev, release_id, version = rel.get("git_rev"), rel.get("release_id"), rel.get("version")
     if not rev or not util.rev_exists(source_repo, rev):
-        return ["the release source doesn't have the pinned commit %s" % (rev or "?")[:12]]
+        return ["cannot cross-check: commit %s is not in %s" % ((rev or "?")[:12], source_repo)], None
     problems = []
     if release_id != "starter-%s" % version:
         problems.append("the record's release %r and version %r disagree" % (release_id, version))
     source = _source_release(source_repo, release_id)
     if not isinstance(source, dict):
         problems.append("%s has no record of %s" % (source_repo, release_id))
-    elif (source.get("created_from") or {}).get("git_rev") != rev or source.get("version") != version:
-        problems.append("the source's record of %s names another pin or version" % release_id)
-    # What the release shipped is its record's file list in the source, the very list its installer was
-    # given (each release's own code decided it, so it's never recomputed with this one's); a record
-    # without one is read from the pinned commit with the release's own package spec.
-    listed = source.get("files") if isinstance(source, dict) else None
-    if isinstance(listed, list) and all(isinstance(f, dict) for f in listed):
-        shipped = {f.get("path"): (f.get("class"), f.get("mode"), f.get("sha256")) for f in listed}
     else:
-        try:
-            shipped = {p: (c, m, sha) for p, c, m, sha in
-                       release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))}
-        except Refusal as exc:
-            return problems + ["cannot read what %s ships: %s" % (release_id, exc.message)]
+        _pin_confirmation(source_repo, release_id, rev, problems)
+        if source.get("version") != version:
+            problems.append("the source's record of %s is version %s, not %s"
+                            % (release_id, source.get("version"), version))
+    try:
+        shipped = _shipped_by(source_repo, rev, source)
+    except Refusal as exc:
+        return problems + ["cannot read what %s ships: %s" % (release_id, exc.message)], None
     for entry in record.get("managed") or []:
         path = entry.get("path") if isinstance(entry, dict) else None
         info = shipped.get(path)
-        if not info or info[0] != "managed" or info[2] != entry.get("sha256"):
-            problems.append("%s isn't a managed file of the pinned release, with its bytes" % path)
+        if not info or info[0] != "managed":
+            problems.append("%s isn't a managed file of the pinned release" % (path,))
+        elif info[2] != entry.get("sha256"):
+            problems.append("install record for %s does not match the pinned release (record %s, release %s)"
+                            % (path, str(entry.get("sha256"))[:12], str(info[2])[:12]))
         elif "exec" in entry and bool(entry["exec"]) != (info[1] == "100755"):
-            problems.append("%s's executable bit isn't the pinned release's" % path)
-    return problems
+            problems.append("executable permission of %s does not match the pinned release" % path)
+    return problems, shipped
+
+
+def _managed_match_pin(record, source_repo):
+    """The problems `_pinned_release` finds."""
+    return _pinned_release(record, source_repo)[0]
 
 
 def _pin_confirmation(source_repo, release_id, rev, problems):
@@ -1206,21 +1222,10 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # Adopted or not is read from git history, never only from the committed record a pull request can
     # edit: an adopted record that lost its adoption would get the plain upgrade, and a plain one that
     # gained one would get an adopted plan's upgrade (independent review, 3.1 round 39).
-    lineage = _adopted_lineage(target)
-    info = record.get("adoption")
-    if lineage and not isinstance(info, dict):
-        raise Refusal(EXIT_STATE, "this workspace was adopted (commit %s added its install record with the "
-                                  "adoption), but the record doesn't say so any more; nothing was changed"
-                      % lineage[0][:12], ["restore the record's adoption from git, then upgrade"])
-    if lineage and (info.get("plan") or ADOPTION_PLAN) != (lineage[1].get("plan") or ADOPTION_PLAN):
-        raise Refusal(EXIT_STATE, "the install record names another adoption plan than the adoption made "
-                                  "(commit %s); nothing was changed" % lineage[0][:12],
-                      ["restore the record's adoption from git, then upgrade"])
-    if info and not lineage and util.in_head(target, os.path.relpath(install_record_path(target), target)):
-        raise Refusal(EXIT_STATE, "the install record says this workspace was adopted, but no commit added it "
-                                  "as an adoption; nothing was changed",
-                      ["restore the record from git, then upgrade"])
-    if info:
+    lineage = _lineage_problem(target, record)
+    if lineage:
+        raise Refusal(EXIT_STATE, lineage[0] + "; nothing was changed", lineage[1])
+    if record.get("adoption"):
         manifest = _adopted_upgrade_view(target, record, manifest)
 
     current_version = (record.get("release") or {}).get("version")
@@ -2792,8 +2797,7 @@ def _adopted_lineage(target):
         return None
     if util.git(target, ["rev-parse", "--is-shallow-repository"], check=False) == "true":
         raise Refusal(EXIT_STATE, "this clone's history is cut short, so whether this workspace was adopted "
-                                  "can't be read from it; nothing was changed",
-                      ["git fetch --unshallow, then run this again"])
+                                  "can't be read from it", ["git fetch --unshallow, then run this again"])
     out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "--", ":(literal)" + record_rel], check=False)
     for commit in out.split():
         raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
@@ -2803,6 +2807,27 @@ def _adopted_lineage(target):
             continue
         if isinstance(added, dict) and isinstance(added.get("adoption"), dict):
             return commit, added["adoption"]
+    return None
+
+
+def _lineage_problem(target, record):
+    """(problem, ways forward) if the record's adoption doesn't match git history, else None: a record a
+    commit added as an adoption must still say so, naming the same plan, and a committed record can't
+    claim an adoption no commit made (independent review, 3.1 rounds 39 and 40)."""
+    try:
+        lineage = _adopted_lineage(target)
+    except Refusal as exc:
+        return exc.message, list(exc.details or [])
+    info = record.get("adoption")
+    back = ["restore the install record's adoption from git, then run this again"]
+    if lineage and not isinstance(info, dict):
+        return ("this workspace was adopted (commit %s added its install record with the adoption), but the "
+                "record doesn't say so any more" % lineage[0][:12]), back
+    if lineage and (info.get("plan") or ADOPTION_PLAN) != (lineage[1].get("plan") or ADOPTION_PLAN):
+        return ("the install record names another adoption plan than the adoption made (commit %s)"
+                % lineage[0][:12]), back
+    if info and not lineage and util.in_head(target, os.path.relpath(install_record_path(target), target)):
+        return "the install record says this workspace was adopted, but no commit added it as an adoption", back
     return None
 
 
