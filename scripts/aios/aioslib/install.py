@@ -466,6 +466,26 @@ def _adopted_subset(target, info, shipped, managed, problems):
     return {p for p in managed if classes.get(p) == "adopt"}
 
 
+def _managed_match_pin(record, source_repo):
+    """Problems if the record's managed files aren't exactly the release it's pinned to: each one a
+    file that release ships, with that release's bytes, and the pin confirmed by the source's own
+    release record. A pull request can't change the release source, so a record claiming a file of the
+    instance's as managed fails here (independent review, 3.1 round 38)."""
+    rel = record.get("release") or {}
+    rev = rel.get("git_rev")
+    if not rev or not util.rev_exists(source_repo, rev):
+        return ["the release source doesn't have the pinned commit %s" % (rev or "?")[:12]]
+    problems = []
+    if _pin_confirmation(source_repo, rel.get("release_id"), rev, problems) is None and not problems:
+        problems.append("%s has no record of %s" % (source_repo, rel.get("release_id")))
+    pinned = {path: sha256_bytes(data) for path, _mode, data in util.read_tree(source_repo, rev)}
+    for entry in record.get("managed") or []:
+        path = entry.get("path") if isinstance(entry, dict) else None
+        if pinned.get(path) is None or pinned[path] != entry.get("sha256"):
+            problems.append("%s isn't the pinned release's own file" % path)
+    return problems
+
+
 def _pin_confirmation(source_repo, release_id, rev, problems):
     """Where the source records this release's pin (the release's tag, then the checked-out
     tree), or None when it has no record of it. A record naming another pin is a problem: the
@@ -1173,6 +1193,16 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     if problems:
         raise Refusal(EXIT_VERIFY, "workspace does not match its installed release",
                       problems + drift_recipe(target, record, source_repo, problems))
+    # The record is committed, so anyone's pull request could change which files it calls managed. An
+    # upgrade trusts it only while it is the one the last operation here wrote (when this workspace has
+    # that note), and an adopted instance's record must also match the release it's pinned to, checked
+    # against the release source, which a pull request can't change (independent review, 3.1 round 38).
+    _check_state(target)
+    if record.get("adoption"):
+        pinned_problems = _managed_match_pin(record, source_repo)
+        if pinned_problems:
+            raise Refusal(EXIT_VERIFY, "this adopted instance's install record doesn't match the release it's "
+                                       "pinned to; nothing was changed", pinned_problems[:20])
     if util.worktree_dirty(target):
         raise Refusal(EXIT_STATE,
                       "the workspace has uncommitted git changes; commit or stash them so the "

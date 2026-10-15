@@ -214,6 +214,10 @@ class NeverMovesOrAddsALine(Existing):
         rev3 = bump_to_v3(self.source)
         v3 = harness.approve(harness.build_manifest(self.source, rev3, "3.0.0"))
         self.assertTrue(v3.get("layout") and v3.get("seed_lines"))
+        # the source's own record of this release, as a real one has (an upgrade checks the pin against it)
+        write(self.source, "releases/starter-3.0.0.json", json.dumps(v3, indent=2))
+        run_git(self.source, "add", "-A")
+        run_git(self.source, "commit", "-qm", "the 3.0 release record")
         self.write_plan(self.v3_plan())
         self.commit("plan for 3.0")
         ours = snapshot(self.target)
@@ -2642,3 +2646,41 @@ class ReviewRoundThirtySeven(ReviewRoundThirtyTwo):
         self.assertIn("isn't the one this workspace's last operation wrote", ctx.exception.message)
         self.assertEqual(diff(before, _tree(self.target)), [])
         self.assertTrue(os.path.isfile(install_mod.journal_path(self.target)))
+
+
+class ReviewRoundThirtyEight(ReviewRoundThirtyTwo):
+    """Codex, 3.1 round 38: an upgrade never trusts a record a pull request changed."""
+
+    def forge_roles_as_managed(self):
+        self.adopt()
+        self.commit("adopted")
+        plan = json.loads(json.dumps(PLAN))
+        plan["instance_owned"].remove(".aios/roles.json")
+        plan["adopt"].append(".aios/roles.json")
+        self.write_plan(plan)
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        roles = os.path.join(self.target, ".aios/roles.json")
+        record["managed"].append({"path": ".aios/roles.json", "sha256": util.sha256_file(roles), "exec": False})
+        util.write_json(path, record)
+        self.commit("a pull request makes our role policy look managed")
+        with open(roles, "rb") as fh:
+            return fh.read()
+
+    def upgrade_refused(self, ours, text):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.upgrade(self.target, v31, self.source)
+        self.assertIn(text, ctx.exception.message)
+        with open(os.path.join(self.target, ".aios/roles.json"), "rb") as fh:
+            self.assertEqual(fh.read(), ours)
+
+    def test_with_the_local_note_the_changed_record_is_refused(self):
+        ours = self.forge_roles_as_managed()
+        self.upgrade_refused(ours, "isn't the one this workspace's last operation wrote")
+
+    def test_without_it_the_pinned_release_refuses_it(self):
+        ours = self.forge_roles_as_managed()
+        self.forget_state()  # a fresh clone has no note
+        self.upgrade_refused(ours, "doesn't match the release it's pinned to")

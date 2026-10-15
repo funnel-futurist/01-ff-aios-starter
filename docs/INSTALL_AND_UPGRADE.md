@@ -264,6 +264,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - Each adoption, upgrade and rollback also notes, locally (`.aios/backups/state/head.json`), which
   record it wrote. Rollback refuses unless the committed record is still that one. So a changed
   record, or an older one restored to replay an earlier rollback, is refused.
+- An upgrade trusts the record the same way. It must be the one the note names, when there is a
+  note. An adopted instance's record must also match the release it's pinned to, checked against the
+  release source.
 - A snapshot holding anything git tracks is refused.
 - An adoption plan must be committed under exactly its own name.
 - It trusts your own local, uncommitted state: the ignored journal of an operation that was
