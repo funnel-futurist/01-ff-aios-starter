@@ -226,6 +226,11 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - Each new file appears whole and can never replace one that appeared meanwhile.
 - `aios rollback` takes back exactly what it created and left unchanged, whether the adoption
   finished or was killed partway.
+- Undoing a finished adoption needs the release's source, as an upgrade does:
+  `aios rollback --target . --repo <your ff-aios-starter clone>`. The install record is committed,
+  so anyone's pull request could change it. Rollback therefore removes only the files the pinned
+  release ships, that your committed plan adopts, and that still have that release's bytes. It
+  removes the people map only if git shows it arrived with the adoption.
 - A file you've changed since is left in place, and the message says so.
 - The install record (`.aios/install.json`) is what says which files the adoption made, so it is
   sealed. If its content has been edited, rollback refuses and changes nothing until you restore

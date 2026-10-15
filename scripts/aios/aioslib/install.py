@@ -1352,14 +1352,15 @@ def _holder_alive(text):
     return True
 
 
-def rollback(target):
-    """Restore the previous release. Works after a clean upgrade, a hard kill, or a killed rollback."""
+def rollback(target, source_repo=None):
+    """Restore the previous release. Works after a clean upgrade, a hard kill, or a killed rollback.
+    Undoing a finished adoption also needs `source_repo`, the release's source (3.1 round 24)."""
     # A killed holder leaves its lock behind. Recovery is exactly when you need to get in, so
     # rollback clears a stale lock. A LIVE holder's lock is never taken: two operations at once
     # would interleave their writes (independent review).
     with _RecoveryGuard(target):  # one recovery at a time decides about a stale lock
         stale_lock = _reclaim_stale_lock(os.path.join(target, LOCK_PATH), target)
-    return _rollback_after_reclaim(target, stale_lock)
+    return _rollback_after_reclaim(target, stale_lock, source_repo)
 
 
 try:
@@ -1530,7 +1531,7 @@ def _reclaim_stale_lock(stale, target=None):
     return False
 
 
-def _rollback_after_reclaim(target, stale_lock):
+def _rollback_after_reclaim(target, stale_lock, source_repo=None):
     with _Lock(target, "rollback"):
         journal = load_journal(target)
         if stale_lock and not journal and not os.path.isfile(install_record_path(target)):
@@ -1569,14 +1570,15 @@ def _rollback_after_reclaim(target, stale_lock):
                 # Journaled before the first removal, so a kill partway through is finished by the
                 # next rollback, not left half-undone (independent review, 3.1).
                 record = load_record(target)
+                trusted = _release_adopted(target, record, source_repo)
                 journal = {"op": "adopt-undo", "phase": "undoing", "started_at": util.now_iso(),
-                           "adoption": record["adoption"],
+                           "adoption": record["adoption"], "trusted": trusted,
                            "config": orgconfig.load(target) if os.path.isfile(
                                orgconfig.default_config_path(target)) else None}
                 util.write_json(journal_path(target), journal)
             if journal.get("phase") != "complete":
                 util.fault("adopt.undo_before")
-                notes = _undo_adoption(target, journal.get("adoption") or {})
+                notes = _undo_adoption(target, journal.get("adoption") or {}, trusted=journal.get("trusted") or {})
                 journal["phase"] = "complete"
                 journal["notes"] = notes
                 util.write_json(journal_path(target), journal)
@@ -2261,14 +2263,76 @@ def _reachable(target, rel):
     return bool(rel) and util.safe_relpath(rel) and not _linked_paths(target, [rel])
 
 
-def _undo_may_remove(target, info):
-    """Which paths an undo may remove: the org config the adoption makes, and what the instance's own
-    committed plan, as it is now, says it adopts. The record and the journal are editable, and a seal
-    is only a hash anyone can recompute, so neither can make an instance-owned file removable
-    (independent review, 3.1 round 23). None when the plan can't be read: then nothing is."""
+def _committed_plan(target, rel):
+    """The adoption plan as git has it committed (HEAD), or None: the working tree's copy could say
+    anything (independent review, 3.1 round 24)."""
+    rel = (rel or ADOPTION_PLAN).replace(os.sep, "/")
+    if not util.safe_relpath(rel):
+        return None
+    text = util.git(target, ["show", "HEAD:" + rel], check=False)
     try:
-        plan, _sha = load_adoption_plan(target, info.get("plan"))
-    except Refusal:
+        plan = json.loads(text) if text else None
+    except ValueError:
+        return None
+    if not isinstance(plan, dict) or plan.get("schema") != ADOPTION_SCHEMA:
+        return None
+    if not all(isinstance(plan.get(c), list) and all(isinstance(x, str) for x in plan[c]) for c in ADOPTION_CLASSES):
+        return None
+    return plan
+
+
+def _release_adopted(target, record, source_repo):
+    """{path: sha256}: the files the record's pinned release ships, as the release's own source
+    confirms, that the instance's committed plan adopts. Only such a file, with exactly those bytes,
+    can be one a finished adoption made: a committed record, seal and all, can come from anyone's pull
+    request (independent review, 3.1 round 24). Refuses, with nothing changed, without that proof."""
+    rel = record.get("release") or {}
+    rev = rel.get("git_rev")
+    how = ["run it with the release's source: aios rollback --target . --repo <your ff-aios-starter clone>"]
+    if not source_repo:
+        raise Refusal(EXIT_STATE, "undoing a finished adoption needs the release it came from, so only that "
+                                  "release's files are removed; nothing was changed", how)
+    if not rev or not util.rev_exists(source_repo, rev):
+        raise Refusal(EXIT_STATE, "the release source doesn't have the pinned commit %s; nothing was changed"
+                      % (rev or "?")[:12], how)
+    problems = []
+    where = _pin_confirmation(source_repo, rel.get("release_id"), rev, problems)
+    if where is None or problems:
+        raise Refusal(EXIT_STATE, "the release source doesn't confirm this install record's pin; nothing was "
+                                  "changed", problems or ["%s has no record of %s" % (source_repo, rel.get("release_id"))])
+    plan = _committed_plan(target, (record.get("adoption") or {}).get("plan"))
+    if plan is None:
+        raise Refusal(EXIT_STATE, "the adoption plan isn't committed, so rollback can't tell which files were "
+                                  "adopted; nothing was changed", ["commit the plan, then run rollback again"])
+    shipped = release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))
+    return {p: s for p, _c, _m, s in shipped if _adoption_class(plan, p) == "adopt"}
+
+
+def _first_added(target, rel):
+    """The commit that first added `rel` (the path taken literally), or None."""
+    out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "--", ":(literal)" + rel], check=False)
+    commits = [c for c in out.splitlines() if c.strip()]
+    return commits[-1] if commits else None
+
+
+def _config_came_with_adoption(target, config_rel, record_rel):
+    """Whether the org config arrived with the adoption, as git shows it: never committed (so it was
+    never the repository's file), or first committed in the very commit that first added the install
+    record. A config the repository had before stays (independent review, 3.1 round 24)."""
+    if not util.is_tracked(target, config_rel):
+        return True
+    if not util.is_tracked(target, record_rel):
+        return False
+    first = _first_added(target, config_rel)
+    return first is not None and first == _first_added(target, record_rel)
+
+
+def _undo_may_remove(target, info):
+    """For an interrupted adoption: the org config it was making, and what the instance's committed plan
+    says it adopts (independent review, 3.1 rounds 23 and 24). None when the plan can't be read: then
+    nothing is."""
+    plan = _committed_plan(target, info.get("plan"))
+    if plan is None:
         return None
     config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
     return lambda rel: rel == config_rel or _adoption_class(plan, rel) == "adopt"
@@ -2294,7 +2358,7 @@ def _remove_copy_temp(target, rel):
         os.remove(full)
 
 
-def _undo_adoption(target, info, pending=None):
+def _undo_adoption(target, info, pending=None, trusted=None):
     """Take back exactly what an adoption created: the files it recorded, while each is still the
     bytes and mode it wrote, and a file it was creating when killed only if it is still that very
     copy (same inode as its temporary file). Returns notes about anything left. Never removes the
@@ -2302,8 +2366,15 @@ def _undo_adoption(target, info, pending=None):
     notes = []
     created = [c["path"] for c in info.get("created") or [] if _provenance_ok(c)]
     decided = set()
-    may_remove = _undo_may_remove(target, info) or (lambda rel: False)
     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    if trusted is not None:
+        # A finished adoption: only the release's own adopted files, with exactly its bytes, and the org
+        # config only if git shows it arrived with the adoption.
+        config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
+        config_ok = _config_came_with_adoption(target, config_rel, record_rel)
+        may_remove = lambda rel: rel in trusted or (rel == config_rel and config_ok)  # noqa: E731
+    else:
+        may_remove = _undo_may_remove(target, info) or (lambda rel: False)
     if pending:
         # First, the file a kill caught being created, whatever else says about it: removed only if
         # it is still that very copy (the same inode as its temporary file) with the bytes and mode
@@ -2345,7 +2416,11 @@ def _undo_adoption(target, info, pending=None):
         elif c["path"] not in decided and not _reachable(target, c["path"]):
             notes.append("%s is reached through a link now, so it was left" % c["path"])
         elif c["path"] not in decided and not may_remove(c["path"]):
-            notes.append("%s isn't a path the instance's plan adopts, so it was left" % c["path"])
+            notes.append("%s isn't a path the instance's plan adopts from the release, so it was left"
+                         % c["path"])
+        elif c["path"] not in decided and trusted is not None and c["path"] in trusted \
+                and c["sha256"] != trusted[c["path"]]:
+            notes.append("%s isn't the release's own file, so it was left" % c["path"])
         elif c["path"] not in decided:
             note = _remove_if_ours(target, c["path"], c["sha256"], c.get("mode"))
             if note:
@@ -2368,9 +2443,15 @@ def _undo_adoption(target, info, pending=None):
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
     _sweep_temporaries(target)  # before the folders, so a backups folder it made can go too
+    backups_rel = BACKUP_DIR.replace(os.sep, "/")
     for d in sorted(info.get("made_dirs") or [], key=lambda e: -e["path"].count("/")):
+        if not isinstance(d, dict) or not isinstance(d.get("path"), str):
+            continue
         if not _reachable(target, d["path"] + "/x"):  # the folder itself, and each folder on the way
             continue
+        if trusted is not None and d["path"] != backups_rel and not any(
+                p.startswith(d["path"] + "/") for p in trusted):
+            continue  # a finished adoption's folders are only those on the way to the release's files
         full = os.path.join(target, d["path"])
         try:
             st = os.lstat(full)

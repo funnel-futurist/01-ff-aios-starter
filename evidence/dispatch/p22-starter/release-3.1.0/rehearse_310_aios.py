@@ -12,7 +12,7 @@ Nothing touches the real ai-os. Steps:
   4. the real `aios adopt --existing`, run by a stub founder identity;
   5. checks: exactly the 18 adopted files plus the config and record are new; no tracked file
      changed (ai-os's own 01_Foundations included); verify --repo; instance check; start;
-  6. `aios rollback`, back to exactly the committed state.
+  6. `aios rollback --repo <the starter>`, back to exactly the committed state.
 The people map here is REHEARSAL-ONLY: who holds which business role in FF is FF's to state.
 """
 
@@ -183,7 +183,7 @@ def main():
           code == 0 and "3.1.0" in out and "founder" in out)
 
     print("\n### S6 rollback")
-    code, out = sh(aios + ["rollback", "--target", ws], env=env)
+    code, out = sh(aios + ["rollback", "--target", ws, "--repo", st], env=env)  # a finished adoption: the release's source
     print("    " + out.strip().splitlines()[0])
     check("rollback (exit %d) returns the copy to exactly its committed state" % code,
           code == 0 and state(ws) == before)

@@ -43,6 +43,11 @@ class Existing(Sandbox):
     def setUp(self):
         super(Existing, self).setUp()
         self.v = harness.approve(harness.build_manifest(self.source, self.rev, "3.0.0"))
+        # The source's own record of the release, as a real approved release has: undoing a finished
+        # adoption checks it names the pin (3.1 round 24). releases/ isn't shipped, so the pin holds.
+        write(self.source, "releases/%s.json" % self.v["release_id"], json.dumps(self.v, indent=2))
+        run_git(self.source, "add", "-A")
+        run_git(self.source, "commit", "-qm", "the release record")
         t = self.target
         write(t, "CLAUDE.md", "# OUR OWN brain\nOur rules, not the Starter's.\n")
         write(t, "README.md", "# our company repo\n")
@@ -270,7 +275,7 @@ class Upgrades(Existing):
         rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
         install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")),
                             self.source)
-        install_mod.rollback(self.target)
+        install_mod.rollback(self.target, self.source)
         backups = set(os.listdir(os.path.join(self.target, ".aios", "backups")))
         self.assertEqual(diff(before, snapshot(self.target, backups=())), [])
         self.assertTrue(backups)
@@ -281,7 +286,7 @@ class Rollback(Existing):
     def test_rollback_undoes_a_finished_adoption_exactly(self):
         before = snapshot(self.target)
         self.adopt()
-        _r, summary, how = install_mod.rollback(self.target)
+        _r, summary, how = install_mod.rollback(self.target, self.source)
         self.assertIsNone(summary["release_id"])
         self.assertIn("adoption was undone", how)
         self.assertEqual(diff(before, snapshot(self.target)), [])
@@ -289,7 +294,7 @@ class Rollback(Existing):
     def test_rollback_leaves_an_adopted_file_the_instance_has_changed(self):
         self.adopt()
         write(self.target, "START_HERE.md", "# start here, edited by us\n")
-        _r, _s, how = install_mod.rollback(self.target)
+        _r, _s, how = install_mod.rollback(self.target, self.source)
         self.assertIn("START_HERE.md changed", how)
         with open(os.path.join(self.target, "START_HERE.md")) as fh:
             self.assertIn("edited by us", fh.read())
@@ -306,7 +311,7 @@ class Rollback(Existing):
                                         env={"AIOS_FAULT": "crash:" + point})
                 self.assertEqual(code, 137)
                 self.assertTrue(os.path.isfile(install_mod.journal_path(self.target)))
-                code, out, err = self.cli("rollback", "--target", self.target)
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
                 self.assertEqual(code, 0, out + err)
                 self.assertIn("interrupted adoption was undone", out)
                 self.assertEqual(diff(before, snapshot(self.target)), [])
@@ -474,7 +479,7 @@ class ReviewRoundOne(Existing):
         # The script isn't written yet; someone puts the release's exact bytes there by hand.
         with open(os.path.join(self.source, "scripts/team/git-safety-check.sh"), "rb") as fh:
             write(self.target, "scripts/team/git-safety-check.sh", fh.read())
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertTrue(os.path.isfile(os.path.join(self.target, "scripts/team/git-safety-check.sh")))
         self.assertFalse(os.path.exists(os.path.join(self.target, ".aios/install.json")))
@@ -486,15 +491,15 @@ class ReviewRoundOne(Existing):
             with self.subTest(point=point):
                 if not os.path.isfile(install_mod.install_record_path(self.target)):
                     self.adopt()
-                code, _o, _e = self.kill(point, "rollback", "--target", self.target)
+                code, _o, _e = self.kill(point, "rollback", "--target", self.target, "--repo", self.source)
                 self.assertEqual(code, 137)
-                code, out, err = self.cli("rollback", "--target", self.target)
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
                 self.assertEqual(code, 0, out + err)
                 self.assertEqual(diff(before, snapshot(self.target)), [])
 
     def test_c5_a_dead_lock_from_before_the_journal_clears_without_a_people_map(self):
         write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn("nothing to roll back", out)
         self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))
@@ -504,7 +509,7 @@ class ReviewRoundOne(Existing):
         for c in record["adoption"]["created"]:
             self.assertEqual(c["mode"], os.lstat(os.path.join(self.target, c["path"])).st_mode & 0o7777)
         os.chmod(os.path.join(self.target, ".aios/config.json"), 0o600)
-        _r, _s, how = install_mod.rollback(self.target)
+        _r, _s, how = install_mod.rollback(self.target, self.source)
         self.assertIn(".aios/config.json changed permissions", how)
         self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/config.json")))
 
@@ -614,7 +619,7 @@ class ReviewRoundTwo(Existing):
         code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
                                 "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:adopt.after_link"})
         self.assertEqual(code, 137)
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertEqual(diff(before, snapshot(self.target)), [])
         self.assertEqual([n for n in os.listdir(backups) if n.startswith(".write-")] if os.path.isdir(backups) else [], [])
@@ -758,7 +763,7 @@ class ReviewRoundFive(Existing):
         run_git(self.target, "add", "-f", ".aios/backups/guard")
         self.commit("ours, at the guard's path")
         write(self.target, ".aios/lock", "adopt pid=999999 at then\n")  # a dead holder's lock
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         with open(os.path.join(self.target, ".aios/backups/guard")) as fh:
             self.assertEqual(fh.read(), "a file of ours\n")
@@ -813,7 +818,7 @@ class ReviewRoundSeven(Existing):
         self.assertEqual(util.git(self.target, ["status", "--porcelain", "--ignored", "--untracked-files=all"]), "")
         before = snapshot(self.target)
         self.adopt()
-        install_mod.rollback(self.target)
+        install_mod.rollback(self.target, self.source)
         self.assertEqual(diff(before, snapshot(self.target)), [])
 
     def test_an_adopted_path_the_repository_ignores_is_refused(self):
@@ -847,7 +852,7 @@ class ReviewRoundEight(Existing):
         self.commit("our config, committed")
         write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn("nothing to roll back", out)
         self.assertIn("release:  none (nothing was changed)", out)
@@ -895,7 +900,7 @@ class ReviewRoundTen(Existing):
         return pending
 
     def rolls_back_keeping(self, pending):
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertTrue(os.path.isfile(os.path.join(self.target, pending["path"])), "an edited file was removed")
         self.assertFalse(os.path.lexists(os.path.join(self.target, pending["temp"])))
@@ -930,7 +935,7 @@ class ReviewRoundTen(Existing):
         self.commit("our config, and a policy nobody may roll back with")
         write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn("cleared a dead operation's lock", out)
         self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))
@@ -941,7 +946,7 @@ class ReviewRoundTen(Existing):
         self.commit("our config, and a policy nobody may roll back with")
         write(self.target, ".aios/lock", "adopt pid=%d at now\n" % os.getpid())
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
         self.assertTrue(os.path.lexists(os.path.join(self.target, ".aios/lock")))
 
@@ -978,7 +983,7 @@ class ReviewRoundEleven(Existing):
             fh.write("\n")
         with open(record, "rb") as fh:
             edited = fh.read()
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn(".aios/install.json isn't exactly what an interrupted adoption made", out)
         with open(record, "rb") as fh:
@@ -1019,7 +1024,7 @@ class ReviewRoundEleven(Existing):
             with self.subTest(words=words):
                 write(self.target, ".aios/lock", words)
                 self.be("acme-founder")
-                code, out, err = self.cli("rollback", "--target", self.target)
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
                 self.assertEqual(code, 0, out + err)
                 self.assertIn("cleared a dead operation's lock", out)
                 self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))
@@ -1051,7 +1056,7 @@ class ReviewRoundTwelve(Existing):
     def rolls_back_keeping_the_record(self, record):
         with open(record, "rb") as fh:
             edited = fh.read()
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn(".aios/install.json changed since the adoption wrote it", out)
         self.assertIn(".aios/install.json was left because it changed", out)
@@ -1070,7 +1075,7 @@ class ReviewRoundTwelve(Existing):
         util.write_json(record, data)  # canonical bytes, same plan hash: only the seal tells
         with open(record, "rb") as fh:
             edited = fh.read()
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
         self.assertIn("can't trust which files the adoption made", out + err)
         with open(record, "rb") as fh:
@@ -1078,7 +1083,7 @@ class ReviewRoundTwelve(Existing):
         for path in ADOPTED:
             self.assertTrue(os.path.lexists(os.path.join(self.target, path)), path)
         run_git(self.target, "checkout", "--", ".aios/install.json")  # restored, it rolls back
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertFalse(os.path.lexists(record))
 
@@ -1089,7 +1094,7 @@ class ReviewRoundTwelve(Existing):
 
     def test_an_unedited_record_goes_and_the_workspace_is_unpinned(self):
         record = self.adopted()
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn("no longer pinned", out)
         self.assertFalse(os.path.lexists(record))
@@ -1103,11 +1108,11 @@ class ReviewRoundTwelve(Existing):
         install_mod.upgrade(self.target, v31, self.source)
         self.assertNotIn(install_mod.RECORD_SEAL, util.read_json(record))  # a new record
         self.commit("upgraded")
-        install_mod.rollback(self.target)  # back to the adoption's own record, byte for byte
+        install_mod.rollback(self.target, self.source)  # back to the adoption's own record, byte for byte
         with open(record, "rb") as fh:
             self.assertEqual(fh.read(), adopted_bytes)
         self.commit("rolled back to the adoption")
-        install_mod.rollback(self.target)  # and the adoption itself
+        install_mod.rollback(self.target, self.source)  # and the adoption itself
         self.assertFalse(os.path.lexists(record))
         for path in ADOPTED:
             self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
@@ -1126,7 +1131,7 @@ class ReviewRoundTwelveCodex(Existing):
         return os.path.join(self.target, ".aios/install.json")
 
     def rollback(self):
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         for path in ADOPTED:
             self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
@@ -1269,7 +1274,7 @@ class ReviewRoundThirteenCodex(Existing):
         proc = subprocess.run([sys.executable, "-c", script], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         self.assertEqual(proc.returncode, 137, proc.stderr)
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         with open(os.path.join(self.target, "START_HERE.md"), "rb") as fh:
             self.assertEqual(fh.read(), release_bytes)  # someone else's, identical, kept
@@ -1292,7 +1297,7 @@ class ReviewRoundThirteenCodex(Existing):
             os.chmod(record, 0o444)  # read-only: changed
             self.assertFalse(install_mod._record_unchanged(record))
             os.chmod(record, 0o666)
-            install_mod.rollback(self.target)
+            install_mod.rollback(self.target, self.source)
         finally:
             install_mod._EXEC_BITS = saved
         self.assertFalse(os.path.lexists(record))
@@ -1347,7 +1352,7 @@ class ReviewRoundFourteen(Existing):
         self.assertEqual([n for n in os.listdir(backups) if n.startswith(".write-")]
                          if os.path.isdir(backups) else [], [], "a temporary copy no journal names was left")
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.adopt()  # and it runs again
         self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
@@ -1422,7 +1427,7 @@ class ReviewRoundFifteen(Existing):
         finally:
             util.create_new = real
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
 
@@ -1431,7 +1436,7 @@ class ReviewRoundFifteen(Existing):
         self.adopt()
         self.commit("adopted")
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         after = _tree(self.target)
         self.assertEqual(diff(before, after), [])
@@ -1443,7 +1448,7 @@ class ReviewRoundFifteen(Existing):
         self.adopt()
         self.commit("adopted")
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
 
@@ -1520,7 +1525,7 @@ class ReviewRoundSixteen(Existing):
         os.rename(skills, old)  # the old folders keep their inodes while the new ones are made
         os.makedirs(os.path.join(skills, "start-my-day"))
         shutil.rmtree(old)
-        install_mod.rollback(self.target)
+        install_mod.rollback(self.target, self.source)
         self.assertTrue(os.path.isdir(os.path.join(skills, "start-my-day")), "a folder it didn't make was removed")
 
 
@@ -1538,7 +1543,7 @@ class ReviewRoundSeventeen(Existing):
                                         "--config", cfg, "--repo", self.source,
                                         env={"AIOS_FAULT": "crash:write_json.before_replace@%d" % n})
                 self.assertEqual(code, 137)
-                code, out, err = self.cli("rollback", "--target", self.target)
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
                 self.assertEqual(code, 0, out + err)
                 self.assertEqual(diff(before, _tree(self.target)), [])
                 self.assertEqual(util.git(self.target, ["status", "--porcelain", "--untracked-files=all"]), "")
@@ -1587,7 +1592,7 @@ class ReviewRoundEighteen(Existing):
         self.commit("adopted")
         write(self.target, self.NAME, "ours\n")
         self.commit("a file of ours with that name, after the adoption")
-        install_mod.rollback(self.target)
+        install_mod.rollback(self.target, self.source)
         with open(os.path.join(self.target, self.NAME)) as fh:
             self.assertEqual(fh.read(), "ours\n")
 
@@ -1634,7 +1639,7 @@ class ReviewRoundNineteen(Existing):
         run_git(self.target, "update-index", "--add", "--cacheinfo", "100644,%s,.AIOS/%s" % (blob, name))
         run_git(self.target, "commit", "-qm", "tracked as .AIOS")
         self.assertTrue(util.is_tracked(self.target, ".aios/" + name))
-        install_mod.rollback(self.target)
+        install_mod.rollback(self.target, self.source)
         with open(os.path.join(self.target, ".aios", name)) as fh:
             self.assertEqual(fh.read(), "ours\n")
 
@@ -1653,7 +1658,7 @@ class ReviewRoundTwenty(Existing):
         shutil.rmtree(os.path.join(self.target, ".claude", "skills"))
         os.symlink(outside, os.path.join(self.target, ".claude", "skills"))
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn("reached through a link now", out)
         with open(os.path.join(outside, "start-my-day/SKILL.md"), "rb") as fh:
@@ -1672,7 +1677,7 @@ class ReviewRoundTwenty(Existing):
         journal["adoption"]["created"].append({"path": "../outside.txt", "mode": 0o644,
                                                "sha256": util.sha256_file(outside)})
         util.write_json(install_mod.journal_path(self.target), journal)
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertTrue(os.path.isfile(outside), "a file outside the workspace was removed")
 
@@ -1683,7 +1688,7 @@ class ReviewRoundTwenty(Existing):
         exc = self.refuses_unchanged(self.adopt)
         self.assertTrue(any("this repository tracks" in d for d in exc.details), exc.details)
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
         self.assertIn("not the installer's lock", out + err)
         self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/lock")))
@@ -1723,7 +1728,7 @@ class ReviewRoundTwentyOne(Existing):
         os.symlink(outside, os.path.join(self.target, ".aios"))
         before = _tree(outside)
         with self.assertRaises(Refusal) as ctx:
-            install_mod.rollback(self.target)
+            install_mod.rollback(self.target, self.source)
         self.assertIn("is a link or a file, not a folder", ctx.exception.message)
         self.assertEqual(diff(before, _tree(outside)), [])
 
@@ -1739,7 +1744,7 @@ class ReviewRoundTwentyTwo(Existing):
         record["adoption"]["created"].append({"path": "README.md", "sha256": None})  # the instance's own
         util.write_json(path, record)
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
         with open(os.path.join(self.target, "README.md")) as fh:
             self.assertEqual(fh.read(), "# our company repo\n")
@@ -1756,7 +1761,7 @@ class ReviewRoundTwentyTwo(Existing):
         journal = install_mod.load_journal(self.target)
         journal["adoption"]["created"].append({"path": "README.md", "sha256": None})
         util.write_json(install_mod.journal_path(self.target), journal)
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn("without a usable hash and mode", out)
         with open(os.path.join(self.target, "README.md")) as fh:
@@ -1810,7 +1815,7 @@ class ReviewRoundTwentyThree(Existing):
             fh.write(install_mod._record_bytes(record))
         os.chmod(path, 0o644)
         self.be("acme-founder")
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         self.assertIn("README.md isn't a path the instance's plan adopts", out)
         with open(os.path.join(self.target, "README.md")) as fh:
@@ -1828,7 +1833,7 @@ class ReviewRoundTwentyThree(Existing):
         journal = install_mod.load_journal(self.target)
         journal["adoption"]["created"].append(self.readme_entry())
         util.write_json(install_mod.journal_path(self.target), journal)
-        code, out, err = self.cli("rollback", "--target", self.target)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertEqual(code, 0, out + err)
         with open(os.path.join(self.target, "README.md")) as fh:
             self.assertEqual(fh.read(), "# our company repo\n")
@@ -1873,3 +1878,73 @@ class ReviewRoundTwentyThreeCodex(Existing):
                 notes = install_mod._undo_adoption(self.target, journal["adoption"], journal["pending"])
                 self.assertIn("an interrupted adoption's journal entry wasn't usable, so it was left alone", notes)
                 self.assertTrue(os.path.isfile(os.path.join(self.target, temp)), temp)
+
+
+class ReviewRoundTwentyFour(Existing):
+    """Codex, 3.1 round 24: a finished adoption's undo trusts only the release, and git, not the record."""
+
+    def forge(self, mutate):
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        mutate(record)
+        record = install_mod._sealed(record)  # a seal anyone can recompute
+        with open(path, "wb") as fh:
+            fh.write(install_mod._record_bytes(record))
+        os.chmod(path, 0o644)
+        self.commit("a forged record, as a pull request could bring")
+
+    def entry(self, rel):
+        full = os.path.join(self.target, rel)
+        return {"path": rel, "sha256": util.sha256_file(full), "mode": stat_mode(full)}
+
+    def rollback_ok(self):
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        for p in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(self.target, p)), p)
+        return out
+
+    def test_an_instance_file_under_an_adopted_pattern_stays(self):
+        write(self.target, "scripts/team/local.sh", "#!/bin/sh\necho ours\n")
+        self.commit("our own script beside the starter's")
+        self.adopt()
+        self.commit("adopted")
+        self.forge(lambda r: r["adoption"]["created"].append(self.entry("scripts/team/local.sh")))
+        self.rollback_ok()
+        self.assertTrue(os.path.isfile(os.path.join(self.target, "scripts/team/local.sh")))
+
+    def test_a_people_map_the_repository_had_before_stays(self):
+        write(self.target, ".aios/config.json", json.dumps(harness.config()))
+        self.commit("our people map, before any adoption")
+        self.adopt()
+        self.commit("adopted")
+        self.forge(lambda r: r["adoption"]["created"].append(self.entry(".aios/config.json")))
+        self.rollback_ok()
+        self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/config.json")))
+
+    def test_an_empty_folder_of_the_instances_stays(self):
+        self.adopt()
+        self.commit("adopted")
+        st = os.lstat(os.path.join(self.target, "empty_of_ours"))
+        self.forge(lambda r: r["adoption"]["made_dirs"].append(
+            {"path": "empty_of_ours", "dev": st.st_dev, "ino": st.st_ino}))
+        self.rollback_ok()
+        self.assertTrue(os.path.isdir(os.path.join(self.target, "empty_of_ours")))
+
+    def test_without_the_release_source_a_finished_adoption_is_refused_unchanged(self):
+        self.adopt()
+        self.commit("adopted")
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("needs the release it came from", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_committed_adoption_with_the_people_map_it_made_rolls_back_exactly(self):
+        before = _tree(self.target)
+        self.adopt()
+        self.commit("adopted, the people map with it")
+        self.rollback_ok()
+        self.assertEqual(diff(before, _tree(self.target)), [])

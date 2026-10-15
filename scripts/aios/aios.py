@@ -379,7 +379,7 @@ def cmd_rollback(args):
             raise
     policy = roles.load_policy(target)
     login, role = roles.require_lifecycle(policy, config, "rollback")
-    record, summary, how = install_mod.rollback(target)
+    record, summary, how = install_mod.rollback(target, os.path.abspath(args.repo) if args.repo else None)
     _say("%s" % how)
     _say("  by:       %s (%s)" % (login, role))
     if summary["release_id"] is None:
@@ -838,6 +838,8 @@ def build_parser():
 
     rbk = sub.add_parser("rollback", help="restore the previous release")
     rbk.add_argument("--target", default=".")
+    rbk.add_argument("--repo", help="the release's source (an ff-aios-starter clone): needed to undo a "
+                                    "finished adoption, so only that release's own files are removed")
     rbk.set_defaults(func=cmd_rollback)
 
     st = sub.add_parser("start", help="role-scoped entry point")
