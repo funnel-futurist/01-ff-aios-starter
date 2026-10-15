@@ -2520,3 +2520,64 @@ class ReviewRoundThirtyFour(ReviewRoundThirtyTwo):
         with self.assertRaises(Refusal) as ctx:
             install_mod.rollback(self.target, self.source)
         self.assertIn("outside the workspace", ctx.exception.message)
+
+
+class ReviewRoundThirtyFive(ReviewRoundThirtyTwo):
+    """Codex, 3.1 round 35: recovery trusts only the records the interrupted operation knew."""
+
+    def killed_upgrade(self, point="upgrade.before_record"):
+        self.adopt()
+        self.commit("adopted")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        rel = self.write_json("release-3.1.json", harness.approve(harness.build_manifest(self.source, rev, "3.1.0")))
+        self.be("acme-founder")
+        code, _o, _e = self.cli("upgrade", "--release", rel, "--target", self.target, "--repo", self.source,
+                                env={"AIOS_FAULT": "crash:" + point})
+        self.assertEqual(code, 137)
+
+    def test_a_record_changed_during_an_interrupted_upgrade_is_refused(self):
+        self.killed_upgrade()
+        write(self.tmp, "victim.txt", "outside\n")
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["managed"].append({"path": "../victim.txt", "sha256": "0" * 64, "exec": False})
+        util.write_json(path, record)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("isn't the one the interrupted upgrade started from", out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp, "victim.txt")))
+
+    def test_an_unsafe_path_in_an_interrupted_upgrades_journal_is_refused(self):
+        self.killed_upgrade()
+        journal = install_mod.load_journal(self.target)
+        journal["adds"] = list(journal.get("adds") or []) + ["../victim.txt"]
+        util.write_json(install_mod.journal_path(self.target), journal)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("outside the workspace", out + err)
+
+    def test_a_resumed_rollback_refuses_a_tracked_snapshot(self):
+        record_path = self.upgraded()
+        backup = util.read_json(record_path)["previous"]["backup"]
+        self.be("acme-founder")
+        code, _o, _e = self.cli("rollback", "--target", self.target, "--repo", self.source,
+                                env={"AIOS_FAULT": "crash:rollback.before_restore"})
+        self.assertEqual(code, 137)
+        run_git(self.target, "add", "-f", backup + "/install.json")
+        run_git(self.target, "commit", "-qm", "a pull request commits the snapshot")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("holds files the repository tracks", out + err)
+
+    def test_a_falsey_field_that_isnt_a_list_is_refused(self):
+        record_path = self.upgraded()
+        backup = util.read_json(record_path)["previous"]["backup"]
+        snap = os.path.join(self.target, backup, "install.json")
+        original = util.read_json(snap)
+        self.forget_state()
+        for value in ({}, "", 0, False):
+            with self.subTest(value=value):
+                util.write_json(snap, dict(original, managed=value))
+                with self.assertRaises(Refusal) as ctx:
+                    install_mod.rollback(self.target, self.source)
+                self.assertIn("outside the workspace", ctx.exception.message)

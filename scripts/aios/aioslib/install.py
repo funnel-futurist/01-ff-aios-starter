@@ -242,6 +242,38 @@ def _snapshot_owned(target, backup_rel):
     return bool(staged.strip(b"\0")) or util.in_head(target, rel)
 
 
+def _require_trusted_snapshot(target, backup_rel, records, extra=()):
+    """Before a rollback or a recovery acts on a snapshot: it is a folder inside the backups folder,
+    reached without a link, holding nothing git tracks, and every path the records and the journal
+    name is inside the workspace. Refuses, with nothing changed, otherwise (3.1 rounds 32 to 35)."""
+    if not (isinstance(backup_rel, str) and util.safe_relpath(backup_rel)
+            and backup_rel.replace(os.sep, "/").startswith(BACKUP_DIR.replace(os.sep, "/") + "/")
+            and not _linked_paths(target, [backup_rel.replace(os.sep, "/") + "/x"])):
+        raise Refusal(EXIT_STATE, "the snapshot isn't a folder inside %s; nothing was changed"
+                      % BACKUP_DIR.replace(os.sep, "/"), [str(backup_rel)])
+    if _snapshot_owned(target, backup_rel):
+        raise Refusal(EXIT_STATE, "the snapshot %s holds files the repository tracks, so it could be a pull "
+                                  "request's; nothing was changed" % backup_rel)
+
+    def entries(rec):
+        if not isinstance(rec, dict):
+            return ["(not a record)"]
+        out = []
+        for key in ("managed", "created_seeds", "seeded"):
+            value = rec.get(key)
+            if value is None:  # only a missing or null list is empty (round 35)
+                continue
+            out += value if isinstance(value, list) else ["(%s isn't a list)" % key]
+        return out
+    unsafe = sorted(str(e.get("path") if isinstance(e, dict) else e)
+                    for r in records for e in entries(r)
+                    if not (isinstance(e, dict) and isinstance(e.get("path"), str) and util.safe_relpath(e["path"])))
+    unsafe += sorted(str(p) for p in extra if not (isinstance(p, str) and util.safe_relpath(p)))
+    if unsafe:
+        raise Refusal(EXIT_STATE, "the install records name paths outside the workspace; nothing was changed",
+                      unsafe[:20])
+
+
 def _repo_owned(target, rel):
     """Whether git has `rel` as the repository's file: in the index, or committed in HEAD (a file
     `git rm --cached` left on disk is still the repository's). Cleanup never removes one (3.1 round 28)."""
@@ -1282,6 +1314,9 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         "op": "upgrade", "txn": txn_id, "from_version": current_version,
         "to_version": manifest["version"], "backup": backup_rel,
         "phase": "applying", "started_at": util.now_iso(),
+        # The record as it was: recovery accepts the record on disk only if it is this one or the one
+        # this upgrade writes (journaled below, before it's written) (independent review, 3.1 round 35).
+        "record_sha256_before": sha256_file(install_record_path(target)),
         # What this upgrade intends to ADD. A hard kill can stop anywhere, and the install
         # record on disk still describes the OLD release, so it cannot tell recovery about
         # files the aborted attempt already created. Without this, rollback leaves orphans.
@@ -1428,6 +1463,10 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
             "version": current_version,
             "backup": backup_rel,
         }
+        progress = load_journal(target)
+        progress["record_sha256_after"] = sha256_bytes(
+            (json.dumps(new_record, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+        util.write_json(journal_path(target), progress)
         util.write_json(install_record_path(target), new_record)
         # The record this upgrade wrote, kept in its own snapshot (git-ignored, local): its rollback
         # trusts the committed record only while it is still exactly this (independent review, 3.1
@@ -1874,8 +1913,24 @@ def _rollback_locked(target, journal):
         return _finish_rollback(target, journal, resumed=True)
 
     if journal:
+        # Before anything changes: the record on disk must be the one this upgrade started from or the
+        # one it was writing, and the snapshot and every path must be the installer's own (round 35).
+        if current is not None and journal.get("record_sha256_before"):
+            on_disk = sha256_file(record_path)
+            if on_disk not in (journal.get("record_sha256_before"), journal.get("record_sha256_after")):
+                raise Refusal(EXIT_STATE, "the install record isn't the one the interrupted upgrade started "
+                                          "from or was writing; nothing was changed",
+                              ["restore it from git, then run rollback again"])
+        _require_trusted_snapshot(target, journal["backup"], ())  # the path first, before anything is read
+        try:
+            prior = util.read_json(os.path.join(target, journal["backup"], "install.json"))
+        except (OSError, ValueError) as exc:
+            raise Refusal(EXIT_STATE, "the snapshot's install record can't be read (%s); nothing was changed"
+                          % exc)
+        _require_trusted_snapshot(target, journal["backup"], (current or {}, prior),
+                                  list(journal.get("adds") or []) + list(journal.get("seed_adds") or [])
+                                  + list((journal.get("add_provenance") or {}).keys()))
         backup_root = os.path.join(target, journal["backup"])
-        prior = util.read_json(os.path.join(backup_root, "install.json"))
         the_plan = journal.get("layout")
         if the_plan:
             # Checked before anything changes: a refusal here leaves the workspace as it was.
@@ -1924,42 +1979,18 @@ def _rollback_locked(target, journal):
         raise Refusal(EXIT_STATE, "nothing to roll back: this is the first installed release")
 
     backup_rel = previous.get("backup")
-    if not (isinstance(backup_rel, str) and util.safe_relpath(backup_rel)
-            and backup_rel.replace(os.sep, "/").startswith(BACKUP_DIR.replace(os.sep, "/") + "/")
-            and not _linked_paths(target, [backup_rel.replace(os.sep, "/") + "/x"])):
-        raise Refusal(EXIT_STATE, "the install record's snapshot isn't a folder inside %s; nothing was "
-                                  "changed" % BACKUP_DIR.replace(os.sep, "/"), [str(backup_rel)])
+    _require_trusted_snapshot(target, backup_rel, ())  # the path first, before anything is read there
     backup_root = os.path.join(target, backup_rel)
     if not os.path.isdir(backup_root):
         raise Refusal(EXIT_STATE,
                       "the snapshot for %s is gone, so rollback cannot restore it"
                       % previous.get("version"),
                       [backup_root, "re-install the previous release from its pin instead"])
-    # The record is committed, so anyone's pull request could change it: rollback trusts it only while
-    # it is still exactly the record the upgrade wrote, kept in its own local snapshot. An adopted
-    # instance's upgrade always keeps one; an older upgrade without one keeps 3.0's behaviour
-    # (independent review, 3.1 round 32).
-    if _snapshot_owned(target, backup_rel):
-        raise Refusal(EXIT_STATE, "the snapshot %s holds files the repository tracks, so it could be a pull "
-                                  "request's; nothing was changed" % backup_rel)
     try:
         snapshot_prior = util.read_json(os.path.join(backup_root, "install.json"))
     except (OSError, ValueError) as exc:
         raise Refusal(EXIT_STATE, "the snapshot's install record can't be read (%s); nothing was changed" % exc)
-    def _entries(rec):
-        if not isinstance(rec, dict):
-            return ["(not a record)"]
-        out = []
-        for key in ("managed", "created_seeds", "seeded"):
-            value = rec.get(key) or []
-            out += value if isinstance(value, list) else ["(%s isn't a list)" % key]
-        return out
-    unsafe = sorted(str(e.get("path") if isinstance(e, dict) else e) for r in (current, snapshot_prior)
-                    for e in _entries(r)
-                    if not (isinstance(e, dict) and isinstance(e.get("path"), str) and util.safe_relpath(e["path"])))
-    if unsafe:
-        raise Refusal(EXIT_STATE, "the install records name paths outside the workspace; nothing was changed",
-                      unsafe[:20])
+    _require_trusted_snapshot(target, backup_rel, (current, snapshot_prior))
     after = os.path.join(backup_root, "after.json")
     if os.path.isfile(after) and not os.path.islink(after):
         with open(after, "rb") as fh_after, open(record_path, "rb") as fh_now:
@@ -2020,8 +2051,14 @@ def _finish_rollback(target, journal, resumed=False):
     rollback killed partway runs again from the start and lands in the same place. The install
     record is written last; the journal goes only after the result verifies."""
     current = journal["current_record"]
+    _require_trusted_snapshot(target, journal["backup"], ())  # the path first, before anything is read
+    try:
+        prior = util.read_json(os.path.join(target, journal["backup"], "install.json"))
+    except (OSError, ValueError) as exc:
+        raise Refusal(EXIT_STATE, "the snapshot's install record can't be read (%s); nothing was changed" % exc)
+    _require_trusted_snapshot(target, journal["backup"], (current, prior),
+                              [e.get("path") if isinstance(e, dict) else e for e in journal.get("created") or []])
     backup_root = os.path.join(target, journal["backup"])
-    prior = util.read_json(os.path.join(backup_root, "install.json"))
     migration = current.get("layout_migration") or {}
     the_plan = util.read_json(os.path.join(target, migration["plan"])) if migration else None
     current_paths = {e["path"] for e in current.get("managed") or []}
