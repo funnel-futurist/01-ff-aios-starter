@@ -230,7 +230,11 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   install record (`.aios/install.json`): if you've edited it, rollback leaves it and says so, and
   the workspace stays pinned until you delete it.
 - Folders the adoption made are removed once they're empty again; a folder it can't prove it
-  made (one you replaced, say) is left.
+  made (one you replaced, say) is left. So is a folder of yours that a kill caught between being
+  made and being recorded: an empty folder, left rather than risk removing one that isn't the
+  adoption's.
+- Temporary files a killed operation left in `.aios` are removed by `aios rollback`: only the
+  names the installer itself makes.
 - A lock left by an adoption killed before it changed anything is cleared by `aios rollback`
   with no role needed. A running operation's lock is never taken; one that names no process
   (its holder was killed while writing it) is cleared like any dead one.

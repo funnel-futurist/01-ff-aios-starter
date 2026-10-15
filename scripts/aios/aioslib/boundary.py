@@ -149,9 +149,16 @@ def check_edit(root, tool_name, tool_input, identify=None):
         "%s (not in the people map)" % login if login else "an unidentified person")
     return False, (
         "%s belongs to the founder lane, and %s may not change it. Ask a founder to make "
-        "this change, or to review a pull request that proposes it. If you are a founder and "
+        "this change, or open a pull request for %s to approve. If you are a founder and "
         "see this, run `gh auth login` so the workspace can tell who you are.%s" % (
-            rel, who, "" if login else " " + roles.WEB_NOTE + "."))
+            rel, who, lane_approver(policy), "" if login else " " + roles.WEB_NOTE + "."))
+
+
+def lane_approver(policy):
+    """Who approves a founder-lane pull request, as the role policy says: its declared
+    founder_lane_reviewers when it declares them (the whole permission), else a founder (3.1 round 17)."""
+    return ("an approved founder-lane reviewer (the role policy's founder_lane_reviewers)"
+            if "founder_lane_reviewers" in (policy or {}) else "a founder or co-founder")
 
 
 def hook_pre_edit(stdin_text, root=None):

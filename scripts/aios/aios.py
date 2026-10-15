@@ -446,7 +446,8 @@ def cmd_start(args):
         _say("")
         _say("founder lane (ask a founder first): %s" % ", ".join(denied))
         _say("  held two ways: Claude will not edit these for you, and a pull request that")
-        _say("  changes them fails its boundary check until a founder approves that commit.")
+        _say("  changes them fails its boundary check until %s approves that commit."
+             % boundary.lane_approver(policy))
         _say("  a direct push to main is stopped only if branch protection is on.")
     for warning in _hook_runtime_warnings(target):
         _say("")

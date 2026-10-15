@@ -1508,3 +1508,50 @@ class ReviewRoundSixteen(Existing):
         shutil.rmtree(old)
         install_mod.rollback(self.target)
         self.assertTrue(os.path.isdir(os.path.join(skills, "start-my-day")), "a folder it didn't make was removed")
+
+
+class ReviewRoundSeventeen(Existing):
+    """Codex, 3.1 round 17."""
+
+    def test_a_kill_inside_any_early_state_write_rolls_back_to_the_exact_tree(self):
+        before = _tree(self.target)
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        for n in range(1, 7):
+            with self.subTest(write=n):
+                code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                        "--config", cfg, "--repo", self.source,
+                                        env={"AIOS_FAULT": "crash:write_json.before_replace@%d" % n})
+                self.assertEqual(code, 137)
+                code, out, err = self.cli("rollback", "--target", self.target)
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(diff(before, _tree(self.target)), [])
+                self.assertEqual(util.git(self.target, ["status", "--porcelain", "--untracked-files=all"]), "")
+        self.adopt()  # and it runs again
+        self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
+
+    def declared_reviewers(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["founder_lane_reviewers"] = ["@acme-lead"]  # not a founder
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        self.commit("only acme-lead reviews the founder lane")
+
+    def test_the_edit_hold_names_the_declared_reviewers(self):
+        self.declared_reviewers()
+        self.adopt()
+        from aioslib import boundary
+        ok, reason = boundary.check_edit(self.target, "Edit", {"file_path": os.path.join(self.target, "CLAUDE.md")},
+                                         identify=lambda root: "acme-va")
+        self.assertFalse(ok)
+        self.assertIn("for an approved founder-lane reviewer", reason)
+        self.assertNotIn("or to review a pull request", reason)
+
+    def test_start_names_the_declared_reviewers(self):
+        self.declared_reviewers()
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-va")
+        code, out, err = self.cli("start", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("until an approved founder-lane reviewer", out)

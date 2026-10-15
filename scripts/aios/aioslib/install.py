@@ -1559,6 +1559,7 @@ def _rollback_after_reclaim(target, stale_lock):
                                        "rolled nothing further back")
         else:
             result = _rollback_locked(target, journal)
+        _sweep_temporaries(target)  # whatever a killed operation's state writes left (3.1 round 17)
     # A finished rollback keeps its journal, marked complete, until its lock is gone: a kill in
     # between must not make the next rollback go back one release too far (independent review).
     done = load_journal(target)
@@ -1578,7 +1579,33 @@ def clear_dead_lock(target):
         # after this look is a live holder's.
         return False
     with _RecoveryGuard(target):
-        return _reclaim_stale_lock(os.path.join(target, LOCK_PATH))
+        cleared = _reclaim_stale_lock(os.path.join(target, LOCK_PATH))
+        if cleared:  # still under the guard, so no new holder is writing yet
+            _sweep_temporaries(target)
+        return cleared
+
+
+# The temporary files the installer itself names: a state file's (util.write_json) and a copy being
+# created (util.private_temp), each with tempfile's eight random characters. A kill leaves them.
+_STATE_TEMP = re.compile(r"^\.(install|config|txn)\.json\.[a-z0-9_]{8}\.tmp$")
+_COPY_TEMP = re.compile(r"^\.write-[a-z0-9_]{8}$")
+
+
+def _sweep_temporaries(target):
+    """Remove the temporaries a killed operation left: only names the installer makes, only regular
+    files, only in `.aios` and its backups folder. Run only while holding the lock or the guard, when
+    no other operation can be writing one (independent review, 3.1 round 17)."""
+    removed = []
+    for rel_dir, pattern in ((AIOS_DIR, _STATE_TEMP), (BACKUP_DIR, _COPY_TEMP)):
+        folder = os.path.join(target, rel_dir)
+        if os.path.islink(folder) or not os.path.isdir(folder):
+            continue
+        for name in sorted(os.listdir(folder)):
+            full = os.path.join(folder, name)
+            if pattern.match(name) and stat.S_ISREG(os.lstat(full).st_mode):
+                os.remove(full)
+                removed.append(os.path.join(rel_dir, name).replace(os.sep, "/"))
+    return removed
 
 
 NO_RELEASE_SUMMARY = {"release_id": None, "version": None, "managed_checked": 0, "managed_total": 0}
@@ -2029,9 +2056,20 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             d = "/".join(parts[:i])
             full = os.path.join(target, d)
             if not os.path.lexists(full):
+                entry = {"path": d}
+                if d == BACKUP_DIR.replace(os.sep, "/"):
+                    # The installer's own reserved folder, which adoption needs absent or empty: its
+                    # intent is journaled before it's made, so a kill in between can't leave it
+                    # (independent review, 3.1 round 17). An instance's folder is removed only by
+                    # identity, so one a kill catches in that window is left, empty.
+                    entry["reserved"] = True
+                    info["made_dirs"].append(entry)
+                    util.write_json(journal_path(target), journal)
                 os.mkdir(full)
                 st = os.lstat(full)
-                info["made_dirs"].append({"path": d, "dev": st.st_dev, "ino": st.st_ino})
+                entry.update(dev=st.st_dev, ino=st.st_ino)
+                if not entry.get("reserved"):
+                    info["made_dirs"].append(entry)
                 util.write_json(journal_path(target), journal)
 
     def create(rel, data, mode, provenance=True):
@@ -2196,12 +2234,14 @@ def _undo_adoption(target, info, pending=None):
                     notes.append("%s changed since the adoption wrote it, so it was left for you" % record_rel)
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
+    _sweep_temporaries(target)  # before the folders, so a backups folder it made can go too
     for d in sorted(info.get("made_dirs") or [], key=lambda e: -e["path"].count("/")):
         full = os.path.join(target, d["path"])
         try:
             st = os.lstat(full)
-            if (stat.S_ISDIR(st.st_mode) and (st.st_dev, st.st_ino) == (d["dev"], d["ino"])
-                    and not os.listdir(full)):
+            ours = ((st.st_dev, st.st_ino) == (d.get("dev"), d.get("ino"))
+                    or (d.get("reserved") and d["path"] == BACKUP_DIR.replace(os.sep, "/") and "dev" not in d))
+            if stat.S_ISDIR(st.st_mode) and ours and not os.listdir(full):
                 os.rmdir(full)
         except OSError:
             pass

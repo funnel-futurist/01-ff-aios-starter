@@ -80,6 +80,7 @@ def write_json(path, obj):
             fh.flush()
             os.fsync(fh.fileno())
         os.chmod(tmp, 0o644)
+        fault("write_json.before_replace")
         os.replace(tmp, path)
     finally:
         if os.path.lexists(tmp):
@@ -410,6 +411,9 @@ def now_iso():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_FAULT_HITS = {}
+
+
 def fault(point):
     """Deterministic fault injection, used to prove crash recovery.
 
@@ -424,8 +428,13 @@ def fault(point):
     if not spec or ":" not in spec:
         return
     kind, _, where = spec.partition(":")
+    where, _, nth = where.partition("@")  # `<point>@3`: only its third hit in this process
     if where != point:
         return
+    if nth:  # without one, every hit, as always
+        _FAULT_HITS[point] = _FAULT_HITS.get(point, 0) + 1
+        if _FAULT_HITS[point] != int(nth):
+            return
     if kind == "raise":
         raise RuntimeError("injected fault at %s" % point)
     if kind == "crash":
