@@ -20,7 +20,7 @@
   },
   "created_from": {
     "branch": "exec/lane01-starter-3.1.0-20261015",
-    "git_rev": "8a311360d1bd18224af0e6cbc0bd2eb7884a89fd"
+    "git_rev": "d852d5c1729580f0d0484724a7d65b6a95769b9d"
   },
   "credentials": [
     {
@@ -846,7 +846,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/install.py",
-      "sha256": "7a52675ac2c8ba872c3655090d5f4d98d76156e7bd14825ff853cd3080ff8053"
+      "sha256": "6a21066ddff143f396c184de54d42aff970e5f63f3fe9a60f0744009460c7231"
     },
     {
       "class": "managed",
