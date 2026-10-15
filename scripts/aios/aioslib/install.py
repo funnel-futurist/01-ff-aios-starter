@@ -61,46 +61,81 @@ def load_record(target):
 
 
 def _record_shape_problems(record):
-    """What makes a record not the shape the installer writes. The record is committed, so a pull request
-    could put any JSON there; a wrong type must refuse, not crash halfway (independent review, 3.1 round 41)."""
+    """What makes a record not the shape the installer writes, for every field the installer reads back.
+    The record is committed, so a pull request could put any JSON there; a wrong type must refuse, not
+    crash halfway (independent review, 3.1 rounds 41 and 42)."""
     if not isinstance(record, dict):
         return ["it isn't a JSON object"]
     problems = []
+
+    def text(v, optional=True):
+        return isinstance(v, str) or (optional and v is None)
+
+    def number(v):
+        return isinstance(v, int) and not isinstance(v, bool)
+
+    def entries(key, fields, where=record, label=None):
+        """Each entry an object whose `fields` ({name: test}) hold; a missing name fails its test with None."""
+        label = label or key
+        value = where.get(key)
+        if value is None:
+            return
+        if not isinstance(value, list):
+            problems.append("'%s' isn't a list" % label)
+            return
+        for i, entry in enumerate(value):
+            bad = [n for n, ok in fields.items() if not isinstance(entry, dict) or not ok(entry.get(n), n in entry)]
+            if bad:
+                problems.append("%s[%d]: %s missing or of the wrong type" % (label, i, ", ".join(sorted(bad))))
+
+    path = lambda v, _has: isinstance(v, str)  # noqa: E731
+    sha = lambda v, _has: isinstance(v, str)  # noqa: E731
+    opt_text = lambda v, _has: text(v)  # noqa: E731
+    opt_bool = lambda v, has: not has or isinstance(v, bool)  # noqa: E731
+    opt_number = lambda v, has: not has or number(v)  # noqa: E731
+
     rel = record.get("release")
     if not isinstance(rel, dict):
         problems.append("'release' isn't an object")
     else:
-        problems += ["release.%s isn't text" % k for k in ("release_id", "version", "git_rev")
-                     if rel.get(k) is not None and not isinstance(rel.get(k), str)]
-    for kind in ("managed", "rendered", "seeded", "seed_lines", "seed_lines_added", "credentials"):
-        entries = record.get(kind)
-        if entries is None:
-            continue
-        if not isinstance(entries, list):
-            problems.append("'%s' isn't a list" % kind)
-            continue
-        for i, entry in enumerate(entries):
-            if kind == "credentials":
-                if not isinstance(entry, dict):
-                    problems.append("credentials[%d] isn't an object" % i)
-            elif not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
-                problems.append("%s[%d] has no path" % (kind, i))
-            elif kind == "managed" and (not isinstance(entry.get("sha256"), str)
-                                        or ("exec" in entry and not isinstance(entry["exec"], bool))):
-                problems.append("managed %s has no hash, or an executable bit that isn't true or false"
-                                % entry["path"])
-            elif kind in ("seed_lines", "seed_lines_added") and (
-                    not isinstance(entry.get("line"), str)
-                    or ("appended" in entry and not isinstance(entry["appended"], str))
-                    or (kind == "seed_lines_added" and not isinstance(entry.get("appended"), str))):
-                problems.append("%s[%d] has no line, or appended bytes that aren't text" % (kind, i))
-    history = record.get("seed_history")
-    if history is not None and not (isinstance(history, list) and all(isinstance(p, str) for p in history)):
-        problems.append("'seed_history' isn't a list of paths")
-    if record.get("adoption") is not None and not isinstance(record["adoption"], dict):
-        problems.append("'adoption' isn't an object")
+        problems += ["release.%s isn't text" % k for k in ("release_id", "version", "git_rev") if not text(rel.get(k))]
+    entries("managed", {"path": path, "sha256": sha, "exec": opt_bool})
+    entries("rendered", {"path": path, "sha256": opt_text})
+    entries("seeded", {"path": path, "sha256": opt_text})
+    entries("seed_lines", {"path": path, "line": path, "release": opt_text, "state": opt_text, "appended": opt_text})
+    entries("seed_lines_added", {"path": path, "line": path, "release": opt_text, "appended": sha})
+    entries("credentials", {"name": path, "ref": opt_text, "required": lambda v, _h: isinstance(v, bool),
+                            "resolved": opt_bool})
+    entries("created_seeds", {"path": path, "sha256": sha, "mode": opt_number})
+    for key in ("seed_history", "pre_existing_dirs"):
+        value = record.get(key)
+        if value is not None and not (isinstance(value, list) and all(isinstance(p, str) for p in value)):
+            problems.append("'%s' isn't a list of paths" % key)
+    for key in ("layout", "status", "upgraded_at"):
+        if not text(record.get(key)):
+            problems.append("'%s' isn't text" % key)
+    previous = record.get("previous")
+    if previous is not None and not (isinstance(previous, dict) and isinstance(previous.get("backup"), str)
+                                     and text(previous.get("version")) and text(previous.get("release_id"))):
+        problems.append("'previous' isn't an object naming its backup, version and release")
+    migration = record.get("layout_migration")
+    if migration is not None and not (isinstance(migration, dict) and isinstance(migration.get("plan"), str)):
+        problems.append("'layout_migration' isn't an object naming its plan")
+    info = record.get("adoption")
+    if info is not None:
+        if not isinstance(info, dict):
+            problems.append("'adoption' isn't an object")
+        else:
+            problems += ["adoption.%s isn't text" % k for k in ("plan", "plan_sha256", "record_sha256")
+                         if not text(info.get(k))]
+            for k in ADOPTION_CLASSES:
+                value = info.get(k)
+                if value is not None and not (isinstance(value, list) and all(isinstance(p, str) for p in value)):
+                    problems.append("adoption.%s isn't a list of patterns" % k)
+            entries("created", {"path": path, "sha256": sha, "mode": opt_number}, info, "adoption.created")
+            entries("made_dirs", {"path": path, "dev": opt_number, "ino": opt_number, "reserved": opt_bool},
+                    info, "adoption.made_dirs")
     return problems
-
 
 def journal_path(target):
     return os.path.join(target, JOURNAL_PATH)
@@ -356,6 +391,8 @@ def _journal_problems(journal):
     if op == "rollback":
         if not isinstance(journal.get("current_record"), dict):
             out.append("current_record is missing")
+        if journal.get("source_repo") is not None and not isinstance(journal.get("source_repo"), str):
+            out.append("source_repo isn't a path")
         if not isinstance(journal.get("created") or [], list):
             out.append("created isn't a list")
     if op == "adopt-existing":
@@ -2005,7 +2042,7 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
             result = (record, summary, "the previous rollback had finished; cleared what it left, "
                                        "rolled nothing further back")
         else:
-            result = _rollback_locked(target, journal)
+            result = _rollback_locked(target, journal, source_repo)
         _sweep_temporaries(target)  # whatever a killed operation's state writes left (3.1 round 17)
     # A finished rollback keeps its journal, marked complete, until its lock is gone: a kill in
     # between must not make the next rollback go back one release too far (independent review).
@@ -2071,7 +2108,7 @@ def _completed_adoption(target):
     return bool(record.get("adoption")) and not record.get("previous")
 
 
-def _rollback_locked(target, journal):
+def _rollback_locked(target, journal, source_repo=None):
     record_path = install_record_path(target)
     current = None
     if os.path.isfile(record_path):
@@ -2193,6 +2230,12 @@ def _rollback_locked(target, journal):
         # a committed record could drop its "adoption" to look like an older upgrade (round 33).
         raise Refusal(EXIT_STATE, "this adopted instance's upgrade kept no copy of the record it wrote, so "
                                   "rollback can't trust the record; nothing was changed")
+    elif "seed_lines_added" in current:
+        # Only a 3.1 upgrade writes this field, and every 3.1 upgrade keeps the copy above: without it,
+        # the field came from somewhere else, such as a pull request (independent review, 3.1 round 42).
+        raise Refusal(EXIT_STATE, "the install record lists seed lines an upgrade appended, but that upgrade's "
+                                  "copy of the record it wrote isn't here, so rollback can't trust them; "
+                                  "nothing was changed", ["restore the record from git, then run rollback again"])
     migration = current.get("layout_migration") or {}
     if migration:
         plan_path = os.path.join(target, migration.get("plan") or "")
@@ -2230,9 +2273,28 @@ def _rollback_locked(target, journal):
     # next `rollback` reads this and finishes the job (independent review).
     journal = {"op": "rollback", "backup": previous["backup"], "started_at": util.now_iso(),
                "from_version": (current.get("release") or {}).get("version"),
-               "to_version": previous.get("version"), "current_record": current, "created": created}
+               "to_version": previous.get("version"), "current_record": current, "created": created,
+               # The release source, when given: an earlier installer's seed lines come off only when it
+               # confirms them, on a resumed rollback too (independent review, 3.1 round 42).
+               "source_repo": os.path.abspath(source_repo) if source_repo else None}
     util.write_json(journal_path(target), journal)
     return _finish_rollback(target, journal)
+
+
+def _legacy_seed_lines(current, version, source_repo):
+    """(undo, unconfirmed) for a record written before 3.1: its entries for this release that an upgrade
+    appended, split by whether the release source confirms each one, in an installer's exact bytes."""
+    claimed = [e for e in current.get("seed_lines") or [] if e.get("state") == "added" and e.get("release") == version]
+    declared = set()
+    if source_repo and util.rev_exists(source_repo, "HEAD"):
+        src = _source_release(source_repo, "starter-%s" % version)
+        declared = {(sl.get("path"), sl.get("line")) for sl in (src or {}).get("seed_lines") or []
+                    if isinstance(sl, dict)}
+    undo, unconfirmed = [], []
+    for e in claimed:
+        exact = e.get("appended") in ("\n%s\n" % e["line"], "\n\n%s\n" % e["line"])
+        (undo if exact and (e["path"], e["line"]) in declared else unconfirmed).append(e)
+    return undo, unconfirmed
 
 
 def _finish_rollback(target, journal, resumed=False):
@@ -2265,10 +2327,16 @@ def _finish_rollback(target, journal, resumed=False):
     if "seed_lines_added" in current:
         # Exactly what that upgrade appended, recorded by it alone: an entry carried in the record from
         # before the upgrade, which a pull request could have written, is never acted on (independent
-        # review, 3.1 round 41). The record here is the one the upgrade wrote (checked above).
+        # review, 3.1 round 41). The record here is the one the upgrade wrote: it matched that upgrade's
+        # own copy before the journal was written (round 42).
         undo = current.get("seed_lines_added") or []
-    else:  # a record an earlier installer wrote
-        undo = [e for e in current.get("seed_lines") or [] if e.get("state") == "added" and e.get("release") == version]
+    else:
+        # A record an earlier installer wrote, with no copy to check it against: a line comes off only in
+        # the exact bytes an installer appends, and only when the release source confirms the release
+        # declared it; anything else is left and reported (independent review, 3.1 round 42).
+        undo, unconfirmed = _legacy_seed_lines(current, version, journal.get("source_repo"))
+        notes += ["%s still has `%s`: rollback can't confirm an upgrade appended it (run rollback with --repo "
+                  "<the Starter> to check, or remove it yourself)" % (e["path"], e["line"]) for e in unconfirmed]
     notes += _undo_seed_lines(target, undo)
     if the_plan:
         layout_mod.reverse(target, the_plan, journal["backup"])

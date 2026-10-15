@@ -21,7 +21,7 @@ sys.path.insert(0, harness.AIOS_DIR)
 from aioslib import governance, install as install_mod, util  # noqa: E402
 from aioslib.util import Refusal  # noqa: E402
 
-from test_layout_3_0 import MAP_LINE, bump_to_v3, diff, snapshot  # noqa: E402
+from test_layout_3_0 import CORE_LINE, MAP_LINE, V3_SPEC, Layout3, bump_to_v3, diff, snapshot  # noqa: E402
 
 FF_ROLES = json.loads(json.dumps(harness.ROLES))
 FF_ROLES["roles"]["operator"]["paths_denied"] = [".github/**", "CLAUDE.md"]
@@ -2956,3 +2956,133 @@ class ReviewRoundFortyOne(Existing):
         self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.0.0")
         with open(os.path.join(self.target, self.CLIENT_FILE), "rb") as fh:
             self.assertEqual(fh.read(), ours)
+
+
+class ReviewRoundFortyTwo(Layout3):
+    """Codex, 3.1 round 42: a rollback of an upgrade an earlier installer made (no copy of the record it
+    wrote) trusts no seed line a pull request could have put in the record."""
+
+    MINE = "notes/mine.md"
+
+    def as_an_earlier_installer_left_it(self):
+        """2.10.0 -> 3.0.0 appends the map line; then the snapshot and record look as a 3.0 upgrade leaves
+        them: no copy of the record it wrote, no `seed_lines_added`, and no local note (a fresh clone)."""
+        write(self.target, self.MINE, "keep this\nprivate\n")
+        self.git_commit("mine")
+        self.original_claude = self.read("CLAUDE.md", "rb")
+        self.up()
+        self.assertIn(MAP_LINE, self.read("CLAUDE.md"))
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        os.remove(os.path.join(self.target, record["previous"]["backup"], "after.json"))
+        record.pop("seed_lines_added")
+        util.write_json(path, record)
+        note = os.path.join(self.target, ".aios", "backups", "state", "head.json")
+        if os.path.isfile(note):
+            os.remove(note)
+        self.git_commit("on 3.0.0, as an earlier installer leaves it")
+        return path, record
+
+    def forge(self, path, record, msg):
+        util.write_json(path, record)
+        self.git_commit(msg)
+
+    def test_a_forged_seed_lines_added_without_the_upgrades_copy_is_refused(self):
+        path, record = self.as_an_earlier_installer_left_it()
+        record["seed_lines_added"] = [{"path": self.MINE, "line": "private", "appended": "\nprivate\n",
+                                       "release": "3.0.0"}]
+        self.forge(path, record, "a pull request adds the 3.1 field")
+        exc = self.refuses_unchanged(install_mod.rollback, self.target)
+        self.assertIn("can't trust them", exc.message)
+
+    def forged_legacy_line(self):
+        path, record = self.as_an_earlier_installer_left_it()
+        record["seed_lines"].append({"path": self.MINE, "line": "private", "state": "added", "release": "3.0.0",
+                                     "appended": "\nprivate\n"})
+        self.forge(path, record, "a pull request records a seed line")
+        return self.read(self.MINE, "rb")
+
+    def test_with_the_release_source_only_its_declared_lines_come_off(self):
+        mine = self.forged_legacy_line()
+        _r, _s, how = install_mod.rollback(self.target, self.source)
+        self.assertEqual(self.read(self.MINE, "rb"), mine)
+        self.assertEqual(self.read("CLAUDE.md", "rb"), self.original_claude)  # the declared map line came off
+        self.assertIn("%s still has `private`" % self.MINE, how)
+
+    def test_without_it_nothing_comes_off_and_it_says_so(self):
+        mine = self.forged_legacy_line()
+        _r, _s, how = install_mod.rollback(self.target)
+        self.assertEqual(self.read(self.MINE, "rb"), mine)
+        self.assertIn(MAP_LINE, self.read("CLAUDE.md"))
+        self.assertIn("CLAUDE.md still has `%s`" % MAP_LINE, how)
+        self.assertIn("--repo", how)
+
+
+class ReviewRoundFortyTwoShapes(Existing):
+    """Codex, 3.1 round 42: nested wrong types refuse too, in verify, upgrade and rollback."""
+
+    def test_nested_wrong_types_refuse_with_nothing_changed(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        good = util.read_json(path)
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        forged = [("adoption", dict(good["adoption"], plan=1)), ("credentials", [{}]),
+                  ("previous", {"backup": 1, "version": "2.9.0"}), ("created_seeds", [{"path": 1}]),
+                  ("layout_migration", {"plan": None}), ("adoption", dict(good["adoption"], created=[{"path": "x"}])),
+                  ("adoption", dict(good["adoption"], adopt="all")), ("pre_existing_dirs", [1])]
+        for key, value in forged:
+            util.write_json(path, dict(good, **{key: value}))
+            for fn in (lambda: install_mod.verify(self.target),
+                       lambda: install_mod.verify(self.target, source_repo=self.source),
+                       lambda: install_mod.upgrade(self.target, v31, self.source)):
+                exc = self.refuses_unchanged(fn)
+                self.assertIn("isn't in the shape the installer writes", exc.message, (key, value))
+            self.refuses_unchanged(install_mod.rollback, self.target, self.source)  # a refusal, not a crash
+        util.write_json(path, good)
+        self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
+
+
+class GeminiRoundFortyTwo(Layout3):
+    """Gemini, 3.1 round 42, declined with this proof: a killed upgrade's recovery takes back only the lines
+    its journal says it appended, never an earlier upgrade's; a finished upgrade's rollback likewise."""
+
+
+    def on_3_0_then_3_0_1(self):
+        self.up()  # 2.10.0 -> 3.0.0 appends MAP_LINE, finished
+        self.git_commit("on 3.0.0")
+        on_v3 = self.read("CLAUDE.md", "rb")
+        self.assertIn(MAP_LINE.encode(), on_v3)
+        self.assertNotIn(CORE_LINE.encode(), on_v3)
+        spec = dict(V3_SPEC, seed_lines=[{"path": "CLAUDE.md", "line": CORE_LINE},
+                                         {"path": "CLAUDE.md", "line": MAP_LINE}])
+        rev = bump_to_v3(self.source, spec=spec, extra={
+            "CLAUDE.md": "# Your AIOS\n\n%s\n%s\n" % (CORE_LINE, MAP_LINE),
+            ".aios/operator_core/OPERATOR_CORE.md": "# core\n"})
+        v301 = harness.approve(harness.build_manifest(self.source, rev, "3.0.1"))
+        return on_v3, v301
+
+    def test_a_killed_upgrade_takes_back_only_its_own_line(self):
+        on_v3, v301 = self.on_3_0_then_3_0_1()
+        self.be("acme-founder")
+        code, _o, _e = self.cli("upgrade", "--release", self.write_json("v301.json", v301), "--target",
+                                self.target, "--repo", self.source, "--no-vercel",
+                                env={"AIOS_FAULT": "crash:upgrade.before_record"})
+        self.assertEqual(code, 137)
+        self.assertIn(CORE_LINE.encode(), self.read("CLAUDE.md", "rb"))  # appended, record not written
+        self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.0.0")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("recovered an interrupted upgrade", out)
+        self.assertEqual(self.read("CLAUDE.md", "rb"), on_v3)  # CORE_LINE gone, 3.0.0's MAP_LINE kept
+        self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.0.0")
+
+    def test_a_finished_upgrades_rollback_takes_back_only_its_own_line(self):
+        on_v3, v301 = self.on_3_0_then_3_0_1()
+        self.up(v301)
+        self.git_commit("on 3.0.1")
+        self.assertIn(CORE_LINE.encode(), self.read("CLAUDE.md", "rb"))
+        install_mod.rollback(self.target)
+        self.assertEqual(self.read("CLAUDE.md", "rb"), on_v3)
+        self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.0.0")
