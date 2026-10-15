@@ -403,9 +403,11 @@ def lane_reviewers(policy, config):
     the accounts separately in its role policy, `founder_lane_reviewers`: that is review permission
     on the founder lane, never business founder status, which stays the people map's `role`
     (Phoenix, 2026-10-15, G98: "business founder role separate from CODEOWNER permission")."""
-    declared = (policy or {}).get("founder_lane_reviewers")
-    if declared is None:
+    # Declared by the key being there at all: `null` is a declaration nobody can use, never "absent"
+    # (which would let founders count again; independent review, 3.1 round 3).
+    if "founder_lane_reviewers" not in (policy or {}):
         return set(founders_of(config)), False
+    declared = policy["founder_lane_reviewers"]
     if not isinstance(declared, list):
         return set(), True
     return {"@" + h.strip().lstrip("@").lower() for h in declared
@@ -414,9 +416,9 @@ def lane_reviewers(policy, config):
 
 def lane_reviewer_problems(policy, config):
     """Why the declared founder-lane reviewers can't be used, if they're declared at all."""
-    declared = (policy or {}).get("founder_lane_reviewers")
-    if declared is None:
+    if "founder_lane_reviewers" not in (policy or {}):
         return []
+    declared = policy["founder_lane_reviewers"]
     if not isinstance(declared, list) or not declared:
         return ["the role policy's founder_lane_reviewers must be a non-empty list of GitHub accounts"]
     known = {(p.get("github") or "").lower() for p in (config or {}).get("people") or []}

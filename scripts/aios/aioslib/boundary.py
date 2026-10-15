@@ -209,7 +209,7 @@ def check_pr(repo, base, head, author, approvers):
     # When the base policy declares the reviewers, that list is the whole permission: a founder left
     # off it doesn't count either, and a declaration that can't be used counts nobody (fails closed;
     # independent review, 3.1 round 2).
-    declared = policy.get("founder_lane_reviewers") is not None
+    declared = "founder_lane_reviewers" in policy
     if declared:
         usable = governance.lane_reviewer_problems(policy, config) == []
         reviewers = governance.lane_reviewers(policy, config)[0] if usable else set()

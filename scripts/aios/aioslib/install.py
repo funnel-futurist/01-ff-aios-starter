@@ -1010,11 +1010,24 @@ def _adopted_upgrade_view(target, record, manifest):
     release ships that the plan doesn't classify exactly once refuses, with nothing changed."""
     info = record["adoption"]
     plan, plan_sha = load_adoption_plan(target, info.get("plan"))
-    classes, problems = classify_adoption(plan, [e["path"] for e in manifest.get("files") or []])
+    # The plan that decides an upgrade must be one git tracks: an ignored copy could say anything,
+    # unseen by the clean-worktree check (independent review, 3.1 round 3).
+    if not util.is_tracked(target, (info.get("plan") or ADOPTION_PLAN).replace(os.sep, "/")):
+        raise Refusal(EXIT_STATE, "the adoption plan isn't committed any more",
+                      [info.get("plan") or ADOPTION_PLAN, "commit it, then upgrade"])
+    entries = {e["path"]: e for e in manifest.get("files") or []}
+    classes, problems = classify_adoption(plan, entries)
     if problems:
         raise Refusal(EXIT_STATE, "this instance's adoption plan doesn't classify every path release %s "
                       "ships exactly once" % manifest["version"],
                       problems[:30] + ["add each to adopt, instance_owned or exclude, then upgrade again"])
+    missing = [p for p in sorted(classes) if classes[p] == "instance_owned"
+               and not os.path.lexists(os.path.join(target, p))]
+    seeds = [p for p in sorted(classes) if classes[p] == "adopt" and entries[p].get("class") != "managed"]
+    if missing or seeds:
+        raise Refusal(EXIT_STATE, "this instance's adoption plan doesn't fit release %s" % manifest["version"],
+                      ["%s: the plan says it's the instance's, but it doesn't exist" % p for p in missing[:20]]
+                      + ["%s: a seed can't be adopted (it would never be kept current)" % p for p in seeds[:20]])
     view = adopted_view(manifest, classes)
     view["_adoption"] = {"plan": info.get("plan"), "plan_sha256": plan_sha, "adopt": plan["adopt"],
                          "instance_owned": plan["instance_owned"], "exclude": plan["exclude"],
@@ -1790,6 +1803,11 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
         raise Refusal(EXIT_STATE, "the adoption plan doesn't classify every path release %s ships exactly "
                       "once" % manifest["version"], problems[:30] + ["%d problem(s) in all" % len(problems)])
     adopt = [entries[p] for p in sorted(entries) if classes[p] == "adopt"]
+    seeds = [e["path"] for e in adopt if e.get("class") != "managed"]
+    if seeds:
+        raise Refusal(EXIT_STATE, "the plan adopts %d seed file(s); a seed is written once and is then the "
+                      "instance's, so it can't be kept current" % len(seeds),
+                      seeds[:20] + ["exclude them, or copy one in yourself and keep it as instance_owned"])
     if not adopt:
         raise Refusal(EXIT_STATE, "the plan adopts no path release %s ships, so there is nothing to adopt"
                       % manifest["version"])

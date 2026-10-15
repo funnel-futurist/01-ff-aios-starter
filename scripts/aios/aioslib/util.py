@@ -93,6 +93,15 @@ TOOL_RESERVED = (".aios/install.json", ".aios/config.json", ".aios/txn.json", ".
                  ".aios/backups/**")
 
 
+def is_reserved(path):
+    """Whether `path` is, or would be on a Mac or Windows disk, one of the installer's own state paths:
+    compared case- and Unicode-folded, with either separator (independent review, 3.1 round 3)."""
+    import unicodedata
+
+    key = unicodedata.normalize("NFC", (path or "").replace("\\", "/")).casefold().lstrip("/")
+    return match_any(TOOL_RESERVED, key)
+
+
 def read_json_safe(path, what="file"):
     """read_json, but a corrupt file is a refusal with a way out, not a stack trace."""
     try:

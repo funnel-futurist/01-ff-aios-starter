@@ -673,3 +673,77 @@ class BoundaryDeclaredListIsTheWholePermission(BoundaryHonoursDeclaredReviewers)
         self.head = util.git(self.repo, ["rev-parse", "HEAD"])
         code, _lines = self.check("acme-va", ["acme-founder", "acme-lead"])
         self.assertNotEqual(code, 0)
+
+
+class ReviewRoundThree(Existing):
+    """Codex, 3.1 round 3."""
+
+    def adopted(self):
+        self.adopt()
+        self.commit("adopted")
+
+    def test_r3_1_reserved_paths_are_compared_as_a_mac_or_windows_disk_would(self):
+        for path in (".AIOS/txn.json", ".aios\\install.json", ".Aios/Backups/x", "/.aios/lock"):
+            self.assertTrue(util.is_reserved(path), path)
+        self.assertFalse(util.is_reserved("scripts/aios/install.py"))
+        man = json.loads(json.dumps(self.v))
+        man["files"].append({"path": ".AIOS/txn.json", "class": "managed", "mode": "100644", "sha256": "0" * 64})
+        from aioslib import release
+        self.assertTrue(any("installer's own state" in p for p in release.check_shape(man)))
+
+    def test_r3_2_a_null_reviewer_declaration_counts_nobody(self):
+        write(self.target, ".github/CODEOWNERS", "# aios-codeowners-for: acme/acme-aios\n/CLAUDE.md @acme-founder\n")
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["founder_lane_reviewers"] = None
+        results = governance.founder_review_local(self.target, policy, harness.config())
+        self.assertTrue(results and all(st == "FAIL" for st, _d in results), results)
+        self.assertEqual(governance.lane_reviewers(policy, harness.config()), (set(), True))
+
+    def test_r3_3_an_upgrade_refuses_a_path_the_plan_calls_the_instances_that_isnt_there(self):
+        self.adopted()
+        plan = json.loads(json.dumps(PLAN))
+        plan["instance_owned"].append("docs/**")
+        self.write_plan(plan)
+        self.commit("docs are ours")
+        rev = harness.bump_source(self.source, {"docs/new_guide.md": "# new\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, v31, self.source)
+        self.assertIn("docs/new_guide.md: the plan says it's the instance's, but it doesn't exist",
+                      "\n".join(exc.details))
+
+    def test_r3_4_an_upgrade_refuses_a_plan_that_is_no_longer_committed(self):
+        self.adopted()
+        with open(os.path.join(self.target, ".gitignore"), "a") as fh:
+            fh.write(".aios/adoption.json\n")
+        run_git(self.target, "rm", "-q", "--cached", ".aios/adoption.json")
+        self.commit("the plan is only ignored now")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, v31, self.source)
+        self.assertIn("isn't committed", exc.message)
+
+    def test_r3_5_a_seed_can_never_be_adopted(self):
+        plan = json.loads(json.dumps(PLAN))
+        plan["exclude"].remove("01_Foundations/**")
+        plan["adopt"].append("01_Foundations/market_analysis/_workspace.md")
+        self.write_plan(plan)
+        self.commit("adopting a seed")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("seed", exc.message)
+
+
+class BoundaryNullDeclaration(BoundaryHonoursDeclaredReviewers):
+
+    def test_null_counts_nobody_at_the_pull_request(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["founder_lane_reviewers"] = None
+        write(self.repo, ".aios/roles.json", json.dumps(policy, indent=2))
+        run_git(self.repo, "checkout", "-q", "main")
+        run_git(self.repo, "commit", "-qam", "null")
+        self.base = util.git(self.repo, ["rev-parse", "HEAD"])
+        run_git(self.repo, "checkout", "-q", "-b", "pr4")
+        write(self.repo, "CLAUDE.md", "# rules, changed after null\n")
+        run_git(self.repo, "commit", "-qam", "change")
+        self.head = util.git(self.repo, ["rev-parse", "HEAD"])
+        code, _lines = self.check("acme-va", ["acme-founder"])
+        self.assertNotEqual(code, 0)
