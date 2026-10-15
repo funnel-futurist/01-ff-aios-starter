@@ -79,11 +79,17 @@ def main():
     aios = [sys.executable, os.path.join(st, "scripts/aios/aios.py")]
 
     print("\n### S2 the candidate record (draft), and a REHEARSAL-ONLY approval copy")
-    pin = git(st, "rev-parse", "HEAD")
-    code, out = sh(aios + ["release", "build", "--repo", st, "--version", "3.1.0", "--rev", pin, "--branch", a.branch,
-                           "--credentials", os.path.join(st, "release/credential_refs.json"),
-                           "--min-upgrade-from", "2.6.0", "--out", os.path.join(R, "draft-3.1.0.json")])
-    man = json.load(open(os.path.join(R, "draft-3.1.0.json")))
+    committed = os.path.join(st, "releases/starter-3.1.0.json")
+    if os.path.isfile(committed):
+        # The branch's own draft record, so `verify --repo` confirms the very pin it names.
+        code, man = 0, json.load(open(committed))
+        pin = man["created_from"]["git_rev"]
+    else:  # the bare code commit, before its record: build the draft the way the release does
+        pin = git(st, "rev-parse", "HEAD")
+        code, out = sh(aios + ["release", "build", "--repo", st, "--version", "3.1.0", "--rev", pin, "--branch",
+                               a.branch, "--credentials", os.path.join(st, "release/credential_refs.json"),
+                               "--min-upgrade-from", "2.6.0", "--out", os.path.join(R, "draft-3.1.0.json")])
+        man = json.load(open(os.path.join(R, "draft-3.1.0.json")))
     man["status"] = "approved"
     man["approval"] = {"approved_by": "REHEARSAL-ONLY-NOT-AN-APPROVAL", "approved_at": "2026-10-15T00:00:00Z"}
     rel = os.path.join(R, "rehearsal-3.1.0.json")
@@ -139,7 +145,8 @@ def main():
     check("every instance-owned file keeps its bytes (%d)" % len(owned),
           all(git(ws, "hash-object", p) == h for p, h in owned_bytes.items()))
     code, out = sh(aios + ["verify", "--target", ws, "--repo", st])
-    check("verify --repo: %s" % next((l.strip() for l in out.splitlines() if l.startswith("verdict")), "?"), code == 0)
+    check("verify --repo: %s" % next((l.strip() for l in out.splitlines() if l.startswith("verdict")), "?"), code == 0,
+          "" if code == 0 else " | ".join(l.strip() for l in out.splitlines() if l.strip().startswith("-"))[:600])
     code, out = sh(aios + ["instance", "check", "--offline", "--repo-slug", "funnel-futurist/ai-os"], cwd=ws, env=env)
     lane = [l for l in out.splitlines() if "founder lane" in l]
     check("instance check: all %d founder-lane paths PASS with the declared reviewers" % len(LANE),
