@@ -218,6 +218,12 @@ def verify(target, record=None, source_repo=None):
                 for path in sorted(want_managed - listed):
                     problems.append("the pinned release manages %s, but the install record doesn't "
                                     "list it" % path)
+                if record.get("adoption"):
+                    # Both ways for an adopted instance: a managed file its plan doesn't adopt is one
+                    # the record shouldn't claim (independent review, 3.1 round 12).
+                    for path in sorted(listed - want_managed):
+                        problems.append("the install record lists %s as managed, but the adoption plan "
+                                        "doesn't adopt it" % path)
             # And the pin itself: the source's own record of this release names it.
             summary_pin = _pin_confirmation(source_repo, rel.get("release_id"), rev, problems)
     for entry in record.get("managed") or []:
@@ -1199,6 +1205,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         util.fault("upgrade.before_record")
 
         new_record = dict(record)
+        new_record.pop(RECORD_SEAL, None)  # the adoption's record keeps it, in `previous`
         new_record["release"] = {
             "release_id": manifest["release_id"],
             "version": manifest["version"],
@@ -1509,8 +1516,9 @@ def _rollback_after_reclaim(target, stale_lock):
         elif journal and journal.get("op") == "adopt-existing":
             notes = _undo_adoption(target, journal.get("adoption") or {}, journal.get("pending"))
             os.remove(journal_path(target))
-            result = (None, dict(NO_RELEASE_SUMMARY), "an interrupted adoption was undone: every file it "
-                      "created and left unchanged is gone" + "".join("; " + n for n in notes))
+            result = (None, dict(NO_RELEASE_SUMMARY, record_left=os.path.lexists(install_record_path(target))),
+                      "an interrupted adoption was undone: every file it created and left unchanged is gone"
+                      + "".join("; " + n for n in notes))
         elif (journal and journal.get("op") == "adopt-undo") or (not journal and _completed_adoption(target)):
             if not journal:
                 # Journaled before the first removal, so a kill partway through is finished by the
@@ -1527,8 +1535,10 @@ def _rollback_after_reclaim(target, stale_lock):
                 journal["phase"] = "complete"
                 journal["notes"] = notes
                 util.write_json(journal_path(target), journal)
-            result = (None, dict(NO_RELEASE_SUMMARY), "the adoption was undone: every file it created and "
-                      "left unchanged is gone, and the workspace is no longer pinned to a release"
+            left = os.path.lexists(install_record_path(target))
+            result = (None, dict(NO_RELEASE_SUMMARY, record_left=left),
+                      "the adoption was undone: every file it created and left unchanged is gone"
+                      + ("" if left else ", and the workspace is no longer pinned to a release")
                       + "".join("; " + n for n in journal.get("notes") or []))
         elif journal and journal.get("op") == "rollback" and journal.get("phase") == "complete":
             record = load_record(target)
@@ -1802,6 +1812,32 @@ def adopted_view(manifest, classes):
     return view
 
 
+# An adopted instance's install record carries a hash of its own canonical bytes (without this
+# field), so rollback can tell whether it is still exactly what was written: the record can't hold
+# its own plain hash (independent review, 3.1 round 12).
+RECORD_SEAL = "record_sha256"
+
+
+def _record_bytes(record):
+    return (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _sealed(record):
+    body = {k: v for k, v in record.items() if k != RECORD_SEAL}
+    return dict(body, **{RECORD_SEAL: sha256_bytes(_record_bytes(body))})
+
+
+def _record_unchanged(full):
+    """Whether an adoption's install record is still what it was written as: the same canonical bytes,
+    a seal that matches them, and the mode it was written with (0644, written and restored alike)."""
+    with open(full, "rb") as fh:
+        raw = fh.read()
+    record = json.loads(raw.decode("utf-8"))
+    return (isinstance(record, dict) and record.get(RECORD_SEAL) is not None
+            and _sealed(record) == record and raw == _record_bytes(record)
+            and stat.S_IMODE(os.lstat(full).st_mode) == 0o644)
+
+
 def _config_text(config):
     return (json.dumps(config, indent=2, sort_keys=True) + "\n").encode("utf-8")
 
@@ -1965,7 +2001,19 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             journal["pending"] = {"path": rel, "temp": os.path.relpath(tmp, target).replace(os.sep, "/"),
                                   "sha256": sha256_bytes(data), "mode": stat.S_IMODE(os.lstat(tmp).st_mode)}
             util.write_json(journal_path(target), journal)
-        tmp = util.create_new(target, rel, data, mode, pending)
+        try:
+            tmp = util.create_new(target, rel, data, mode, pending)
+        except BaseException:
+            # Unless the link happened (only an interrupt right after it), whatever is at `rel`, even
+            # identical bytes that appeared meanwhile, isn't this run's: rollback must not judge it
+            # by `pending` (independent review, 3.1 round 12).
+            p = journal["pending"]
+            if p is not None:
+                t, d = os.path.join(target, p["temp"]), os.path.join(target, rel)
+                if not (os.path.lexists(t) and os.path.lexists(d) and os.path.samestat(os.lstat(t), os.lstat(d))):
+                    journal["pending"] = None
+                    util.write_json(journal_path(target), journal)
+            raise
         if provenance:
             st = os.lstat(os.path.join(target, rel))
             # The mode as the disk keeps it, so rollback compares like with like on every system.
@@ -1976,6 +2024,7 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
         # The temporary copy goes before `pending` is cleared, so a kill in between still names it
         # and rollback removes it (independent review, 3.1 round 2).
         os.remove(tmp)
+        util.fault("adopt.after_temp" if provenance else "adopt.record_after_temp")
         journal["pending"] = None
         util.write_json(journal_path(target), journal)
 
@@ -2025,9 +2074,10 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             "previous": None,
             "adoption": info,
         }
-        # Its own entry can't be inside it; rollback knows it by the plan's hash instead.
-        create(record_rel, (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"), "100644",
-               provenance=False)
+        # Its own entry can't be inside it: rollback knows it by the plan's hash, and by its seal
+        # whether it is still what was written.
+        record = _sealed(record)
+        create(record_rel, _record_bytes(record), "100644", provenance=False)
     except Refusal:
         _undo_adoption(target, info, journal.get("pending"))
         if os.path.isfile(journal_path(target)):
@@ -2068,38 +2118,48 @@ def _undo_adoption(target, info, pending=None):
     journal: the caller does, last."""
     notes = []
     created = [c["path"] for c in info.get("created") or []]
-    for i, c in enumerate(info.get("created") or []):
-        note = _remove_if_ours(target, c["path"], c["sha256"], c.get("mode"))
-        if note:
-            notes.append(note)
-        if i == 0:
-            util.fault("adopt.undo_mid")
-    kept = set()
+    decided = set()
     if pending:
+        # First, the file a kill caught being created, whatever else says about it: removed only if
+        # it is still that very copy (the same inode as its temporary file) with the bytes and mode
+        # written, or, once the temporary copy has gone, still those bytes and mode. Anything else at
+        # that path, edited in place or put there by a replace, is the instance's (independent review,
+        # 3.1 rounds 10 to 12).
         dest = os.path.join(target, pending["path"])
         tmp = os.path.join(target, pending["temp"])
+        decided.add(pending["path"])
+        if os.path.lexists(dest):
+            st = os.lstat(dest)
+            ours = (stat.S_ISREG(st.st_mode) and sha256_file(dest) == pending.get("sha256")
+                    and stat.S_IMODE(st.st_mode) == pending.get("mode")
+                    and (not os.path.lexists(tmp) or os.path.samestat(st, os.lstat(tmp))))
+            if ours:
+                os.remove(dest)
+                created.append(pending["path"])
+            else:
+                notes.append("%s isn't exactly what an interrupted adoption made, so it was left for you"
+                             % pending["path"])
         if os.path.lexists(tmp):
-            if os.path.lexists(dest) and os.path.samestat(os.lstat(dest), os.lstat(tmp)):
-                # The very copy this run made (the same inode), and still the bytes and mode it wrote:
-                # an edit after a kill changes the shared inode, and is the instance's then
-                # (independent review, 3.1 round 10).
-                st = os.lstat(dest)
-                if sha256_file(dest) == pending.get("sha256") and stat.S_IMODE(st.st_mode) == pending.get("mode"):
-                    os.remove(dest)
-                    created.append(pending["path"])
-                else:
-                    kept.add(pending["path"])
-                    notes.append("%s changed after an interrupted adoption made it, so it was left for you"
-                                 % pending["path"])
             os.remove(tmp)
+    for i, c in enumerate(info.get("created") or []):
+        if c["path"] not in decided:
+            note = _remove_if_ours(target, c["path"], c["sha256"], c.get("mode"))
+            if note:
+                notes.append(note)
+        if i == 0:
+            util.fault("adopt.undo_mid")
     record_full = install_record_path(target)
     record_rel = os.path.relpath(record_full, target).replace(os.sep, "/")
-    # The record kept just above as changed stays kept, whatever its plan hash says (independent
-    # review, 3.1 round 11).
-    if record_rel not in kept and os.path.isfile(record_full) and not os.path.islink(record_full):
+    if record_rel not in decided and os.path.isfile(record_full) and not os.path.islink(record_full):
+        # This adoption's record (it names the plan's hash), and only while it is still what was
+        # written: one edited since stays, like any file the adoption made (independent review, 3.1
+        # round 12).
         try:
             if (util.read_json(record_full).get("adoption") or {}).get("plan_sha256") == info.get("plan_sha256"):
-                os.remove(record_full)
+                if _record_unchanged(record_full):
+                    os.remove(record_full)
+                else:
+                    notes.append("%s changed since the adoption wrote it, so it was left for you" % record_rel)
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
     _prune_parents(target, created + [record_rel], keep=info.get("pre_dirs"))

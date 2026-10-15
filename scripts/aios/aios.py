@@ -378,8 +378,12 @@ def cmd_rollback(args):
     _say("%s" % how)
     _say("  by:       %s (%s)" % (login, role))
     if summary["release_id"] is None:
-        _say("  release:  none (%s)" % ("nothing was changed" if summary.get("unchanged") else
-                                        "the adoption is undone; this is the instance it was before"))
+        if summary.get("record_left"):
+            _say("  release:  .aios/install.json was left because it changed: check it, then delete it to "
+                 "finish unpinning")
+        else:
+            _say("  release:  none (%s)" % ("nothing was changed" if summary.get("unchanged") else
+                                            "the adoption is undone; this is the instance it was before"))
         return EXIT_OK
     _say("  release:  %s (%s)" % (summary["release_id"], summary["version"]))
     _say("  managed:  %d/%d files re-hashed from disk"

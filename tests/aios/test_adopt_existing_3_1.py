@@ -980,7 +980,7 @@ class ReviewRoundEleven(Existing):
             edited = fh.read()
         code, out, err = self.cli("rollback", "--target", self.target)
         self.assertEqual(code, 0, out + err)
-        self.assertIn(".aios/install.json changed after an interrupted adoption", out)
+        self.assertIn(".aios/install.json isn't exactly what an interrupted adoption made", out)
         with open(record, "rb") as fh:
             self.assertEqual(fh.read(), edited)
         for path in ADOPTED:  # everything else it made, unchanged, is gone
@@ -1037,3 +1037,161 @@ class ReviewRoundEleven(Existing):
             man = json.loads(json.dumps(self.v))
             man["files"].append({"path": alias, "class": "managed", "mode": "100644", "sha256": "0" * 64})
             self.assertTrue(any("installer's own state" in p for p in release.check_shape(man)), alias)
+
+
+class ReviewRoundTwelve(Existing):
+    """Gemini, 3.1 round 12: a finished adoption's record, edited since, is kept like any file it made."""
+
+    def adopted(self):
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        return os.path.join(self.target, ".aios/install.json")
+
+    def rolls_back_keeping_the_record(self, record):
+        with open(record, "rb") as fh:
+            edited = fh.read()
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn(".aios/install.json changed since the adoption wrote it", out)
+        self.assertIn(".aios/install.json was left because it changed", out)
+        self.assertNotIn("no longer pinned", out)
+        with open(record, "rb") as fh:
+            self.assertEqual(fh.read(), edited)
+        for path in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
+
+    def test_an_edited_record_with_the_same_plan_hash_is_kept(self):
+        record = self.adopted()
+        data = util.read_json(record)
+        data["installed_at"] = "edited by hand"
+        util.write_json(record, data)  # canonical bytes, same plan hash: only the seal tells
+        self.rolls_back_keeping_the_record(record)
+
+    def test_a_record_whose_permissions_changed_is_kept(self):
+        record = self.adopted()
+        os.chmod(record, 0o600)
+        self.rolls_back_keeping_the_record(record)
+
+    def test_an_unedited_record_goes_and_the_workspace_is_unpinned(self):
+        record = self.adopted()
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("no longer pinned", out)
+        self.assertFalse(os.path.lexists(record))
+
+    def test_the_seal_survives_an_upgrade_and_its_rollback(self):
+        record = self.adopted()
+        with open(record, "rb") as fh:
+            adopted_bytes = fh.read()
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        install_mod.upgrade(self.target, v31, self.source)
+        self.assertNotIn(install_mod.RECORD_SEAL, util.read_json(record))  # a new record
+        self.commit("upgraded")
+        install_mod.rollback(self.target)  # back to the adoption's own record, byte for byte
+        with open(record, "rb") as fh:
+            self.assertEqual(fh.read(), adopted_bytes)
+        self.commit("rolled back to the adoption")
+        install_mod.rollback(self.target)  # and the adoption itself
+        self.assertFalse(os.path.lexists(record))
+        for path in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
+
+
+class ReviewRoundTwelveCodex(Existing):
+    """Codex, 3.1 round 12."""
+
+    def killed_at(self, point):
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:" + point})
+        self.assertEqual(code, 137)
+        return os.path.join(self.target, ".aios/install.json")
+
+    def rollback(self):
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        for path in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
+        return out
+
+    def test_a_record_replaced_after_a_kill_at_its_link_is_kept_even_with_the_same_bytes(self):
+        record = self.killed_at("adopt.record_after_link")
+        with open(record, "rb") as fh:
+            same = fh.read()
+        fresh = record + ".new"
+        with open(fresh, "wb") as fh:
+            fh.write(same)
+        os.chmod(fresh, 0o644)
+        os.replace(fresh, record)  # identical bytes and mode, but another file
+        out = self.rollback()
+        self.assertIn(".aios/install.json isn't exactly what an interrupted adoption made", out)
+        with open(record, "rb") as fh:
+            self.assertEqual(fh.read(), same)
+
+    def test_after_its_temporary_copy_went_a_record_is_judged_by_what_was_written(self):
+        record = self.killed_at("adopt.record_after_temp")
+        self.assertEqual(install_mod.load_journal(self.target)["pending"]["path"], ".aios/install.json")
+        with open(record, "a") as fh:
+            fh.write("\n")
+        self.rollback()
+        self.assertTrue(os.path.isfile(record), "an edited record was removed")
+
+    def test_after_its_temporary_copy_went_an_unchanged_record_goes(self):
+        record = self.killed_at("adopt.record_after_temp")
+        out = self.rollback()
+        self.assertFalse(os.path.lexists(record), out)
+        self.assertEqual(os.listdir(os.path.join(self.target, ".aios", "backups"))
+                         if os.path.isdir(os.path.join(self.target, ".aios", "backups")) else [], [])
+
+    def test_a_file_that_appeared_identical_when_the_link_failed_is_kept(self):
+        with open(os.path.join(self.source, "START_HERE.md"), "rb") as fh:
+            release_bytes = fh.read()
+        real = util.create_new
+
+        def appears_first(target, rel, data, mode, before_link=None):
+            if rel == "START_HERE.md":
+                with open(os.path.join(target, rel), "wb") as fh:  # someone else's, the same bytes
+                    fh.write(release_bytes)
+                os.chmod(os.path.join(target, rel), 0o644)
+            return real(target, rel, data, mode, before_link)
+
+        util.create_new = appears_first
+        try:
+            with self.assertRaises(Refusal) as ctx:
+                self.adopt()
+        finally:
+            util.create_new = real
+        self.assertIn("appeared while this ran", ctx.exception.message)
+        with open(os.path.join(self.target, "START_HERE.md"), "rb") as fh:
+            self.assertEqual(fh.read(), release_bytes)
+        self.assertFalse(os.path.lexists(install_mod.journal_path(self.target)))
+
+    def test_verify_repo_refuses_a_managed_file_the_plan_doesnt_adopt(self):
+        self.adopt()
+        self.commit("adopted")
+        entries = {e["path"]: e for e in self.v["files"]}
+        classes, _ = install_mod.classify_adoption(PLAN, entries)
+        extra = sorted(p for p, e in entries.items() if e["class"] == "managed" and classes.get(p) == "exclude")[0]
+        with open(os.path.join(self.source, extra), "rb") as fh:
+            write(self.target, extra, fh.read().decode("utf-8"))
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["managed"].append({"path": extra, "sha256": entries[extra]["sha256"],
+                                  "exec": entries[extra].get("mode") == "100755"})
+        util.write_json(path, record)
+        problems = install_mod.verify(self.target, source_repo=self.source)[0]
+        self.assertTrue(any(extra in p and "doesn't adopt it" in p for p in problems), problems)
+
+    def test_paths_under_a_state_file_are_reserved(self):
+        from aioslib import release
+        for path in (".aios/config.json/child", ".aios/install.json/x/y", ".aios/txn.json/a", ".aios/lock/b",
+                     ".aios/config.json./child", ".AIOS/Install.json /x"):
+            self.assertTrue(util.is_reserved(path), path)
+            man = json.loads(json.dumps(self.v))
+            man["files"].append({"path": path, "class": "managed", "mode": "100644", "sha256": "0" * 64})
+            self.assertTrue(any("installer's own state" in p for p in release.check_shape(man)), path)
+        self.assertFalse(util.is_reserved(".aios/config.jsonx/child"))

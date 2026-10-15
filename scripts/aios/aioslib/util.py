@@ -89,7 +89,9 @@ def write_json(path, obj):
 
 # The installer's own state in a workspace. A release may never ship these paths, and adopting
 # into an existing repository refuses while one is already there (independent review, 3.1).
-TOOL_RESERVED = (".aios/install.json", ".aios/config.json", ".aios/txn.json", ".aios/lock",
+# Each with everything under it: a release path inside a state file's name would make it a folder
+# (independent review, 3.1 round 12).
+TOOL_RESERVED = (".aios/install.json/**", ".aios/config.json/**", ".aios/txn.json/**", ".aios/lock/**",
                  ".aios/backups/**")
 
 

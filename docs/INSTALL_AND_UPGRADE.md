@@ -225,7 +225,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - Each new file appears whole and can never replace one that appeared meanwhile.
 - `aios rollback` takes back exactly what it created and left unchanged, whether the adoption
   finished or was killed partway.
-- A file you've changed since is left in place, and the message says so.
+- A file you've changed since is left in place, and the message says so. That includes the
+  install record (`.aios/install.json`): if you've edited it, rollback leaves it and says so, and
+  the workspace stays pinned until you delete it.
 - A lock left by an adoption killed before it changed anything is cleared by `aios rollback`
   with no role needed. A running operation's lock is never taken; one that names no process
   (its holder was killed while writing it) is cleared like any dead one.
