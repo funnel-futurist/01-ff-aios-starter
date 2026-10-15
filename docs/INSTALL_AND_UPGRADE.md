@@ -228,10 +228,15 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   finished or was killed partway.
 - Undoing a finished adoption needs the release's source, as an upgrade does:
   `aios rollback --target . --repo <your ff-aios-starter clone>`. The install record is committed,
-  so anyone's pull request could change it. Rollback therefore removes only the files the pinned
-  release ships, that your plan adopted (as committed with the adoption), and that still have that
-  release's bytes. It removes the people map only if git shows it arrived with the adoption and
-  hasn't changed since. A rollback killed partway needs `--repo` again to finish.
+  so anyone's pull request could change it. Rollback therefore trusts only two things: the release
+  source, and the install record and plan as they were committed with the adoption.
+  - It removes only files the pinned release ships, that the plan adopted, and that still have the
+    release's bytes.
+  - It removes the people map only if git shows it arrived with the adoption and hasn't changed
+    since.
+  - It refuses, changing nothing, if the record on disk differs from the copy committed with the
+    adoption, or the plan does.
+  - A rollback killed partway needs `--repo` again to finish.
 - A file you've changed since is left in place, and the message says so.
 - The install record (`.aios/install.json`) is what says which files the adoption made, so it is
   sealed. If its content has been edited, rollback refuses and changes nothing until you restore

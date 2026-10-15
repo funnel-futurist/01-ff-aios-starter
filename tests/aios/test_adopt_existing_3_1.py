@@ -1816,12 +1816,10 @@ class ReviewRoundTwentyThree(Existing):
         os.chmod(path, 0o644)
         self.be("acme-founder")
         code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
-        self.assertEqual(code, 0, out + err)
-        self.assertIn("README.md isn't a path the instance's plan adopts", out)
+        self.assertNotEqual(code, 0, out + err)  # since round 26: it differs from the committed record
+        self.assertIn("differs from the one committed with the adoption", out + err)
         with open(os.path.join(self.target, "README.md")) as fh:
             self.assertEqual(fh.read(), "# our company repo\n")
-        for p in ADOPTED:
-            self.assertFalse(os.path.lexists(os.path.join(self.target, p)), p)
 
     def test_a_forged_journal_entry_cant_either(self):
         self.be("acme-founder")
@@ -1905,13 +1903,22 @@ class ReviewRoundTwentyFour(Existing):
             self.assertFalse(os.path.lexists(os.path.join(self.target, p)), p)
         return out
 
+    def rollback_refused(self):
+        """Since round 26 a record changed after the adoption commit is refused outright, nothing changed."""
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("differs from the one committed with the adoption", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
     def test_an_instance_file_under_an_adopted_pattern_stays(self):
         write(self.target, "scripts/team/local.sh", "#!/bin/sh\necho ours\n")
         self.commit("our own script beside the starter's")
         self.adopt()
         self.commit("adopted")
         self.forge(lambda r: r["adoption"]["created"].append(self.entry("scripts/team/local.sh")))
-        self.rollback_ok()
+        self.rollback_refused()
         self.assertTrue(os.path.isfile(os.path.join(self.target, "scripts/team/local.sh")))
 
     def test_a_people_map_the_repository_had_before_stays(self):
@@ -1920,6 +1927,9 @@ class ReviewRoundTwentyFour(Existing):
         self.adopt()
         self.commit("adopted")
         self.forge(lambda r: r["adoption"]["created"].append(self.entry(".aios/config.json")))
+        self.rollback_refused()
+        self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/config.json")))
+        run_git(self.target, "revert", "--no-edit", "HEAD")  # the forged record undone: rollback runs
         self.rollback_ok()
         self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/config.json")))
 
@@ -1929,7 +1939,7 @@ class ReviewRoundTwentyFour(Existing):
         st = os.lstat(os.path.join(self.target, "empty_of_ours"))
         self.forge(lambda r: r["adoption"]["made_dirs"].append(
             {"path": "empty_of_ours", "dev": st.st_dev, "ino": st.st_ino}))
-        self.rollback_ok()
+        self.rollback_refused()
         self.assertTrue(os.path.isdir(os.path.join(self.target, "empty_of_ours")))
 
     def test_without_the_release_source_a_finished_adoption_is_refused_unchanged(self):
@@ -1961,14 +1971,8 @@ class ReviewRoundTwentyFive(ReviewRoundTwentyFour):
         data["people"].append({"github": "acme-lead", "role": "operator", "display_name": "Lead"})
         util.write_json(config, data)
         self.commit("we added someone")
-        entry = self.entry(".aios/config.json")  # the edited file's own hash
-
-        def forged(r):
-            r["adoption"]["created"] = [c for c in r["adoption"]["created"] if c["path"] != ".aios/config.json"]
-            r["adoption"]["created"].append(entry)
-        self.forge(forged)
         self.rollback_ok()
-        self.assertEqual(util.read_json(config), data)
+        self.assertEqual(util.read_json(config), data)  # changed since the adoption commit: it stays
 
     def test_a_staged_but_uncommitted_adoption_rolls_back_exactly(self):
         before = _tree(self.target)
@@ -2005,8 +2009,11 @@ class ReviewRoundTwentyFiveCodex(ReviewRoundTwentyFour):
                                 env={"AIOS_FAULT": "crash:adopt.undo_before"})
         self.assertEqual(code, 137)
         journal = install_mod.load_journal(self.target)
-        journal["adoption"]["created"].append(self.entry("README.md"))
-        journal["trusted"]["README.md"] = self.entry("README.md")["sha256"]  # local, but never trusted
+        entry = self.entry("README.md")
+        # Whatever a journal claims about what was made is ignored: it holds progress only (round 26).
+        journal["adoption"] = {"plan": ".aios/adoption.json", "created": [entry]}
+        journal["trusted"] = {"README.md": entry["sha256"]}
+        journal["release"] = {"release_id": "starter-9.9.9", "git_rev": "0" * 40}
         util.write_json(install_mod.journal_path(self.target), journal)
         code, out, err = self.cli("rollback", "--target", self.target)
         self.assertNotEqual(code, 0, out + err)  # resuming needs the release's source too
@@ -2026,6 +2033,80 @@ class ReviewRoundTwentyFiveCodex(ReviewRoundTwentyFour):
         plan["adopt"].append("README.md")
         self.write_plan(plan)
         self.commit("the plan now says README.md is adopted")
-        self.forge(lambda r: r["adoption"]["created"].append(self.entry("README.md")))
-        self.rollback_ok()
+        self.rollback_ok()  # the plan as committed with the adoption decides
         self.assertTrue(os.path.isfile(os.path.join(self.target, "README.md")))
+
+
+class ReviewRoundTwentySix(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 26: one anchor for what an adoption made."""
+
+    def test_a_tracked_journal_is_refused_whatever_it_holds(self):
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        for text in ("null", "{}", "[]"):
+            with self.subTest(text=text):
+                with open(install_mod.journal_path(self.target), "w") as fh:
+                    fh.write(text + "\n")
+                run_git(self.target, "add", "-f", ".aios/txn.json")
+                self.commit("a journal holding %s" % text)
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+                self.assertNotEqual(code, 0, out + err)
+                self.assertIn("not the installer's journal", out + err)
+                with open(install_mod.journal_path(self.target)) as fh:
+                    self.assertEqual(fh.read(), text + "\n")
+                for p in ADOPTED:
+                    self.assertTrue(os.path.lexists(os.path.join(self.target, p)), p)
+
+    def test_an_untracked_journal_that_isnt_one_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        for text in ("null", "{}", "[]"):
+            with self.subTest(text=text):
+                with open(install_mod.journal_path(self.target), "w") as fh:
+                    fh.write(text + "\n")
+                self.be("acme-founder")
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+                self.assertNotEqual(code, 0, out + err)
+                self.assertIn("isn't a journal the installer wrote", out + err)
+        os.remove(install_mod.journal_path(self.target))
+
+    def test_a_second_adoption_under_another_plan_rolls_back_exactly(self):
+        narrow = json.loads(json.dumps(PLAN))
+        narrow["adopt"].remove("START_HERE.md")
+        narrow["exclude"].append("START_HERE.md")
+        self.write_plan(narrow)
+        self.commit("a narrow plan first")
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        self.commit("the first adoption undone")
+        self.write_plan(PLAN)  # wider: START_HERE.md is adopted this time
+        self.commit("a wider plan")
+        before = _tree(self.target)
+        people = harness.config(people=[
+            {"github": "acme-founder", "role": "founder", "display_name": "Founder"},
+            {"github": "acme-lead", "role": "operator", "display_name": "Lead"}])
+        self.adopt(config=people)  # and another people map
+        self.commit("adopted again")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_an_uncommitted_adoption_whose_plan_changed_since_is_refused(self):
+        self.adopt()  # never committed
+        plan = json.loads(json.dumps(PLAN))
+        plan["adopt"].remove("START_HERE.md")
+        plan["exclude"].append("START_HERE.md")
+        self.write_plan(plan)
+        run_git(self.target, "add", ".aios/adoption.json")
+        run_git(self.target, "commit", "-qm", "only the plan, narrowed")
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("isn't the one the adoption was made with", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])

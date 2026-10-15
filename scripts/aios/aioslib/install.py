@@ -1533,15 +1533,21 @@ def _reclaim_stale_lock(stale, target=None):
 
 def _rollback_after_reclaim(target, stale_lock, source_repo=None):
     with _Lock(target, "rollback"):
-        journal = load_journal(target)
         txn_rel = os.path.relpath(journal_path(target), target).replace(os.sep, "/")
-        if journal and util.is_tracked(target, txn_rel):
+        if os.path.lexists(journal_path(target)):
             # The installer's journal is never committed (.aios/.gitignore ignores it): a tracked one is
-            # a file anyone's pull request could have written (independent review, 3.1 round 25).
-            raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's journal; "
-                                      "nothing was changed" % txn_rel,
-                          ["if an interrupted operation left it and it was committed by mistake, untrack it "
-                           "(git rm --cached %s), commit, and run rollback again" % txn_rel])
+            # a file anyone's pull request could have written, whatever it holds (independent review, 3.1
+            # rounds 25 and 26). Checked before it's read.
+            if util.is_tracked(target, txn_rel):
+                raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's journal; "
+                                          "nothing was changed" % txn_rel,
+                              ["if an interrupted operation left it and it was committed by mistake, untrack "
+                               "it (git rm --cached %s), commit, and run rollback again" % txn_rel])
+            if not isinstance(util.read_json_safe(journal_path(target), "transaction journal"), dict) \
+                    or not util.read_json_safe(journal_path(target), "transaction journal"):
+                raise Refusal(EXIT_STATE, "%s isn't a journal the installer wrote; nothing was changed" % txn_rel,
+                              ["move it aside, then run rollback again"])
+        journal = load_journal(target)
         if stale_lock and not journal and not os.path.isfile(install_record_path(target)):
             # Killed before its journal, with no release ever pinned here (an adoption that hadn't
             # started writing): nothing changed, so there is nothing to undo (independent review,
@@ -1567,30 +1573,30 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                       "an interrupted adoption was undone: every file it created and left unchanged is gone"
                       + "".join("; " + n for n in notes))
         elif (journal and journal.get("op") == "adopt-undo") or (not journal and _completed_adoption(target)):
+            # What the adoption made comes only from its anchor (the record and plan as committed with it)
+            # and the release source, on the first pass and on every resumed one: the journal holds
+            # progress only (independent review, 3.1 rounds 22 to 26).
+            anchored = _adoption_anchor(target)
+            if anchored is not None:
+                anchor_record, anchor_plan, anchor = anchored
+                trusted = _release_adopted(anchor_record, anchor_plan, source_repo)
+                info = anchor_record.get("adoption") or {}
+            elif not journal:
+                raise Refusal(EXIT_STATE, "there is no install record to undo")
+            else:
+                # Resuming an undo that already removed an uncommitted record, its last step: what it
+                # made is gone; only its temporaries and folders are left to tidy.
+                anchor, trusted, info = None, {}, {}
             if not journal:
-                # Only a record with its sealed content says which files the adoption made: an edited
-                # one could name any file (independent review, 3.1 round 22).
-                if not _record_sealed(install_record_path(target)):
-                    raise Refusal(EXIT_STATE, "the install record changed since the adoption wrote it, so "
-                                  "rollback can't trust which files the adoption made; nothing was changed",
-                                  ["restore it from git (git checkout -- .aios/install.json), then run "
-                                   "rollback again"])
                 # Journaled before the first removal, so a kill partway through is finished by the
                 # next rollback, not left half-undone (independent review, 3.1).
-                record = load_record(target)
-                trusted = _release_adopted(target, record, source_repo)
                 journal = {"op": "adopt-undo", "phase": "undoing", "started_at": util.now_iso(),
-                           "adoption": record["adoption"], "release": record.get("release"), "trusted": trusted,
                            "config": orgconfig.load(target) if os.path.isfile(
                                orgconfig.default_config_path(target)) else None}
                 util.write_json(journal_path(target), journal)
             if journal.get("phase") != "complete":
                 util.fault("adopt.undo_before")
-                # Never the journal's own list, even resuming: re-derived from the release every time
-                # (independent review, 3.1 round 25).
-                trusted = _release_adopted(target, {"release": journal.get("release") or {},
-                                                    "adoption": journal.get("adoption") or {}}, source_repo)
-                notes = _undo_adoption(target, journal.get("adoption") or {}, trusted=trusted)
+                notes = _undo_adoption(target, info, trusted=trusted, anchor=anchor)
                 journal["phase"] = "complete"
                 journal["notes"] = notes
                 util.write_json(journal_path(target), journal)
@@ -2293,11 +2299,71 @@ def _committed_plan(target, rel, rev="HEAD"):
     return plan
 
 
-def _release_adopted(target, record, source_repo):
-    """{path: sha256}: the files the record's pinned release ships, as the release's own source
-    confirms, that the instance's committed plan adopts. Only such a file, with exactly those bytes,
-    can be one a finished adoption made: a committed record, seal and all, can come from anyone's pull
-    request (independent review, 3.1 round 24). Refuses, with nothing changed, without that proof."""
+def _latest_added(target, rel):
+    """The commit that most recently added `rel` (the path taken literally): the start of its current
+    lifetime in this history. None if it was never committed."""
+    out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "-1", "--", ":(literal)" + rel], check=False)
+    return out.strip() or None
+
+
+def _adoption_anchor(target):
+    """(record, plan, commit) of the adoption a rollback undoes, from what can't be edited after the
+    fact (independent review, 3.1 rounds 24 to 26): the install record and the plan as committed in the
+    commit that most recently added the record, the plan checked against the record's plan_sha256, and
+    the record on disk required to be that committed copy. While the record isn't committed yet it is
+    local: then the sealed record on disk, with the plan as committed at HEAD, which must be the plan it
+    was made with. None when there is no record left to anchor to (an undo that already removed an
+    uncommitted one). Refuses, with nothing changed, otherwise."""
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    record_full = install_record_path(target)
+    anchor = _latest_added(target, record_rel) if util.is_tracked(target, record_rel) else None
+    if anchor:
+        raw = util.git(target, ["show", "%s:%s" % (anchor, record_rel)], binary=True, check=False)
+        try:
+            record = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            record = None
+        if not isinstance(record, dict):
+            raise Refusal(EXIT_STATE, "the install record committed with the adoption can't be read; nothing "
+                                      "was changed", [anchor[:12]])
+        if os.path.isfile(record_full):
+            with open(record_full, "rb") as fh:
+                if fh.read() != raw:
+                    raise Refusal(EXIT_STATE, "the install record differs from the one committed with the "
+                                  "adoption, so rollback can't trust which files the adoption made; nothing "
+                                  "was changed", ["restore it from git (git checkout -- %s), then run rollback "
+                                                  "again" % record_rel])
+        rev = anchor
+    else:
+        if not os.path.isfile(record_full):
+            return None
+        if not _record_sealed(record_full):
+            raise Refusal(EXIT_STATE, "the install record changed since the adoption wrote it, so rollback "
+                          "can't trust which files the adoption made; nothing was changed",
+                          ["restore it from git (git checkout -- .aios/install.json), then run rollback again"])
+        record = util.read_json(record_full)
+        rev = "HEAD"
+    info = record.get("adoption") or {}
+    plan_rel = (info.get("plan") or ADOPTION_PLAN).replace(os.sep, "/")
+    blob = util.git(target, ["show", "%s:%s" % (rev, plan_rel)], binary=True, check=False) \
+        if util.safe_relpath(plan_rel) else b""
+    if not blob or sha256_bytes(blob) != info.get("plan_sha256"):
+        raise Refusal(EXIT_STATE, "the adoption plan as committed isn't the one the adoption was made with; "
+                                  "nothing was changed",
+                      ["restore %s to the version the adoption used, commit it, then run rollback again"
+                       % plan_rel])
+    plan = _committed_plan(target, plan_rel, rev)
+    if plan is None:
+        raise Refusal(EXIT_STATE, "the adoption plan the adoption was made with can't be read; nothing was "
+                                  "changed", [plan_rel])
+    return record, plan, anchor
+
+
+def _release_adopted(record, plan, source_repo):
+    """{path: sha256}: the files the anchored record's pinned release ships, as the release's own source
+    confirms, that the anchored plan adopts. Only such a file, with exactly those bytes, can be one a
+    finished adoption made (independent review, 3.1 rounds 24 to 26). Refuses, with nothing changed,
+    without that proof."""
     rel = record.get("release") or {}
     rev = rel.get("git_rev")
     how = ["run it with the release's source: aios rollback --target . --repo <your ff-aios-starter clone>"]
@@ -2312,43 +2378,23 @@ def _release_adopted(target, record, source_repo):
     if where is None or problems:
         raise Refusal(EXIT_STATE, "the release source doesn't confirm this install record's pin; nothing was "
                                   "changed", problems or ["%s has no record of %s" % (source_repo, rel.get("release_id"))])
-    # The plan that governed the adoption: as committed in the commit that first added the install
-    # record. A later change takes effect through an upgrade, never through rollback, so a pull request
-    # changing the plan can't make an instance-owned file removable (independent review, 3.1 round 25).
-    # While the record isn't committed yet, it is local, and HEAD's plan is the one it was made with.
-    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
-    first = _first_added(target, record_rel) if util.is_tracked(target, record_rel) else None
-    plan = _committed_plan(target, (record.get("adoption") or {}).get("plan"), first or "HEAD")
-    if plan is None:
-        raise Refusal(EXIT_STATE, "the adoption plan isn't committed, so rollback can't tell which files were "
-                                  "adopted; nothing was changed", ["commit the plan, then run rollback again"])
     shipped = release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))
     return {p: s for p, _c, _m, s in shipped if _adoption_class(plan, p) == "adopt"}
 
 
-def _first_added(target, rel):
-    """The commit that first added `rel` (the path taken literally), or None."""
-    out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "--", ":(literal)" + rel], check=False)
-    commits = [c for c in out.splitlines() if c.strip()]
-    return commits[-1] if commits else None
-
-
-def _config_came_with_adoption(target, config_rel, record_rel):
+def _config_came_with_adoption(target, config_rel, anchor):
     """Whether the org config arrived with the adoption, as git shows it: never committed (so it was
-    never the repository's file), or first committed in the very commit that first added the install
-    record. A config the repository had before stays (independent review, 3.1 round 24)."""
+    never the repository's file); or added in the very commit that began the install record's current
+    lifetime, and unchanged since, whatever hash a record claims; or, before that commit, only staged
+    with it (independent review, 3.1 rounds 24 to 26). A config the repository had before stays."""
     if not util.is_tracked(target, config_rel):
         return True
-    if not util.is_tracked(target, record_rel):
+    added = _latest_added(target, config_rel)
+    if added != anchor:
         return False
-    first = _first_added(target, config_rel)
-    if first != _first_added(target, record_rel):
-        return False
-    if first is None:
-        return True  # both only staged so far: the adoption's own, not yet committed (3.1 round 25)
-    # And unchanged since: an edit committed later is the repository's, whatever the record's hash
-    # says (independent review, 3.1 round 25).
-    committed = util.git(target, ["show", "%s:%s" % (first, config_rel)], binary=True, check=False)
+    if anchor is None:
+        return True  # neither committed yet: both only staged, the adoption's own
+    committed = util.git(target, ["show", "%s:%s" % (anchor, config_rel)], binary=True, check=False)
     try:
         with open(os.path.join(target, config_rel), "rb") as fh:
             return fh.read() == committed
@@ -2357,10 +2403,17 @@ def _config_came_with_adoption(target, config_rel, record_rel):
 
 
 def _undo_may_remove(target, info):
-    """For an interrupted adoption: the org config it was making, and what the instance's committed plan
-    says it adopts (independent review, 3.1 rounds 23 and 24). None when the plan can't be read: then
-    nothing is."""
-    plan = _committed_plan(target, info.get("plan"))
+    """For an interrupted adoption: the org config it was making, and what the instance's plan, as
+    committed at HEAD, says it adopts: the plan it was made with (its hash must match), or nothing is
+    removed (independent review, 3.1 rounds 23, 24 and 26). None when the plan can't be read."""
+    plan_rel = (info.get("plan") or ADOPTION_PLAN).replace(os.sep, "/")
+    blob = util.git(target, ["show", "HEAD:" + plan_rel], binary=True, check=False) \
+        if util.safe_relpath(plan_rel) else b""
+    if not blob or sha256_bytes(blob) != info.get("plan_sha256"):
+        raise Refusal(EXIT_STATE, "the adoption plan as committed isn't the one the interrupted adoption was "
+                                  "made with; nothing was changed",
+                      ["restore %s to that version, commit it, then run rollback again" % plan_rel])
+    plan = _committed_plan(target, plan_rel)
     if plan is None:
         return None
     config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
@@ -2387,7 +2440,7 @@ def _remove_copy_temp(target, rel):
         os.remove(full)
 
 
-def _undo_adoption(target, info, pending=None, trusted=None):
+def _undo_adoption(target, info, pending=None, trusted=None, anchor=None):
     """Take back exactly what an adoption created: the files it recorded, while each is still the
     bytes and mode it wrote, and a file it was creating when killed only if it is still that very
     copy (same inode as its temporary file). Returns notes about anything left. Never removes the
@@ -2400,7 +2453,7 @@ def _undo_adoption(target, info, pending=None, trusted=None):
         # A finished adoption: only the release's own adopted files, with exactly its bytes, and the org
         # config only if git shows it arrived with the adoption.
         config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
-        config_ok = _config_came_with_adoption(target, config_rel, record_rel)
+        config_ok = _config_came_with_adoption(target, config_rel, anchor)
         may_remove = lambda rel: rel in trusted or (rel == config_rel and config_ok)  # noqa: E731
     else:
         may_remove = _undo_may_remove(target, info) or (lambda rel: False)
