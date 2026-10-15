@@ -72,6 +72,12 @@ class Existing(Sandbox):
         run_git(t, "add", "-A")
         run_git(t, "commit", "-qm", msg)
 
+    def forget_state(self):
+        """As a machine without this workspace's local note would be (a fresh clone has none)."""
+        note = os.path.join(self.target, ".aios", "backups", "state", "head.json")
+        if os.path.isfile(note):
+            os.remove(note)
+
     def adopt(self, manifest=None, **kw):
         return install_mod.adopt_existing(self.target, manifest or self.v, self.source,
                                           kw.pop("config", None) or harness.config(), **kw)
@@ -1077,7 +1083,9 @@ class ReviewRoundTwelve(Existing):
             edited = fh.read()
         code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
-        self.assertIn("can't trust which files the adoption made", out + err)
+        self.assertTrue(any(m in out + err for m in ("can't trust which files the adoption made",
+                                                       "isn't the one this workspace's last operation wrote")),
+                        out + err)
         with open(record, "rb") as fh:
             self.assertEqual(fh.read(), edited)
         for path in ADOPTED:
@@ -1711,7 +1719,7 @@ class ReviewRoundTwentyOne(Existing):
         self.commit("ignore the backups path, link or not")
         backups = os.path.join(self.target, ".aios", "backups")
         if os.path.isdir(backups):
-            os.rmdir(backups)
+            shutil.rmtree(backups)
         os.symlink(outside, backups)
         self.assertEqual(util.git(self.target, ["status", "--porcelain"]), "")
         rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
@@ -1789,7 +1797,7 @@ class ReviewRoundTwentyTwo(Existing):
         os.makedirs(outside)
         backups = os.path.join(self.target, ".aios", "backups")
         if os.path.isdir(backups):
-            os.rmdir(backups)
+            shutil.rmtree(backups)
         os.symlink(outside, backups)
         with self.assertRaises(Refusal):
             install_mod._backup(self.target, install_mod.load_record(self.target), "txn-test")
@@ -1817,7 +1825,9 @@ class ReviewRoundTwentyThree(Existing):
         self.be("acme-founder")
         code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)  # since round 26: it differs from the committed record
-        self.assertIn("differs from the one committed with the adoption", out + err)
+        self.assertTrue(any(m in out + err for m in ("differs from the one committed with the adoption",
+                                                       "isn't the one this workspace's last operation wrote")),
+                        out + err)
         with open(os.path.join(self.target, "README.md")) as fh:
             self.assertEqual(fh.read(), "# our company repo\n")
 
@@ -1890,6 +1900,7 @@ class ReviewRoundTwentyFour(Existing):
             fh.write(install_mod._record_bytes(record))
         os.chmod(path, 0o644)
         self.commit("a forged record, as a pull request could bring")
+        self.forget_state()  # so the git anchor itself is what's tested
 
     def entry(self, rel):
         full = os.path.join(self.target, rel)
@@ -2248,6 +2259,7 @@ class ReviewRoundTwentyNine(ReviewRoundTwentyFour):
             fh.write(install_mod._record_bytes(forged))
         os.chmod(path, 0o644)
         self.commit("another pull request re-adds it")
+        self.forget_state()
         before = _tree(self.target)
         self.be("acme-founder")
         code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
@@ -2294,6 +2306,7 @@ class ReviewRoundThirtyCodex(ReviewRoundTwentyFour):
             fh.write(install_mod._record_bytes(forged))
         os.chmod(path, 0o644)
         self.commit("another re-adds it, claiming less")
+        self.forget_state()
 
     def refused_unchanged(self):
         before = _tree(self.target)
@@ -2374,6 +2387,10 @@ class ReviewRoundThirtyTwo(ReviewRoundTwentyFour):
         self.commit("a pull request adds .env to the record")
         with self.assertRaises(Refusal) as ctx:
             install_mod.rollback(self.target, self.source)
+        self.assertIn("isn't the one this workspace's last operation wrote", ctx.exception.message)
+        self.forget_state()  # and without the note, the upgrade's own copy refuses it
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target, self.source)
         self.assertIn("changed since the upgrade wrote it", ctx.exception.message)
         with open(os.path.join(self.target, ".env")) as fh:
             self.assertEqual(fh.read(), "SECRET=ours\n")
@@ -2382,6 +2399,7 @@ class ReviewRoundThirtyTwo(ReviewRoundTwentyFour):
         record_path = self.upgraded()
         backup = util.read_json(record_path)["previous"]["backup"]
         os.remove(os.path.join(self.target, backup, "after.json"))
+        self.forget_state()
         with self.assertRaises(Refusal) as ctx:
             install_mod.rollback(self.target, self.source)
         self.assertIn("kept no copy of the record it wrote", ctx.exception.message)
@@ -2391,3 +2409,55 @@ class ReviewRoundThirtyTwo(ReviewRoundTwentyFour):
         install_mod.rollback(self.target, self.source)
         with open(os.path.join(self.target, "START_HERE.md")) as fh:
             self.assertNotIn("new.", fh.read())
+
+
+class ReviewRoundThirtyThree(ReviewRoundThirtyTwo):
+    """Codex and Gemini, 3.1 round 33: a trusted local state head, and snapshots that are the installer's."""
+
+    def test_a_replayed_older_record_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        adopted_at = util.git(self.target, ["rev-parse", "HEAD"])
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")),
+                            self.source)
+        self.commit("upgraded")
+        run_git(self.target, "checkout", adopted_at, "--", ".aios/install.json")
+        self.commit("a pull request restores the adoption's record")
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("isn't the one this workspace's last operation wrote", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_committed_snapshot_is_never_trusted(self):
+        record_path = self.upgraded()
+        backup = util.read_json(record_path)["previous"]["backup"]
+        run_git(self.target, "add", "-f", backup + "/after.json")
+        self.commit("a pull request commits the snapshot's copy")
+        self.forget_state()
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target, self.source)
+        self.assertIn("holds files the repository tracks", ctx.exception.message)
+
+    def test_an_adopted_instance_is_known_by_its_snapshot_not_its_record(self):
+        record_path = self.upgraded()
+        record = util.read_json(record_path)
+        backup = record["previous"]["backup"]
+        os.remove(os.path.join(self.target, backup, "after.json"))
+        record.pop("adoption", None)  # a pull request makes it look like an older, non-adopted upgrade
+        util.write_json(record_path, record)
+        self.commit("the record no longer says adopted")
+        self.forget_state()
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target, self.source)
+        self.assertIn("kept no copy of the record it wrote", ctx.exception.message)
+
+    def test_the_plan_must_be_committed_under_its_own_name(self):
+        if not _folds_case(self.tmp):
+            self.skipTest("this disk keeps case, so the two spellings are two files")
+        run_git(self.target, "mv", ".aios/adoption.json", ".aios/ADOPTION.json")
+        self.commit("the plan committed under another case")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("must be committed as .aios/adoption.json exactly", exc.message)

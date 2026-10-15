@@ -171,6 +171,52 @@ def load_journal(target):
     return journal
 
 
+# In a folder of its own under the backups folder: like each upgrade's snapshot, the installer's own
+# git-ignored record, set apart from everything a person keeps.
+STATE_PATH = os.path.join(BACKUP_DIR, "state", "head.json")
+
+
+def _write_state(target):
+    """Note, locally (the backups folder is git-ignored), which install record the operation that just
+    finished wrote: rollback trusts the committed record only while it is still that one, so a record
+    a pull request changed, or an older one restored, is refused (independent review, 3.1 round 33)."""
+    with open(install_record_path(target), "rb") as fh:
+        sha = sha256_bytes(fh.read())
+    util.ensure_parent(os.path.join(target, STATE_PATH))
+    util.write_json(os.path.join(target, STATE_PATH), {"schema": "ff-aios-starter/state@1", "record_sha256": sha})
+
+
+def _check_state(target):
+    """Refuse, changing nothing, unless the install record is the one the last finished operation wrote
+    (when this workspace has that note: a fresh clone has none, and no snapshots either)."""
+    full = os.path.join(target, STATE_PATH)
+    rel = STATE_PATH.replace(os.sep, "/")
+    if not os.path.lexists(full):
+        return
+    if _repo_owned(target, rel) or os.path.islink(full) or not os.path.isfile(full):
+        raise Refusal(EXIT_STATE, "%s isn't the installer's own note (tracked, a link or a folder); nothing "
+                                  "was changed" % rel, ["move it aside, then run rollback again"])
+    try:
+        state = util.read_json(full)
+        with open(install_record_path(target), "rb") as fh:
+            current = sha256_bytes(fh.read())
+    except (OSError, ValueError) as exc:
+        raise Refusal(EXIT_STATE, "%s can't be read (%s); nothing was changed" % (rel, exc))
+    if not isinstance(state, dict) or state.get("record_sha256") != current:
+        raise Refusal(EXIT_STATE, "the install record isn't the one this workspace's last operation wrote: "
+                                  "it changed, or an older one was restored; nothing was changed",
+                      ["rollback works only from the record the last upgrade, rollback or adoption wrote "
+                       "here; find what changed it (git log -- .aios/install.json)"])
+
+
+def _snapshot_owned(target, backup_rel):
+    """Whether git has anything in a snapshot folder (index or HEAD, any spelling): a snapshot is the
+    installer's own, never committed, so one with tracked files could be a pull request's (3.1 round 33)."""
+    rel = backup_rel.replace(os.sep, "/").rstrip("/")
+    staged = util.git(target, ["ls-files", "-z", "--", ":(icase,literal)" + rel], binary=True, check=False)
+    return bool(staged.strip(b"\0")) or util.in_head(target, rel)
+
+
 def _repo_owned(target, rel):
     """Whether git has `rel` as the repository's file: in the index, or committed in HEAD (a file
     `git rm --cached` left on disk is still the repository's). Cleanup never removes one (3.1 round 28)."""
@@ -1132,9 +1178,10 @@ def _adopted_upgrade_view(target, record, manifest):
     plan, plan_sha = load_adoption_plan(target, info.get("plan"))
     # The plan that decides an upgrade must be one git tracks: an ignored copy could say anything,
     # unseen by the clean-worktree check (independent review, 3.1 round 3).
-    if not util.is_tracked(target, (info.get("plan") or ADOPTION_PLAN).replace(os.sep, "/")):
-        raise Refusal(EXIT_STATE, "the adoption plan isn't committed any more",
-                      [info.get("plan") or ADOPTION_PLAN, "commit it, then upgrade"])
+    plan_path = (info.get("plan") or ADOPTION_PLAN).replace(os.sep, "/")
+    if not util.is_tracked(target, plan_path) or util.head_spellings(target, plan_path) != [plan_path]:
+        raise Refusal(EXIT_STATE, "the adoption plan isn't committed any more, exactly as %s" % plan_path,
+                      [plan_path, "commit it under that name, then upgrade"])
     # Everything the adopted instance runs on stays committed: an ignored local copy would let the
     # upgrade succeed while the commit, and a fresh clone, lack it (independent review, 3.1 round 9).
     keep = [(info.get("plan") or ADOPTION_PLAN), os.path.relpath(orgconfig.default_config_path(target), target),
@@ -1390,6 +1437,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
             raise Refusal(EXIT_VERIFY,
                           "upgrade failed AND the automatic rollback did not restore cleanly",
                           [str(exc)] + problems + ["run `aios rollback` to finish restoring"])
+        _write_state(target)
         if os.path.isfile(journal_path(target)):
             os.remove(journal_path(target))
         if isinstance(exc, Refusal):
@@ -1400,6 +1448,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
                       "upgrade failed and the workspace was rolled back to %s (verified)"
                       % current_version, [str(exc)])
 
+    _write_state(target)  # before the journal goes: a kill in between is recovered from the journal
     os.remove(journal_path(target))
     return new_record
 
@@ -1607,6 +1656,8 @@ def _reclaim_stale_lock(stale, target=None):
 def _rollback_after_reclaim(target, stale_lock, source_repo=None):
     with _Lock(target, "rollback"):
         journal = load_journal(target)  # refuses a tracked, non-file or non-journal one (3.1 rounds 25-28)
+        if not journal and os.path.isfile(install_record_path(target)):
+            _check_state(target)  # a finished operation: the record must be the one it wrote (round 33)
         record_full = install_record_path(target)
         if os.path.lexists(record_full):
             # The record too, before anything is decided: present but not a readable file is a refusal,
@@ -1832,6 +1883,7 @@ def _rollback_locked(target, journal):
         problems, summary = verify(target, prior)
         if problems:  # the journal stays, so this can be run again
             raise Refusal(EXIT_VERIFY, "rollback did not restore a verifiable workspace", problems)
+        _write_state(target)
         os.remove(journal_path(target))
         return prior, summary, "; ".join(["recovered an interrupted %s" % journal.get("op", "operation")]
                                          + notes)
@@ -1858,6 +1910,19 @@ def _rollback_locked(target, journal):
     # it is still exactly the record the upgrade wrote, kept in its own local snapshot. An adopted
     # instance's upgrade always keeps one; an older upgrade without one keeps 3.0's behaviour
     # (independent review, 3.1 round 32).
+    if _snapshot_owned(target, backup_rel):
+        raise Refusal(EXIT_STATE, "the snapshot %s holds files the repository tracks, so it could be a pull "
+                                  "request's; nothing was changed" % backup_rel)
+    try:
+        snapshot_prior = util.read_json(os.path.join(backup_root, "install.json"))
+    except (OSError, ValueError) as exc:
+        raise Refusal(EXIT_STATE, "the snapshot's install record can't be read (%s); nothing was changed" % exc)
+    unsafe = sorted(str(e.get("path")) for r in (current, snapshot_prior)
+                    for e in (r.get("managed") or []) + (r.get("created_seeds") or []) + (r.get("seeded") or [])
+                    if not (isinstance(e, dict) and isinstance(e.get("path"), str) and util.safe_relpath(e["path"])))
+    if unsafe:
+        raise Refusal(EXIT_STATE, "the install records name paths outside the workspace; nothing was changed",
+                      unsafe[:20])
     after = os.path.join(backup_root, "after.json")
     if os.path.isfile(after) and not os.path.islink(after):
         with open(after, "rb") as fh_after, open(record_path, "rb") as fh_now:
@@ -1866,7 +1931,9 @@ def _rollback_locked(target, journal):
                               "can't trust it; nothing was changed",
                               ["restore it from git (git checkout -- .aios/install.json), then run rollback "
                                "again"])
-    elif current.get("adoption"):
+    elif current.get("adoption") or (isinstance(snapshot_prior, dict) and snapshot_prior.get("adoption")):
+        # Whether this is an adopted instance is read from the snapshot's own, local, prior record too:
+        # a committed record could drop its "adoption" to look like an older upgrade (round 33).
         raise Refusal(EXIT_STATE, "this adopted instance's upgrade kept no copy of the record it wrote, so "
                                   "rollback can't trust the record; nothing was changed")
     migration = current.get("layout_migration") or {}
@@ -1941,6 +2008,7 @@ def _finish_rollback(target, journal, resumed=False):
     problems, summary = verify(target, prior)
     if problems:  # the journal stays, so this can be run again
         raise Refusal(EXIT_VERIFY, "rollback did not restore a verifiable workspace", problems)
+    _write_state(target)
     util.write_json(journal_path(target), dict(journal, phase="complete", completed_at=util.now_iso()))
     how = ("finished an interrupted rollback to %s" if resumed else "rolled back to %s") \
         % prior["release"]["version"]
@@ -2097,6 +2165,9 @@ def adopt_existing(target, manifest, source_repo, config, plan_rel=None, aios_lo
     """
     # Before the lock, which itself writes: the installer's own paths must be free, or be a guard
     # it left (empty, untracked), so a repository that was never a Starter keeps every file it has.
+    if os.path.lexists(install_record_path(target)):
+        raise Refusal(EXIT_STATE, "this workspace already has an install record; use upgrade",
+                      [install_record_path(target)])
     problems = _reserved_before_adoption(target)
     if problems:
         raise Refusal(EXIT_STATE, "the installer's own paths aren't free in this workspace; nothing was "
@@ -2181,6 +2252,12 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     if untracked:
         raise Refusal(EXIT_STATE, "the plan and the role policy must be committed, not just on disk",
                       untracked + ["git add them and commit, then adopt"])
+    if util.head_spellings(target, plan_rel) != [plan_rel]:
+        # Committed under exactly its own name, or rollback could never find it in the adoption's commit
+        # (independent review, 3.1 round 33).
+        raise Refusal(EXIT_STATE, "the plan must be committed as %s exactly, and only once" % plan_rel,
+                      [", ".join(util.head_spellings(target, plan_rel)) or "not in HEAD",
+                       "rename it with git mv, commit, then adopt"])
     entries = {e["path"]: e for e in manifest.get("files") or []}
     classes, problems = classify_adoption(plan, entries)
     if problems:
@@ -2367,6 +2444,7 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
         if os.path.isfile(journal_path(target)):
             os.remove(journal_path(target))
         raise
+    _write_state(target)
     os.remove(journal_path(target))
     require_verified(target, record, "adopted workspace")
     return record
@@ -2666,6 +2744,14 @@ def _undo_adoption(target, info, pending=None, trusted=None, anchor=None):
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
     _sweep_temporaries(target)  # before the folders, so a backups folder it made can go too
+    state = os.path.join(target, STATE_PATH)
+    if _reachable(target, STATE_PATH.replace(os.sep, "/")) and os.path.isfile(state) \
+            and not os.path.islink(state) and not _repo_owned(target, STATE_PATH):
+        os.remove(state)  # the note of the record this undo removed
+        try:
+            os.rmdir(os.path.dirname(state))
+        except OSError:
+            pass
     backups_rel = BACKUP_DIR.replace(os.sep, "/")
     for d in sorted(info.get("made_dirs") or [], key=lambda e: -e["path"].count("/")):
         if not isinstance(d, dict) or not isinstance(d.get("path"), str):
