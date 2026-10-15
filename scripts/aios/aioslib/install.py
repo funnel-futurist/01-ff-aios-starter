@@ -1602,9 +1602,12 @@ def _sweep_temporaries(target):
             continue
         for name in sorted(os.listdir(folder)):
             full = os.path.join(folder, name)
-            if pattern.match(name) and stat.S_ISREG(os.lstat(full).st_mode):
+            rel = os.path.join(rel_dir, name).replace(os.sep, "/")
+            # A name is not proof: a file git tracks is the repository's, whatever it's called
+            # (independent review, 3.1 round 18). Adoption also refuses to start over one.
+            if pattern.match(name) and stat.S_ISREG(os.lstat(full).st_mode) and not util.is_tracked(target, rel):
                 os.remove(full)
-                removed.append(os.path.join(rel_dir, name).replace(os.sep, "/"))
+                removed.append(rel)
     return removed
 
 
@@ -1923,6 +1926,13 @@ def _reserved_before_adoption(target):
         if os.path.lexists(os.path.join(target, rel)):
             out.append("%s exists: another operation is running, or one was interrupted "
                        "(`aios rollback` clears it)" % rel.replace(os.sep, "/"))
+    aios = os.path.join(target, AIOS_DIR)
+    if os.path.isdir(aios) and not os.path.islink(aios):
+        for name in sorted(os.listdir(aios)):
+            if _STATE_TEMP.match(name):
+                # The names the installer gives its temporary files, which rollback removes (3.1 round 18).
+                out.append("%s/%s has a name the installer uses for its temporary files; rename it, or "
+                           "run `aios rollback` if an interrupted operation left it" % (AIOS_DIR, name))
     backups = os.path.join(target, BACKUP_DIR)
     if os.path.lexists(backups):
         rel = BACKUP_DIR.replace(os.sep, "/")

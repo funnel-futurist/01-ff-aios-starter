@@ -93,7 +93,9 @@ def write_json(path, obj):
 # Each with everything under it: a release path inside a state file's name would make it a folder
 # (independent review, 3.1 round 12).
 TOOL_RESERVED = (".aios/install.json/**", ".aios/config.json/**", ".aios/txn.json/**", ".aios/lock/**",
-                 ".aios/backups/**")
+                 ".aios/backups/**",
+                 # and the names its state writes give their temporary files (3.1 round 18)
+                 ".aios/.install.json.*.tmp", ".aios/.config.json.*.tmp", ".aios/.txn.json.*.tmp")
 
 
 # A Windows short (8.3) name, such as AIOS~1 or INSTAL~1.JSO: it can stand for a long name.

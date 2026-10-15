@@ -1555,3 +1555,33 @@ class ReviewRoundSeventeen(Existing):
         code, out, err = self.cli("start", "--target", self.target)
         self.assertEqual(code, 0, out + err)
         self.assertIn("until an approved founder-lane reviewer", out)
+
+
+class ReviewRoundEighteen(Existing):
+    """Codex, 3.1 round 18: a name is not proof."""
+
+    NAME = ".aios/.txn.json.aaaaaaaa.tmp"
+
+    def test_adoption_refuses_over_a_file_with_an_installer_temporary_name(self):
+        write(self.target, self.NAME, "ours\n")
+        self.commit("a file of ours with that name")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertTrue(any("temporary files" in d for d in exc.details), exc.details)
+
+    def test_rollback_never_sweeps_a_tracked_file(self):
+        self.adopt()
+        self.commit("adopted")
+        write(self.target, self.NAME, "ours\n")
+        self.commit("a file of ours with that name, after the adoption")
+        install_mod.rollback(self.target)
+        with open(os.path.join(self.target, self.NAME)) as fh:
+            self.assertEqual(fh.read(), "ours\n")
+
+    def test_releases_may_not_ship_those_names(self):
+        from aioslib import release
+        for path in (self.NAME, ".aios/.install.json.abc12345.tmp", ".AIOS/.config.json.zz_00000.tmp"):
+            self.assertTrue(util.is_reserved(path), path)
+            man = json.loads(json.dumps(self.v))
+            man["files"].append({"path": path, "class": "managed", "mode": "100644", "sha256": "0" * 64})
+            self.assertTrue(any("installer's own state" in p for p in release.check_shape(man)), path)
+        self.assertFalse(util.is_reserved(".aios/txn.json.notes.md"))
