@@ -356,10 +356,19 @@ def _backup(target, record, txn_id):
     """Snapshot the managed files and the install record before mutating either."""
     backup_root = os.path.join(target, BACKUP_DIR, txn_id)
     # Again right before writing, as private_temp does: the backups must stay inside the workspace
-    # (independent review, 3.1 round 22).
-    linked = _linked_paths(target, [BACKUP_DIR.replace(os.sep, "/") + "/" + txn_id + "/x"])
+    # (independent review, 3.1 round 22). And the snapshot's own folder is made new, exclusively: one
+    # already there (its name is predictable) could hold a link that sends the copies elsewhere
+    # (round 23).
+    linked = _linked_paths(target, [BACKUP_DIR.replace(os.sep, "/") + "/x"])
     if linked:
         raise Refusal(EXIT_STATE, "the backups would go through a link or a file: %s" % ", ".join(linked))
+    os.makedirs(os.path.join(target, BACKUP_DIR), exist_ok=True)
+    try:
+        os.mkdir(backup_root)
+    except FileExistsError:
+        raise Refusal(EXIT_STATE, "the backup folder %s already exists; nothing was changed"
+                      % os.path.relpath(backup_root, target).replace(os.sep, "/"),
+                      ["move it aside, then upgrade again"])
     files_root = os.path.join(backup_root, "files")
     for entry in record.get("managed") or []:
         src = os.path.join(target, entry["path"])
@@ -1117,8 +1126,10 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
                 pre_dirs.add(d)
     pre_dirs = sorted(pre_dirs)
 
-    txn_id = "%s-%s-to-%s" % (util.now_iso().replace(":", "").replace("-", ""),
-                              current_version, manifest["version"])
+    # A random part too, so two upgrades in one second, or a retry after a kill, each get a new
+    # snapshot folder, which _backup makes exclusively (independent review, 3.1 round 23).
+    txn_id = "%s-%s-to-%s-%s" % (util.now_iso().replace(":", "").replace("-", ""),
+                                 current_version, manifest["version"], os.urandom(3).hex())
     backup_root = _backup(target, record, txn_id)
     backup_rel = os.path.relpath(backup_root, target).replace(os.sep, "/")
     if the_plan:
@@ -2250,6 +2261,39 @@ def _reachable(target, rel):
     return bool(rel) and util.safe_relpath(rel) and not _linked_paths(target, [rel])
 
 
+def _undo_may_remove(target, info):
+    """Which paths an undo may remove: the org config the adoption makes, and what the instance's own
+    committed plan, as it is now, says it adopts. The record and the journal are editable, and a seal
+    is only a hash anyone can recompute, so neither can make an instance-owned file removable
+    (independent review, 3.1 round 23). None when the plan can't be read: then nothing is."""
+    try:
+        plan, _sha = load_adoption_plan(target, info.get("plan"))
+    except Refusal:
+        return None
+    config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
+    return lambda rel: rel == config_rel or _adoption_class(plan, rel) == "adopt"
+
+
+def _pending_ok(pending):
+    """The journal's `pending` entry exactly as create() writes it: a path, its sha256 and mode, and a
+    temporary copy named as util.private_temp names one, in the backups folder."""
+    temp = pending.get("temp") if isinstance(pending, dict) else None
+    return (_provenance_ok(pending) and isinstance(temp, str)
+            and os.path.dirname(temp) == BACKUP_DIR.replace(os.sep, "/")
+            and bool(_COPY_TEMP.match(os.path.basename(temp))))
+
+
+def _remove_copy_temp(target, rel):
+    """Remove an installer temporary copy: a regular file git doesn't track, in its own namespace."""
+    full = os.path.join(target, rel)
+    try:
+        st = os.lstat(full)
+    except OSError:
+        return
+    if stat.S_ISREG(st.st_mode) and not util.is_tracked(target, rel):
+        os.remove(full)
+
+
 def _undo_adoption(target, info, pending=None):
     """Take back exactly what an adoption created: the files it recorded, while each is still the
     bytes and mode it wrote, and a file it was creating when killed only if it is still that very
@@ -2258,17 +2302,29 @@ def _undo_adoption(target, info, pending=None):
     notes = []
     created = [c["path"] for c in info.get("created") or [] if _provenance_ok(c)]
     decided = set()
+    may_remove = _undo_may_remove(target, info) or (lambda rel: False)
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
     if pending:
         # First, the file a kill caught being created, whatever else says about it: removed only if
         # it is still that very copy (the same inode as its temporary file) with the bytes and mode
         # written, or, once the temporary copy has gone, still those bytes and mode. Anything else at
         # that path, edited in place or put there by a replace, is the instance's (independent review,
         # 3.1 rounds 10 to 12).
+        if not _pending_ok(pending):
+            # The journal is editable: an entry that isn't exactly what create() writes, with its
+            # temporary copy in the installer's own namespace, is never acted on (independent review,
+            # 3.1 round 23).
+            notes.append("an interrupted adoption's journal entry wasn't usable, so it was left alone")
+            pending = None
+    if pending:
         dest = os.path.join(target, pending["path"])
         tmp = os.path.join(target, pending["temp"])
         decided.add(pending["path"])
         if not (_reachable(target, pending["path"]) and _reachable(target, pending["temp"])):
             notes.append("%s is reached through a link now, so it was left" % pending["path"])
+        elif pending["path"] != record_rel and not may_remove(pending["path"]):
+            notes.append("%s isn't a path the instance's plan adopts, so it was left" % pending["path"])
+            _remove_copy_temp(target, pending["temp"])
         else:
             if os.path.lexists(dest):
                 st = os.lstat(dest)
@@ -2281,14 +2337,15 @@ def _undo_adoption(target, info, pending=None):
                 else:
                     notes.append("%s isn't exactly what an interrupted adoption made, so it was left for "
                                  "you" % pending["path"])
-            if os.path.lexists(tmp):
-                os.remove(tmp)
+            _remove_copy_temp(target, pending["temp"])
     for i, c in enumerate(info.get("created") or []):
         if not _provenance_ok(c):
             notes.append("an entry without a usable hash and mode was left alone: %s"
                          % (c.get("path") if isinstance(c, dict) else c))
         elif c["path"] not in decided and not _reachable(target, c["path"]):
             notes.append("%s is reached through a link now, so it was left" % c["path"])
+        elif c["path"] not in decided and not may_remove(c["path"]):
+            notes.append("%s isn't a path the instance's plan adopts, so it was left" % c["path"])
         elif c["path"] not in decided:
             note = _remove_if_ours(target, c["path"], c["sha256"], c.get("mode"))
             if note:

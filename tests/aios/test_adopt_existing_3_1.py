@@ -1789,3 +1789,87 @@ class ReviewRoundTwentyTwo(Existing):
         with self.assertRaises(Refusal):
             install_mod._backup(self.target, install_mod.load_record(self.target), "txn-test")
         self.assertEqual(os.listdir(outside), [])
+
+
+class ReviewRoundTwentyThree(Existing):
+    """Gemini, 3.1 round 23."""
+
+    def readme_entry(self):
+        full = os.path.join(self.target, "README.md")
+        return {"path": "README.md", "sha256": util.sha256_file(full),
+                "mode": stat_mode(full)}
+
+    def test_a_forged_and_resealed_record_cant_make_an_instance_file_removable(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["adoption"]["created"].append(self.readme_entry())
+        record = install_mod._sealed(record)  # a seal anyone can recompute
+        with open(path, "wb") as fh:
+            fh.write(install_mod._record_bytes(record))
+        os.chmod(path, 0o644)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("README.md isn't a path the instance's plan adopts", out)
+        with open(os.path.join(self.target, "README.md")) as fh:
+            self.assertEqual(fh.read(), "# our company repo\n")
+        for p in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(self.target, p)), p)
+
+    def test_a_forged_journal_entry_cant_either(self):
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:adopt.mid_write"})
+        self.assertEqual(code, 137)
+        journal = install_mod.load_journal(self.target)
+        journal["adoption"]["created"].append(self.readme_entry())
+        util.write_json(install_mod.journal_path(self.target), journal)
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        with open(os.path.join(self.target, "README.md")) as fh:
+            self.assertEqual(fh.read(), "# our company repo\n")
+
+    def test_the_backup_snapshot_folder_is_always_new(self):
+        self.adopt()
+        self.commit("adopted")
+        txn = "20261015T000000Z-3.0.0-to-3.1.0"
+        root = os.path.join(self.target, ".aios", "backups", txn)
+        os.makedirs(root)
+        os.symlink(self.target, os.path.join(root, "files"))  # would send the copies into the workspace
+        before = _tree(self.target)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod._backup(self.target, install_mod.load_record(self.target), txn)
+        self.assertIn("already exists", ctx.exception.message)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+
+def stat_mode(full):
+    import stat as _stat
+    return _stat.S_IMODE(os.lstat(full).st_mode)
+
+
+class ReviewRoundTwentyThreeCodex(Existing):
+    """Codex, 3.1 round 23: the journal's pending temporary copy is only ever an installer temporary."""
+
+    def test_a_tampered_pending_temp_never_removes_a_repository_file(self):
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:adopt.mid_write"})
+        self.assertEqual(code, 137)
+        journal = install_mod.load_journal(self.target)
+        for temp in ("README.md", ".aios/backups/README.md", ".aios/backups/.write-abc"):
+            with self.subTest(temp=temp):
+                if temp.startswith(".aios/backups/"):
+                    write(self.target, temp, "ours\n")
+                journal["pending"] = {"path": "docs/absent.md", "temp": temp,
+                                      "sha256": "0" * 64, "mode": 0o644}
+                util.write_json(install_mod.journal_path(self.target), journal)
+                notes = install_mod._undo_adoption(self.target, journal["adoption"], journal["pending"])
+                self.assertIn("an interrupted adoption's journal entry wasn't usable, so it was left alone", notes)
+                self.assertTrue(os.path.isfile(os.path.join(self.target, temp)), temp)
