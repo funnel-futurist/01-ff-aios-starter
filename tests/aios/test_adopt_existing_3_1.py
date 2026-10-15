@@ -2252,7 +2252,7 @@ class ReviewRoundTwentyNine(ReviewRoundTwentyFour):
         self.be("acme-founder")
         code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
-        self.assertIn("didn't add as the release's adopted files", out + err)
+        self.assertIn("doesn't match the adoption that commit made", out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
 
     def test_an_adoption_committed_in_one_commit_still_rolls_back_exactly(self):
@@ -2261,3 +2261,52 @@ class ReviewRoundTwentyNine(ReviewRoundTwentyFour):
         self.commit("adopted, as one commit")
         self.rollback_ok()
         self.assertEqual(diff(before, _tree(self.target)), [])
+
+
+class ReviewRoundThirty(Existing):
+    """Gemini, 3.1 round 30: a plan that isn't an object is a refusal, never a crash."""
+
+    def test_a_plan_that_isnt_an_object_refuses_cleanly(self):
+        for text in ("", "null", "[]", "3"):
+            with self.subTest(text=text):
+                write(self.target, ".aios/adoption.json", text)
+                self.commit("a broken plan %r" % text)
+                exc = self.refuses_unchanged(self.adopt)
+                self.assertIsInstance(exc, Refusal)
+        for plan in (None, [], 3, "x"):
+            self.assertTrue(install_mod._plan_problems(plan))
+
+
+class ReviewRoundThirtyCodex(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 30: a re-added record claiming fewer files is refused too."""
+
+    def re_add(self, mutate):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        original = util.read_json(path)
+        run_git(self.target, "rm", "-q", ".aios/install.json")
+        self.commit("a pull request deletes the record")
+        forged = json.loads(json.dumps(original))
+        mutate(forged)
+        forged = install_mod._sealed(forged)
+        with open(path, "wb") as fh:
+            fh.write(install_mod._record_bytes(forged))
+        os.chmod(path, 0o644)
+        self.commit("another re-adds it, claiming less")
+
+    def refused_unchanged(self):
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("doesn't match the adoption that commit made", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_an_empty_created_list_is_refused(self):
+        self.re_add(lambda r: r["adoption"].__setitem__("created", []))
+        self.refused_unchanged()
+
+    def test_an_incomplete_created_list_is_refused(self):
+        self.re_add(lambda r: r["adoption"].__setitem__("created", r["adoption"]["created"][1:]))
+        self.refused_unchanged()

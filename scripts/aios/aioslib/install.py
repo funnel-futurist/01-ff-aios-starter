@@ -1652,17 +1652,24 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                     # The commit that added the record must be the adoption itself: only files it added
                     # alongside the record can be ones the adoption made, and a record claiming any
                     # other path is refused outright (independent review, 3.1 round 29).
+                    # And it must say exactly what that adoption made: every file the release adopts
+                    # under the plan, all added by that commit, no more and no fewer. A record claiming
+                    # less would leave files behind and still report the adoption undone (round 30).
                     added = _added_in(target, anchor)
-                    trusted = {p: s for p, s in trusted.items() if p in added}
                     config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
-                    claimed = [c.get("path") if isinstance(c, dict) else c for c in info.get("created") or []]
-                    unproven = sorted(str(p) for p in claimed if p not in trusted and p != config_rel)
-                    if unproven:
-                        raise Refusal(EXIT_STATE, "the install record committed at %s claims %d file(s) that "
-                                      "commit didn't add as the release's adopted files; nothing was changed"
-                                      % (anchor[:12], len(unproven)),
-                                      unproven[:20] + ["commit an adoption as one commit (git add -A, then "
-                                                       "git commit), or undo it by hand from git"])
+                    claimed = {str(c.get("path") if isinstance(c, dict) else c) for c in info.get("created") or []}
+                    claimed.discard(config_rel)  # the people map keeps its own rule
+                    not_added = sorted(p for p in trusted if p not in added)
+                    unproven = sorted(claimed - set(trusted))
+                    unclaimed = sorted(set(trusted) - claimed)
+                    if not_added or unproven or unclaimed:
+                        raise Refusal(EXIT_STATE, "the install record committed at %s doesn't match the adoption "
+                                      "that commit made; nothing was changed" % anchor[:12],
+                                      ["not added by that commit: %s" % p for p in not_added[:10]]
+                                      + ["claimed but not the release's adopted file: %s" % p for p in unproven[:10]]
+                                      + ["the release's adopted file, not claimed: %s" % p for p in unclaimed[:10]]
+                                      + ["commit an adoption as one commit (git add -A, then git commit), or "
+                                         "undo it by hand from git"])
             elif not journal:
                 raise Refusal(EXIT_STATE, "there is no install record to undo")
             else:
