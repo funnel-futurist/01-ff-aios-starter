@@ -466,23 +466,57 @@ def _adopted_subset(target, info, shipped, managed, problems):
     return {p for p in managed if classes.get(p) == "adopt"}
 
 
+def _source_release(source_repo, release_id):
+    """The source's own record of a release, from its tag or else the checked-out tree, or None."""
+    if not release_id or not re.match(r"^starter-[0-9][A-Za-z0-9.+-]*$", str(release_id)):
+        return None
+    for ref in ("refs/tags/%s" % release_id, "HEAD"):
+        text = util.git(source_repo, ["show", "%s:releases/%s.json" % (ref, release_id)], check=False)
+        if text:
+            try:
+                return json.loads(text)
+            except ValueError:
+                continue
+    return None
+
+
 def _managed_match_pin(record, source_repo):
-    """Problems if the record's managed files aren't exactly the release it's pinned to: each one a
-    file that release ships, with that release's bytes, and the pin confirmed by the source's own
-    release record. A pull request can't change the release source, so a record claiming a file of the
-    instance's as managed fails here (independent review, 3.1 round 38)."""
+    """Problems if the record isn't exactly a release the source knows: its id is starter-<its version>,
+    the source's own record of that release names the same pin and version, and every managed entry is
+    a file that release ships as managed, with that release's bytes and executable bit. A pull request
+    can't change the release source, so a record claiming a file of the instance's, a file the release
+    doesn't ship, or another version, fails here (independent review, 3.1 rounds 38 and 39)."""
     rel = record.get("release") or {}
-    rev = rel.get("git_rev")
+    rev, release_id, version = rel.get("git_rev"), rel.get("release_id"), rel.get("version")
     if not rev or not util.rev_exists(source_repo, rev):
         return ["the release source doesn't have the pinned commit %s" % (rev or "?")[:12]]
     problems = []
-    if _pin_confirmation(source_repo, rel.get("release_id"), rev, problems) is None and not problems:
-        problems.append("%s has no record of %s" % (source_repo, rel.get("release_id")))
-    pinned = {path: sha256_bytes(data) for path, _mode, data in util.read_tree(source_repo, rev)}
+    if release_id != "starter-%s" % version:
+        problems.append("the record's release %r and version %r disagree" % (release_id, version))
+    source = _source_release(source_repo, release_id)
+    if not isinstance(source, dict):
+        problems.append("%s has no record of %s" % (source_repo, release_id))
+    elif (source.get("created_from") or {}).get("git_rev") != rev or source.get("version") != version:
+        problems.append("the source's record of %s names another pin or version" % release_id)
+    # What the release shipped is its record's file list in the source, the very list its installer was
+    # given (each release's own code decided it, so it's never recomputed with this one's); a record
+    # without one is read from the pinned commit with the release's own package spec.
+    listed = source.get("files") if isinstance(source, dict) else None
+    if isinstance(listed, list) and all(isinstance(f, dict) for f in listed):
+        shipped = {f.get("path"): (f.get("class"), f.get("mode"), f.get("sha256")) for f in listed}
+    else:
+        try:
+            shipped = {p: (c, m, sha) for p, c, m, sha in
+                       release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))}
+        except Refusal as exc:
+            return problems + ["cannot read what %s ships: %s" % (release_id, exc.message)]
     for entry in record.get("managed") or []:
         path = entry.get("path") if isinstance(entry, dict) else None
-        if pinned.get(path) is None or pinned[path] != entry.get("sha256"):
-            problems.append("%s isn't the pinned release's own file" % path)
+        info = shipped.get(path)
+        if not info or info[0] != "managed" or info[2] != entry.get("sha256"):
+            problems.append("%s isn't a managed file of the pinned release, with its bytes" % path)
+        elif "exec" in entry and bool(entry["exec"]) != (info[1] == "100755"):
+            problems.append("%s's executable bit isn't the pinned release's" % path)
     return problems
 
 
@@ -1169,7 +1203,24 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     release_mod.require_consumable(manifest, source_repo, aios_lookup)
     manifest = dict(manifest)
     manifest.pop("_adoption", None)  # only ever set below, in this process, never read from a file
-    if record.get("adoption"):
+    # Adopted or not is read from git history, never only from the committed record a pull request can
+    # edit: an adopted record that lost its adoption would get the plain upgrade, and a plain one that
+    # gained one would get an adopted plan's upgrade (independent review, 3.1 round 39).
+    lineage = _adopted_lineage(target)
+    info = record.get("adoption")
+    if lineage and not isinstance(info, dict):
+        raise Refusal(EXIT_STATE, "this workspace was adopted (commit %s added its install record with the "
+                                  "adoption), but the record doesn't say so any more; nothing was changed"
+                      % lineage[0][:12], ["restore the record's adoption from git, then upgrade"])
+    if lineage and (info.get("plan") or ADOPTION_PLAN) != (lineage[1].get("plan") or ADOPTION_PLAN):
+        raise Refusal(EXIT_STATE, "the install record names another adoption plan than the adoption made "
+                                  "(commit %s); nothing was changed" % lineage[0][:12],
+                      ["restore the record's adoption from git, then upgrade"])
+    if info and not lineage and util.in_head(target, os.path.relpath(install_record_path(target), target)):
+        raise Refusal(EXIT_STATE, "the install record says this workspace was adopted, but no commit added it "
+                                  "as an adoption; nothing was changed",
+                      ["restore the record from git, then upgrade"])
+    if info:
         manifest = _adopted_upgrade_view(target, record, manifest)
 
     current_version = (record.get("release") or {}).get("version")
@@ -1198,11 +1249,13 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # that note), and an adopted instance's record must also match the release it's pinned to, checked
     # against the release source, which a pull request can't change (independent review, 3.1 round 38).
     _check_state(target)
-    if record.get("adoption"):
-        pinned_problems = _managed_match_pin(record, source_repo)
-        if pinned_problems:
-            raise Refusal(EXIT_VERIFY, "this adopted instance's install record doesn't match the release it's "
-                                       "pinned to; nothing was changed", pinned_problems[:20])
+    # Every workspace, not only one whose record says it's adopted: a pull request could drop that key
+    # (independent review, 3.1 round 39). An untouched record always passes: its managed files are its
+    # pinned release's own.
+    pinned_problems = _managed_match_pin(record, source_repo)
+    if pinned_problems:
+        raise Refusal(EXIT_VERIFY, "this workspace's install record doesn't match the release it's pinned to; "
+                                   "nothing was changed", pinned_problems[:20])
     if util.worktree_dirty(target):
         raise Refusal(EXIT_STATE,
                       "the workspace has uncommitted git changes; commit or stash them so the "
@@ -2726,6 +2779,31 @@ def _release_adopted(record, plan, source_repo):
                                   "changed", problems or ["%s has no record of %s" % (source_repo, rel.get("release_id"))])
     shipped = release_mod.select_files(source_repo, rev, release_mod.load_spec(source_repo, rev))
     return {p: s for p, _c, _m, s in shipped if _adoption_class(plan, p) == "adopt"}
+
+
+def _adopted_lineage(target):
+    """(commit, adoption) for the latest commit that added the install record with an adoption in it,
+    from git history, which a pull request can only add to; None if no commit ever did. A record that
+    was ever committed as an adoption stays one: a later edit can't drop or swap its adoption to get
+    the plain upgrade, which writes the whole release (independent review, 3.1 round 39)."""
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    if not util.head_spellings(target, record_rel) and not util.git(
+            target, ["log", "-1", "--format=%H", "--", ":(literal)" + record_rel], check=False):
+        return None
+    if util.git(target, ["rev-parse", "--is-shallow-repository"], check=False) == "true":
+        raise Refusal(EXIT_STATE, "this clone's history is cut short, so whether this workspace was adopted "
+                                  "can't be read from it; nothing was changed",
+                      ["git fetch --unshallow, then run this again"])
+    out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "--", ":(literal)" + record_rel], check=False)
+    for commit in out.split():
+        raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
+        try:
+            added = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            continue
+        if isinstance(added, dict) and isinstance(added.get("adoption"), dict):
+            return commit, added["adoption"]
+    return None
 
 
 def _config_came_with_adoption(target, config_rel, anchor):

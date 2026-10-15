@@ -10,6 +10,7 @@ business founder role separate from CODEOWNER permission."
 import json
 import os
 import shutil
+import subprocess
 import sys
 import unittest
 
@@ -2684,3 +2685,130 @@ class ReviewRoundThirtyEight(ReviewRoundThirtyTwo):
         ours = self.forge_roles_as_managed()
         self.forget_state()  # a fresh clone has no note
         self.upgrade_refused(ours, "doesn't match the release it's pinned to")
+
+
+class ReviewRoundThirtyNine(ReviewRoundThirtyEight):
+    """Codex, 3.1 round 39: whether a workspace was adopted, and which release it's on, come from what a
+    pull request can't change (git history and the release source), never only from the record."""
+
+    def v31(self):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        return harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+
+    def edit_record(self, change, msg, target=None):
+        target = target or self.target
+        path = install_mod.install_record_path(target)
+        record = util.read_json(path)
+        change(record)
+        util.write_json(path, record)
+        run_git(target, "add", "-A")
+        run_git(target, "commit", "-qm", msg)
+        note = os.path.join(target, ".aios", "backups", "state", "head.json")
+        if os.path.isfile(note):
+            os.remove(note)  # a fresh clone: no local note to catch the edit
+
+    def adopted(self):
+        self.adopt()
+        self.commit("adopted")
+
+    def refused(self, *texts):
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, self.v31(), self.source)
+        said = exc.message + "\n" + "\n".join(exc.details or [])
+        for text in texts:
+            self.assertIn(text, said)
+        return exc
+
+    def unadopt(self, record):
+        """The edit Codex described: drop the adoption, and call two of the instance's own files managed,
+        with their current hashes, so the plain upgrade would take them over."""
+        record.pop("adoption")
+        for rel in (".aios/roles.json", ".claude/settings.json"):
+            record["managed"].append({"path": rel, "exec": False,
+                                      "sha256": util.sha256_file(os.path.join(self.target, rel))})
+
+    def test_an_adopted_record_that_drops_its_adoption_is_refused(self):
+        self.adopted()
+        self.edit_record(self.unadopt, "a pull request drops the adoption")
+        self.refused("doesn't say so any more")
+
+    def test_so_is_one_removed_and_added_back_without_it(self):
+        self.adopted()
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        run_git(self.target, "rm", "-q", "--cached", ".aios/install.json")
+        run_git(self.target, "commit", "-qm", "drop the record")
+        self.unadopt(record)
+        self.edit_record(lambda r: r.clear() or r.update(record), "add it back, plain")
+        self.refused("doesn't say so any more")
+
+    def test_an_adopted_record_naming_another_plan_is_refused(self):
+        self.adopted()
+        write(self.target, "ours/other_plan.json", json.dumps(PLAN, indent=2))
+        self.edit_record(lambda r: r["adoption"].update(plan="ours/other_plan.json"), "another plan")
+        self.refused("another adoption plan")
+
+    def test_a_plain_record_that_gains_an_adoption_is_refused(self):
+        plain = os.path.join(self.tmp, "plain")
+        install_mod.install(plain, self.v, self.source, harness.config())
+        run_git(plain, "init", "-q", "-b", "main")
+        run_git(plain, "config", "user.email", "client@example.com")
+        run_git(plain, "config", "user.name", "client")
+        run_git(plain, "add", "-A")
+        run_git(plain, "commit", "-qm", "installed")
+        write(plain, ".aios/adoption.json", json.dumps(PLAN, indent=2))
+        self.edit_record(lambda r: r.update(adoption={"plan": ".aios/adoption.json", "created": [],
+                                                      "made_dirs": []}), "a pull request says adopted", plain)
+        before = snapshot(plain)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.upgrade(plain, self.v31(), self.source)
+        self.assertIn("no commit added it as an adoption", ctx.exception.message)
+        self.assertEqual(diff(before, snapshot(plain)), [])
+
+    def test_a_file_the_release_excludes_is_never_managed(self):
+        self.adopted()
+        rel = "evidence/notes.md"  # in the pinned commit's tree, but the release excludes it
+        data = util.git(self.source, ["show", "%s:%s" % (self.v["created_from"]["git_rev"], rel)], binary=True)
+        write(self.target, rel, data)
+        self.edit_record(lambda r: r["managed"].append({"path": rel, "sha256": util.sha256_bytes(data),
+                                                        "exec": False}),
+                         "a pull request calls our file the release's")
+        self.refused("doesn't match the release it's pinned to",
+                     "%s isn't a managed file of the pinned release" % rel)
+
+    def test_an_executable_bit_the_release_doesnt_give_is_refused(self):
+        self.adopted()
+        rel = "START_HERE.md"
+        os.chmod(os.path.join(self.target, rel), 0o755)
+
+        def flip(record):
+            for entry in record["managed"]:
+                if entry["path"] == rel:
+                    entry["exec"] = True
+        self.edit_record(flip, "a pull request makes it executable")
+        self.refused("%s's executable bit isn't the pinned release's" % rel)
+
+    def test_a_version_the_release_record_doesnt_give_is_refused(self):
+        self.adopted()
+        self.edit_record(lambda r: r["release"].update(version="2.9.0"), "a pull request says we're older")
+        self.refused("doesn't match the release it's pinned to", "disagree",
+                     "names another pin or version")
+
+    def test_a_shallow_clone_cant_say_whether_it_was_adopted(self):
+        self.adopted()
+        shallow = os.path.join(self.tmp, "shallow")
+        subprocess.run(["git", "clone", "-q", "--depth", "1", "file://" + self.target, shallow], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        before = snapshot(shallow)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.upgrade(shallow, self.v31(), self.source)
+        self.assertIn("cut short", ctx.exception.message)
+        self.assertEqual(diff(before, snapshot(shallow)), [])
+
+    def test_without_a_file_list_the_pinned_commit_decides(self):
+        """A release record without its file list: what the release ships is read from the pinned commit."""
+        rid = self.v["release_id"]
+        bare = dict(self.v)
+        bare.pop("files")
+        write(self.source, "releases/%s.json" % rid, json.dumps(bare, indent=2))
+        run_git(self.source, "commit", "-qam", "a record without its file list")
+        self.test_a_file_the_release_excludes_is_never_managed()

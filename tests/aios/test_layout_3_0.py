@@ -129,6 +129,7 @@ class Layout3(Sandbox):
         # 2.x ships one managed file inside an old folder, like 07_Setup's walkthroughs.
         self.rev2 = harness.bump_source(self.source, {"07_Setup/walkthrough.md": "# setup\n"})
         self.v2 = harness.approve(harness.build_manifest(self.source, self.rev2, "2.10.0"))
+        self.rev2_recorded = util.git(self.source, ["rev-parse", "HEAD"])  # the pin plus its record
         install_mod.install(self.target, self.v2, self.source, harness.config())
         self.client_content()
         self.git_commit("2.10.0 and my work")
@@ -310,7 +311,7 @@ class MapLine(Layout3):
     def test_two_lines_from_one_upgrade_come_off_byte_for_byte(self):
         spec = dict(V3_SPEC, seed_lines=[{"path": "CLAUDE.md", "line": CORE_LINE},
                                          {"path": "CLAUDE.md", "line": MAP_LINE}])
-        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2)
+        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2_recorded)
         rev3 = bump_to_v3(self.source, spec=spec, extra={
             "CLAUDE.md": "# Your AIOS\n\n%s\n%s\n" % (CORE_LINE, MAP_LINE),
             ".aios/operator_core/OPERATOR_CORE.md": "# core\n"})
@@ -422,7 +423,7 @@ class Interrupted(Layout3):
     def test_a_kill_before_the_journal_rolls_nothing_back(self):
         """An upgraded workspace whose 3.0 upgrade dies while planning: rollback must not undo the
         earlier upgrade. Simulated exactly as a kill leaves it: the lock, no journal."""
-        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2)
+        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2_recorded)
         rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\n2.10.1\n"})
         v2b = harness.approve(harness.build_manifest(self.source, rev, "2.10.1"))
         install_mod.upgrade(self.target, v2b, self.source)
@@ -962,7 +963,7 @@ class SeedLineOnAMovedFile(Layout3):
         target_file = "00_AIOS/company/market_analysis/_workspace.md"
         spec = dict(V3_SPEC, seed_lines=[{"path": "CLAUDE.md", "line": MAP_LINE},
                                          {"path": target_file, "line": "@00_AIOS/routing.md"}])
-        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2)
+        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2_recorded)
         rev3 = bump_to_v3(self.source, spec=spec, extra={
             target_file: "# market\n\n@00_AIOS/routing.md\n"})
         v3 = harness.approve(harness.build_manifest(self.source, rev3, "3.0.0"))
@@ -1065,7 +1066,7 @@ class SecondReviewRegressions(Layout3):
         self.assertTrue(os.path.exists(os.path.join(self.target, ".aios/lock")))
 
     def test_r2_3_a_finished_rollback_killed_before_unlocking_isnt_repeated(self):
-        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2)
+        harness.run_git(self.source, "reset", "-q", "--hard", self.rev2_recorded)
         rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\n2.10.1\n"})
         install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "2.10.1")),
                             self.source)
@@ -1303,7 +1304,10 @@ class FourthCodexRegressions(Layout3):
 
     def test_r4_1_a_release_may_never_take_over_a_seed(self):
         spec = dict(V3_SPEC, seed=[x for x in V3_SPEC["seed"] if x != "00_AIOS/**"])
+        # 2.10.0's record moves to a tag, off the branch: the release build's own seed check reads the
+        # branch, and this test is about the installer's check when the build's misses.
         harness.run_git(self.source, "reset", "-q", "--hard", self.rev2)
+        harness.build_manifest(self.source, self.rev2, "2.10.0", record="tag")
         rev3 = bump_to_v3(self.source, spec=spec)  # 00_AIOS/company/... is now managed
         v3 = harness.approve(harness.build_manifest(self.source, rev3, "3.0.0"))
         exc = self.refuses_unchanged(self.up, v3)
@@ -1435,7 +1439,9 @@ class FifthCodexRegressions(InstallerReview):
         spec = dict(harness.PACKAGE_SPEC, seed=harness.PACKAGE_SPEC["seed"] + ["notes/x.md"])
         rev1 = harness.bump_source(self.source, {"notes/x.md": "a seed\n",
                                                  "release/package_spec.json": json.dumps(spec)})
-        install_mod.install(self.target, self.v(rev1, "2.10.0"), self.source, harness.config())
+        # 2.10.0's record goes on a tag, off the branch: the release build's own seed check reads the
+        # branch, and this test is about the installer's check when the build's misses.
+        install_mod.install(self.target, self.v(rev1, "2.10.0", record="tag"), self.source, harness.config())
         self.commit_target("2.10.0")
         run_git(self.source, "rm", "-q", "notes/x.md")  # 2.10.1 stops shipping it
         rev2 = harness.bump_source(self.source, {}, "2.10.1")
@@ -1551,7 +1557,7 @@ class SixthCodexRegressions(InstallerReview):
         spec = dict(harness.PACKAGE_SPEC, seed=harness.PACKAGE_SPEC["seed"] + ["Notes/Plan.md"])
         rev1 = harness.bump_source(self.source, {"Notes/Plan.md": "a seed\n",
                                                  "release/package_spec.json": json.dumps(spec)})
-        install_mod.install(self.target, self.v(rev1, "2.10.0"), self.source, harness.config())
+        install_mod.install(self.target, self.v(rev1, "2.10.0", record="tag"), self.source, harness.config())
         os.remove(os.path.join(self.target, "Notes/Plan.md"))
         os.rmdir(os.path.join(self.target, "Notes"))
         self.commit_target("2.10.0, and I deleted the seed")

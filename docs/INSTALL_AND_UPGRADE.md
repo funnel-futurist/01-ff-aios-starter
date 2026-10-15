@@ -265,8 +265,14 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   record it wrote. Rollback refuses unless the committed record is still that one. So a changed
   record, or an older one restored to replay an earlier rollback, is refused.
 - An upgrade trusts the record the same way. It must be the one the note names, when there is a
-  note. An adopted instance's record must also match the release it's pinned to, checked against the
-  release source.
+  note. Every workspace's record must also match the release it's pinned to, checked against the
+  release source: the source's own record of that release names the same commit and version, and
+  each file the record calls managed is one that release ships as managed, with its bytes and
+  executable bit.
+- Whether a workspace was adopted comes from git history, not from the record: if any commit added
+  the record with an adoption in it, the record must still say so, naming the same plan. A record
+  that says adopted when no commit added it that way is refused too. A shallow clone can't show
+  that history, so it refuses until you run `git fetch --unshallow`.
 - A snapshot holding anything git tracks is refused.
 - An adoption plan must be committed under exactly its own name.
 - It trusts your own local, uncommitted state: the ignored journal of an operation that was
