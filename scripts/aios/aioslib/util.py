@@ -348,6 +348,16 @@ def create_new(target_root, relpath, data, mode, before_link=None):
     return tmp
 
 
+def ignored_paths(repo, relpaths):
+    """Which of `relpaths` this repository's git ignore rules would ignore (none outside git)."""
+    if not relpaths or not is_git_repo(repo):
+        return []
+    proc = subprocess.run(["git", "-C", repo, "check-ignore", "--no-index", "--stdin"],
+                          input="\n".join(relpaths).encode("utf-8"),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return sorted(l for l in proc.stdout.decode("utf-8", "replace").splitlines() if l)
+
+
 def is_tracked(repo, relpath):
     """Whether git tracks `relpath` in the worktree at `repo`."""
     proc = subprocess.run(["git", "-C", repo, "ls-files", "--error-unmatch", "--", relpath],

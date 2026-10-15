@@ -1021,6 +1021,12 @@ def _adopted_upgrade_view(target, record, manifest):
         raise Refusal(EXIT_STATE, "this instance's adoption plan doesn't classify every path release %s "
                       "ships exactly once" % manifest["version"],
                       problems[:30] + ["add each to adopt, instance_owned or exclude, then upgrade again"])
+    old_managed = {e["path"] for e in record.get("managed") or []}
+    ignored = util.ignored_paths(target, [p for p in sorted(classes)
+                                          if classes[p] == "adopt" and p not in old_managed])
+    if ignored:
+        raise Refusal(EXIT_STATE, "%d path(s) this upgrade would create are ignored by this repository's git "
+                      "rules" % len(ignored), ignored[:20] + ["un-ignore them, or exclude them in the plan"])
     missing = [p for p in sorted(classes) if classes[p] == "instance_owned"
                and not os.path.lexists(os.path.join(target, p))]
     seeds = [p for p in sorted(classes) if classes[p] == "adopt" and entries[p].get("class") != "managed"]
@@ -1305,6 +1311,17 @@ except ImportError:  # everywhere but Windows
 GUARD_PATH = os.path.join(BACKUP_DIR, "guard")
 
 
+def _guard_path(target):
+    """Where the guard lives: inside git's own folder when the workspace is a git repository, where
+    git status never sees it (so a guard Windows can't delete never shows as a change, before or
+    after an adoption; independent review, 3.1 round 7), else in the reserved backups folder."""
+    git_dir = util.git(target, ["rev-parse", "--absolute-git-dir"], check=False) \
+        if os.path.isdir(target) else ""
+    if git_dir and os.path.isdir(git_dir):
+        return os.path.join(git_dir, "aios-guard")
+    return os.path.join(target, GUARD_PATH)
+
+
 class _RecoveryGuard(object):
     """An OS-held lock around every decision about the workspace lock: taking it, releasing it,
     and judging and clearing a stale one. So two recoveries can't both clear it (independent
@@ -1320,18 +1337,20 @@ class _RecoveryGuard(object):
     its process."""
 
     def __init__(self, target):
-        self.path = os.path.join(target, GUARD_PATH)
+        self.path = _guard_path(target)
+        self.in_backups = self.path == os.path.join(target, GUARD_PATH)
         self.fd = None
 
     def __enter__(self):
         if _fcntl is None and _msvcrt is None:
             raise Refusal(EXIT_STATE, "this system has no file lock the installer can use, so it won't "
                                       "change anything", ["run it on macOS, Linux or Windows"])
-        backups = os.path.dirname(self.path)
-        for part in (os.path.dirname(backups), backups):  # .aios, .aios/backups: real folders
-            if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
-                raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
-        os.makedirs(backups, exist_ok=True)
+        if self.in_backups:
+            backups = os.path.dirname(self.path)
+            for part in (os.path.dirname(backups), backups):  # .aios, .aios/backups: real folders
+                if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
+                    raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
+            os.makedirs(backups, exist_ok=True)
         nofollow = getattr(os, "O_NOFOLLOW", 0)
         while True:
             # Made by this run, or already there (left on Windows, or a file of the repository's own,
@@ -1773,13 +1792,16 @@ def _reserved_before_adoption(target):
         if os.path.lexists(os.path.join(target, rel)):
             out.append("%s exists: another operation is running, or one was interrupted "
                        "(`aios rollback` clears it)" % rel.replace(os.sep, "/"))
-    guard = os.path.join(target, GUARD_PATH)
-    if os.path.lexists(guard):
-        rel = GUARD_PATH.replace(os.sep, "/")
-        st = os.lstat(guard)
-        if not stat.S_ISREG(st.st_mode) or st.st_size or (util.is_git_repo(target)
-                                                          and util.is_tracked(target, rel)):
-            out.append("%s is a file of this repository's own; the installer needs that path" % rel)
+    backups = os.path.join(target, BACKUP_DIR)
+    if os.path.lexists(backups):
+        rel = BACKUP_DIR.replace(os.sep, "/")
+        if os.path.islink(backups) or not os.path.isdir(backups):
+            out.append("%s is a link or a file of this repository's own; the installer needs that folder" % rel)
+        elif os.listdir(backups):
+            # The installer's own backups folder holding anything already would mix the repository's
+            # files with the installer's records (independent review, 3.1 round 7).
+            out.append("%s already holds files of this repository's own; the installer needs that folder "
+                       "empty" % rel)
     return out
 
 
@@ -1853,6 +1875,13 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             raise Refusal(EXIT_STATE, "this workspace already has a different organization config",
                           [config_path, "adopt with --config pointing at it, or move it aside"])
     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    ignored = util.ignored_paths(target, [e["path"] for e in adopt] + [record_rel]
+                                 + ([config_rel] if config_created else []))
+    if ignored:
+        # Written but ignored, it would never reach the commit, and a fresh clone would lack it
+        # (independent review, 3.1 round 7).
+        raise Refusal(EXIT_STATE, "%d path(s) adoption would create are ignored by this repository's git "
+                      "rules" % len(ignored), ignored[:20] + ["un-ignore them, or exclude them in the plan"])
     linked = _linked_paths(target, [e["path"] for e in adopt] + [config_rel, record_rel])
     if linked:
         raise Refusal(EXIT_STATE, "adoption would write through a link or a file in a folder's place",

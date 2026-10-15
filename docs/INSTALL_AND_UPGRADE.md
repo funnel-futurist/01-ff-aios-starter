@@ -208,7 +208,9 @@ python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.j
 - the plan uses a catch-all such as `**` (name what each heading covers, so nothing is
   classified silently), or adopts nothing;
 - the plan or the role policy isn't committed, or this isn't a git repository;
-- one of the installer's own paths (`.aios/lock`, `.aios/txn.json`, `.aios/backups/`) is taken;
+- one of the installer's own paths (`.aios/lock`, `.aios/txn.json`) is taken, or `.aios/backups/`
+  already holds files;
+- a file it would create is ignored by your git rules (it would never reach your commit);
 - an adopted path already exists, or the way to it runs through a link;
 - a path you called yours is missing;
 - you have no role policy of your own (rollback and upgrade read it);

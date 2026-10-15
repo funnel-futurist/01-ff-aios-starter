@@ -764,21 +764,24 @@ class ReviewRoundFive(Existing):
             self.assertEqual(fh.read(), "a file of ours\n")
 
     def test_the_guard_never_deletes_a_file_that_was_already_there(self):
-        write(self.target, ".aios/backups/guard", "")
+        guard = install_mod._RecoveryGuard(self.target).path
+        with open(guard, "w") as fh:
+            fh.write("")
         with install_mod._RecoveryGuard(self.target):
             pass
-        self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/backups/guard")))
-        os.remove(os.path.join(self.target, ".aios/backups/guard"))
+        self.assertTrue(os.path.isfile(guard))
+        os.remove(guard)
         with install_mod._RecoveryGuard(self.target):
-            self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/backups/guard")))
-        self.assertFalse(os.path.exists(os.path.join(self.target, ".aios/backups/guard")))  # made, so taken back
+            self.assertTrue(os.path.isfile(guard))
+        self.assertFalse(os.path.exists(guard))  # made, so taken back
 
 
 class ReviewRoundSix(Existing):
     """Codex, 3.1 round 6."""
 
+    @unittest.skipIf(os.name == "nt", "Windows can't remove an open file, so nothing can replace it")
     def test_the_guard_never_deletes_a_file_that_replaced_its_own(self):
-        guard = os.path.join(self.target, ".aios/backups/guard")
+        guard = install_mod._RecoveryGuard(self.target).path
         with install_mod._RecoveryGuard(self.target):
             os.remove(guard)  # someone takes the name while this run holds the lock
             with open(guard, "w") as fh:
@@ -797,3 +800,32 @@ class ReviewRoundSix(Existing):
             governance.parse)
         self.assertEqual(lane, [".github/**", "CLAUDE.md", ".gitignore"])
         self.assertEqual(reviewers, ["@a", "@b"])
+
+
+class ReviewRoundSeven(Existing):
+    """Codex and Gemini, 3.1 round 7."""
+
+    def test_in_a_git_repository_the_guard_never_shows_as_a_change(self):
+        guard = install_mod._RecoveryGuard(self.target).path
+        self.assertNotIn(os.path.realpath(self.target) + os.sep + ".aios", os.path.realpath(guard))
+        with open(guard, "w") as fh:  # what Windows leaves behind: it can't delete an open file
+            fh.write("")
+        self.assertEqual(util.git(self.target, ["status", "--porcelain", "--ignored", "--untracked-files=all"]), "")
+        before = snapshot(self.target)
+        self.adopt()
+        install_mod.rollback(self.target)
+        self.assertEqual(diff(before, snapshot(self.target)), [])
+
+    def test_an_adopted_path_the_repository_ignores_is_refused(self):
+        write(self.target, ".gitignore", "node_modules/\n.env\nscripts/\n")
+        self.commit("we ignore scripts/")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("ignored by this repository's git rules", exc.message)
+        self.assertIn("scripts/team/git-safety-check.sh", exc.details)
+
+    def test_the_installers_backups_folder_must_be_empty(self):
+        write(self.target, ".aios/backups/notes.txt", "ours\n")
+        self.commit("a file of ours in .aios/backups")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("own paths", exc.message)
+        self.assertTrue(any("already holds files" in d for d in exc.details), exc.details)
