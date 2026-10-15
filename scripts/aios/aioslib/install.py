@@ -1385,6 +1385,7 @@ class _RecoveryGuard(object):
     its process."""
 
     def __init__(self, target):
+        self.target = target
         self.path = _guard_path(target)
         self.in_backups = self.path == os.path.join(target, GUARD_PATH)
         self.fd = None
@@ -1393,11 +1394,14 @@ class _RecoveryGuard(object):
         if _fcntl is None and _msvcrt is None:
             raise Refusal(EXIT_STATE, "this system has no file lock the installer can use, so it won't "
                                       "change anything", ["run it on macOS, Linux or Windows"])
+        # .aios and .aios/backups must be real folders wherever the guard lives: every lock, journal,
+        # record and backup goes through them, and a link would send those writes outside the
+        # workspace (independent review, 3.1 round 21: the guard's move into git's folder had skipped it).
+        backups = os.path.join(self.target, BACKUP_DIR)
+        for part in (os.path.dirname(backups), backups):
+            if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
+                raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
         if self.in_backups:
-            backups = os.path.dirname(self.path)
-            for part in (os.path.dirname(backups), backups):  # .aios, .aios/backups: real folders
-                if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
-                    raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
             os.makedirs(backups, exist_ok=True)
         nofollow = getattr(os, "O_NOFOLLOW", 0)
         while True:

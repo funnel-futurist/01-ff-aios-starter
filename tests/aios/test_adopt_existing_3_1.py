@@ -1673,3 +1673,42 @@ class ReviewRoundTwenty(Existing):
         self.assertNotEqual(code, 0, out + err)
         self.assertIn("not the installer's lock", out + err)
         self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/lock")))
+
+
+class ReviewRoundTwentyOne(Existing):
+    """Codex, 3.1 round 21: in a git workspace too, .aios and its backups folder must be real folders."""
+
+    def adopted(self):
+        self.adopt()
+        self.commit("adopted")
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        return outside
+
+    def test_an_upgrade_never_backs_up_through_a_linked_backups_folder(self):
+        outside = self.adopted()
+        with open(os.path.join(self.target, ".gitignore"), "a") as fh:
+            fh.write("/.aios/backups\n")  # so the link itself is ignored and the worktree stays clean
+        self.commit("ignore the backups path, link or not")
+        backups = os.path.join(self.target, ".aios", "backups")
+        if os.path.isdir(backups):
+            os.rmdir(backups)
+        os.symlink(outside, backups)
+        self.assertEqual(util.git(self.target, ["status", "--porcelain"]), "")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.upgrade(self.target, v31, self.source)
+        self.assertIn("is a link or a file, not a folder", ctx.exception.message)
+        self.assertEqual(os.listdir(outside), [])
+
+    def test_rollback_never_writes_through_a_linked_aios_folder(self):
+        outside = self.adopted()
+        os.rmdir(outside)
+        shutil.move(os.path.join(self.target, ".aios"), outside)
+        os.symlink(outside, os.path.join(self.target, ".aios"))
+        before = _tree(outside)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target)
+        self.assertIn("is a link or a file, not a folder", ctx.exception.message)
+        self.assertEqual(diff(before, _tree(outside)), [])
