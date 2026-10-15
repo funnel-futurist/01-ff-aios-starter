@@ -121,17 +121,24 @@ def _record_shape_problems(record):
     migration = record.get("layout_migration")
     if migration is not None and not (isinstance(migration, dict) and isinstance(migration.get("plan"), str)):
         problems.append("'layout_migration' isn't an object naming its plan")
-    info = record.get("adoption")
-    if info is not None:
+    if "adoption" in record:
+        # Adopted or not is whether the key is there; when it is, it's the whole object an adoption writes,
+        # so an empty or partial one can't pass for either (independent review, 3.1 round 43).
+        info = record["adoption"]
         if not isinstance(info, dict):
             problems.append("'adoption' isn't an object")
         else:
-            problems += ["adoption.%s isn't text" % k for k in ("plan", "plan_sha256", "record_sha256")
-                         if not text(info.get(k))]
+            problems += ["adoption.%s isn't text" % k for k in ("plan", "plan_sha256")
+                         if not isinstance(info.get(k), str)]
+            if not text(info.get("record_sha256")):
+                problems.append("adoption.record_sha256 isn't text")
             for k in ADOPTION_CLASSES:
                 value = info.get(k)
-                if value is not None and not (isinstance(value, list) and all(isinstance(p, str) for p in value)):
+                if not (isinstance(value, list) and all(isinstance(p, str) for p in value)):
                     problems.append("adoption.%s isn't a list of patterns" % k)
+            for k in ("created", "made_dirs"):
+                if not isinstance(info.get(k), list):
+                    problems.append("adoption.%s isn't a list" % k)
             entries("created", {"path": path, "sha256": sha, "mode": opt_number}, info, "adoption.created")
             entries("made_dirs", {"path": path, "dev": opt_number, "ino": opt_number, "reserved": opt_bool},
                     info, "adoption.made_dirs")
@@ -391,8 +398,6 @@ def _journal_problems(journal):
     if op == "rollback":
         if not isinstance(journal.get("current_record"), dict):
             out.append("current_record is missing")
-        if journal.get("source_repo") is not None and not isinstance(journal.get("source_repo"), str):
-            out.append("source_repo isn't a path")
         if not isinstance(journal.get("created") or [], list):
             out.append("created isn't a list")
     if op == "adopt-existing":
@@ -466,13 +471,13 @@ def verify(target, record=None, source_repo=None):
             # per-entry checks above have nothing to say. What the release shipped is the list
             # (independent review).
             want_managed = {p for p, info in shipped.items() if info[0] == "managed"}
-            if record.get("adoption"):
+            if "adoption" in record:
                 want_managed = _adopted_subset(target, record["adoption"], set(shipped), want_managed, problems)
             listed = {e.get("path") for e in record.get("managed") or [] if isinstance(e, dict)}
             for path in sorted(want_managed - listed):
                 problems.append("the pinned release manages %s, but the install record doesn't "
                                 "list it" % path)
-            if record.get("adoption"):
+            if "adoption" in record:
                 # Both ways for an adopted instance: a managed file its plan doesn't adopt is one
                 # the record shouldn't claim (independent review, 3.1 round 12).
                 for path in sorted(p for p in listed - want_managed if isinstance(p, str)):
@@ -628,7 +633,8 @@ def _seed_line_problems(record, source_repo):
     request could add an entry that names any file and any bytes, which a later rollback would then cut
     from that file. Each entry must be a line a release up to this workspace's own declared, in its
     source record, with exactly the bytes the installer appends; the lines the last upgrade appended
-    must be its own release's (independent review, 3.1 round 41)."""
+    must be its own release's; and every line this workspace's release declares has its entry
+    (independent review, 3.1 rounds 41 and 43)."""
     version = (record.get("release") or {}).get("version")
     current = util.parse_semver(version or "")
     declared = {}
@@ -641,6 +647,14 @@ def _seed_line_problems(record, source_repo):
                                  if isinstance(sl, dict)}
         return declared[release]
 
+    # Complete, too: the installer records every line its release declares, whatever it found, so a
+    # declared line with no entry was removed from the record, and an upgrade would append it again
+    # even where the client took it out (independent review, 3.1 round 43). An adopted instance never
+    # gets seed lines.
+    if current and "adoption" not in record:
+        recorded = {(e.get("path"), e.get("line")) for e in record.get("seed_lines") or []}
+        for path, line in sorted(declares(version) - recorded, key=str):
+            problems.append("%s: the record has no entry for the seed line `%s` release %s declares" % (path, line, version))
     for kind in ("seed_lines", "seed_lines_added"):
         for entry in record.get(kind) or []:
             path, line, release = entry.get("path"), entry.get("line"), entry.get("release")
@@ -1345,7 +1359,7 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     lineage = _lineage_problem(target, record)
     if lineage:
         raise Refusal(EXIT_STATE, lineage[0] + "; nothing was changed", lineage[1])
-    if record.get("adoption"):
+    if "adoption" in record:
         manifest = _adopted_upgrade_view(target, record, manifest)
 
     current_version = (record.get("release") or {}).get("version")
@@ -2042,7 +2056,7 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
             result = (record, summary, "the previous rollback had finished; cleared what it left, "
                                        "rolled nothing further back")
         else:
-            result = _rollback_locked(target, journal, source_repo)
+            result = _rollback_locked(target, journal)
         _sweep_temporaries(target)  # whatever a killed operation's state writes left (3.1 round 17)
     # A finished rollback keeps its journal, marked complete, until its lock is gone: a kill in
     # between must not make the next rollback go back one release too far (independent review).
@@ -2108,7 +2122,7 @@ def _completed_adoption(target):
     return bool(record.get("adoption")) and not record.get("previous")
 
 
-def _rollback_locked(target, journal, source_repo=None):
+def _rollback_locked(target, journal):
     record_path = install_record_path(target)
     current = None
     if os.path.isfile(record_path):
@@ -2225,17 +2239,17 @@ def _rollback_locked(target, journal, source_repo=None):
                               "can't trust it; nothing was changed",
                               ["restore it from git (git checkout -- .aios/install.json), then run rollback "
                                "again"])
-    elif current.get("adoption") or (isinstance(snapshot_prior, dict) and snapshot_prior.get("adoption")):
-        # Whether this is an adopted instance is read from the snapshot's own, local, prior record too:
-        # a committed record could drop its "adoption" to look like an older upgrade (round 33).
-        raise Refusal(EXIT_STATE, "this adopted instance's upgrade kept no copy of the record it wrote, so "
-                                  "rollback can't trust the record; nothing was changed")
-    elif "seed_lines_added" in current:
-        # Only a 3.1 upgrade writes this field, and every 3.1 upgrade keeps the copy above: without it,
-        # the field came from somewhere else, such as a pull request (independent review, 3.1 round 42).
-        raise Refusal(EXIT_STATE, "the install record lists seed lines an upgrade appended, but that upgrade's "
-                                  "copy of the record it wrote isn't here, so rollback can't trust them; "
-                                  "nothing was changed", ["restore the record from git, then run rollback again"])
+    else:
+        # Every 3.1 upgrade keeps that copy. Without it, the upgrade was made by an earlier installer, and
+        # only the committed record says what it changed: which files to remove, which seed lines to cut.
+        # A pull request could have edited it since, so this installer doesn't act on it (independent
+        # review, 3.1 rounds 33, 42 and 43). That release's own installer can still roll it back.
+        raise Refusal(EXIT_STATE, "this upgrade was made by an installer before 3.1, which kept no copy of the "
+                                  "record it wrote, so this installer can't trust the record to say what the "
+                                  "upgrade changed; nothing was changed",
+                      ["roll it back with that release's own installer, the one in this workspace: "
+                       "python3 scripts/aios/aios.py rollback --target .",
+                       "or go back with git, from the commit before the upgrade"])
     migration = current.get("layout_migration") or {}
     if migration:
         plan_path = os.path.join(target, migration.get("plan") or "")
@@ -2273,28 +2287,9 @@ def _rollback_locked(target, journal, source_repo=None):
     # next `rollback` reads this and finishes the job (independent review).
     journal = {"op": "rollback", "backup": previous["backup"], "started_at": util.now_iso(),
                "from_version": (current.get("release") or {}).get("version"),
-               "to_version": previous.get("version"), "current_record": current, "created": created,
-               # The release source, when given: an earlier installer's seed lines come off only when it
-               # confirms them, on a resumed rollback too (independent review, 3.1 round 42).
-               "source_repo": os.path.abspath(source_repo) if source_repo else None}
+               "to_version": previous.get("version"), "current_record": current, "created": created}
     util.write_json(journal_path(target), journal)
     return _finish_rollback(target, journal)
-
-
-def _legacy_seed_lines(current, version, source_repo):
-    """(undo, unconfirmed) for a record written before 3.1: its entries for this release that an upgrade
-    appended, split by whether the release source confirms each one, in an installer's exact bytes."""
-    claimed = [e for e in current.get("seed_lines") or [] if e.get("state") == "added" and e.get("release") == version]
-    declared = set()
-    if source_repo and util.rev_exists(source_repo, "HEAD"):
-        src = _source_release(source_repo, "starter-%s" % version)
-        declared = {(sl.get("path"), sl.get("line")) for sl in (src or {}).get("seed_lines") or []
-                    if isinstance(sl, dict)}
-    undo, unconfirmed = [], []
-    for e in claimed:
-        exact = e.get("appended") in ("\n%s\n" % e["line"], "\n\n%s\n" % e["line"])
-        (undo if exact and (e["path"], e["line"]) in declared else unconfirmed).append(e)
-    return undo, unconfirmed
 
 
 def _finish_rollback(target, journal, resumed=False):
@@ -2328,15 +2323,12 @@ def _finish_rollback(target, journal, resumed=False):
         # Exactly what that upgrade appended, recorded by it alone: an entry carried in the record from
         # before the upgrade, which a pull request could have written, is never acted on (independent
         # review, 3.1 round 41). The record here is the one the upgrade wrote: it matched that upgrade's
-        # own copy before the journal was written (round 42).
+        # own copy before the journal was written (rounds 42 and 43).
         undo = current.get("seed_lines_added") or []
     else:
-        # A record an earlier installer wrote, with no copy to check it against: a line comes off only in
-        # the exact bytes an installer appends, and only when the release source confirms the release
-        # declared it; anything else is left and reported (independent review, 3.1 round 42).
-        undo, unconfirmed = _legacy_seed_lines(current, version, journal.get("source_repo"))
-        notes += ["%s still has `%s`: rollback can't confirm an upgrade appended it (run rollback with --repo "
-                  "<the Starter> to check, or remove it yourself)" % (e["path"], e["line"]) for e in unconfirmed]
+        # Only a rollback an earlier installer started, killed, and now finished from its own local journal:
+        # finished by the rule it began with.
+        undo = [e for e in current.get("seed_lines") or [] if e.get("state") == "added" and e.get("release") == version]
     notes += _undo_seed_lines(target, undo)
     if the_plan:
         layout_mod.reverse(target, the_plan, journal["backup"])

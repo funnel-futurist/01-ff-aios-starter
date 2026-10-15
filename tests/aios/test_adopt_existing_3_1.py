@@ -2757,8 +2757,10 @@ class ReviewRoundThirtyNine(ReviewRoundThirtyEight):
         run_git(plain, "add", "-A")
         run_git(plain, "commit", "-qm", "installed")
         write(plain, ".aios/adoption.json", json.dumps(PLAN, indent=2))
-        self.edit_record(lambda r: r.update(adoption={"plan": ".aios/adoption.json", "created": [],
-                                                      "made_dirs": []}), "a pull request says adopted", plain)
+        plan_sha = util.sha256_file(os.path.join(plain, ".aios/adoption.json"))
+        self.edit_record(lambda r: r.update(adoption=dict(PLAN, plan=".aios/adoption.json", plan_sha256=plan_sha,
+                                                          created=[], made_dirs=[])),
+                         "a pull request says adopted", plain)
         before = snapshot(plain)
         with self.assertRaises(Refusal) as ctx:
             install_mod.upgrade(plain, self.v31(), self.source)
@@ -2959,19 +2961,20 @@ class ReviewRoundFortyOne(Existing):
 
 
 class ReviewRoundFortyTwo(Layout3):
-    """Codex, 3.1 round 42: a rollback of an upgrade an earlier installer made (no copy of the record it
-    wrote) trusts no seed line a pull request could have put in the record."""
+    """Codex, 3.1 rounds 42 and 43: an upgrade an earlier installer made kept no copy of the record it wrote,
+    so this installer won't roll it back on the committed record's word, which a pull request could have
+    edited: not its seed lines, not its managed files."""
 
     MINE = "notes/mine.md"
 
-    def as_an_earlier_installer_left_it(self):
-        """2.10.0 -> 3.0.0 appends the map line; then the snapshot and record look as a 3.0 upgrade leaves
-        them: no copy of the record it wrote, no `seed_lines_added`, and no local note (a fresh clone)."""
+    def as_an_earlier_installer_left_it(self, before_upgrade=None):
+        """2.10.0 -> 3.0.0; then the snapshot and record look as a 3.0 upgrade leaves them: no copy of the
+        record it wrote, no `seed_lines_added`, and no local note (a fresh clone)."""
         write(self.target, self.MINE, "keep this\nprivate\n")
+        if before_upgrade:
+            before_upgrade()
         self.git_commit("mine")
-        self.original_claude = self.read("CLAUDE.md", "rb")
         self.up()
-        self.assertIn(MAP_LINE, self.read("CLAUDE.md"))
         path = install_mod.install_record_path(self.target)
         record = util.read_json(path)
         os.remove(os.path.join(self.target, record["previous"]["backup"], "after.json"))
@@ -2987,35 +2990,48 @@ class ReviewRoundFortyTwo(Layout3):
         util.write_json(path, record)
         self.git_commit(msg)
 
-    def test_a_forged_seed_lines_added_without_the_upgrades_copy_is_refused(self):
+    def refused(self):
+        for args in ((), (self.source,)):
+            exc = self.refuses_unchanged(install_mod.rollback, self.target, *args)
+            self.assertIn("made by an installer before 3.1", exc.message)
+            self.assertTrue(any("python3 scripts/aios/aios.py rollback" in d for d in exc.details), exc.details)
+
+    def test_even_an_untouched_one_is_refused_and_names_the_way(self):
+        self.as_an_earlier_installer_left_it()
+        self.refused()
+
+    def test_a_forged_seed_lines_added_is_refused(self):
         path, record = self.as_an_earlier_installer_left_it()
         record["seed_lines_added"] = [{"path": self.MINE, "line": "private", "appended": "\nprivate\n",
                                        "release": "3.0.0"}]
         self.forge(path, record, "a pull request adds the 3.1 field")
-        exc = self.refuses_unchanged(install_mod.rollback, self.target)
-        self.assertIn("can't trust them", exc.message)
+        self.refused()
 
-    def forged_legacy_line(self):
+    def test_a_forged_seed_line_is_refused(self):
         path, record = self.as_an_earlier_installer_left_it()
         record["seed_lines"].append({"path": self.MINE, "line": "private", "state": "added", "release": "3.0.0",
                                      "appended": "\nprivate\n"})
         self.forge(path, record, "a pull request records a seed line")
-        return self.read(self.MINE, "rb")
+        self.refused()
 
-    def test_with_the_release_source_only_its_declared_lines_come_off(self):
-        mine = self.forged_legacy_line()
-        _r, _s, how = install_mod.rollback(self.target, self.source)
-        self.assertEqual(self.read(self.MINE, "rb"), mine)
-        self.assertEqual(self.read("CLAUDE.md", "rb"), self.original_claude)  # the declared map line came off
-        self.assertIn("%s still has `private`" % self.MINE, how)
+    def test_a_forged_managed_client_file_is_refused(self):
+        """Codex, round 43: the rollback would have removed the client's file as one the upgrade added."""
+        path, record = self.as_an_earlier_installer_left_it()
+        record["managed"].append({"path": self.MINE, "exec": False,
+                                  "sha256": util.sha256_file(os.path.join(self.target, self.MINE))})
+        self.forge(path, record, "a pull request calls the client's file the release's")
+        self.refused()
 
-    def test_without_it_nothing_comes_off_and_it_says_so(self):
-        mine = self.forged_legacy_line()
-        _r, _s, how = install_mod.rollback(self.target)
-        self.assertEqual(self.read(self.MINE, "rb"), mine)
-        self.assertIn(MAP_LINE, self.read("CLAUDE.md"))
-        self.assertIn("CLAUDE.md still has `%s`" % MAP_LINE, how)
-        self.assertIn("--repo", how)
+    def test_a_line_the_client_had_turned_added_is_refused(self):
+        """Codex, round 43: the line was the client's before the upgrade (state present)."""
+        def mine_already():
+            write(self.target, "CLAUDE.md", self.read("CLAUDE.md") + "\n%s\n" % MAP_LINE)
+        path, record = self.as_an_earlier_installer_left_it(mine_already)
+        entry = [e for e in record["seed_lines"] if e["line"] == MAP_LINE][0]
+        self.assertEqual(entry["state"], "present")
+        entry.update(state="added", appended="\n%s\n" % MAP_LINE)
+        self.forge(path, record, "a pull request says the upgrade added it")
+        self.refused()
 
 
 class ReviewRoundFortyTwoShapes(Existing):
@@ -3031,7 +3047,8 @@ class ReviewRoundFortyTwoShapes(Existing):
         forged = [("adoption", dict(good["adoption"], plan=1)), ("credentials", [{}]),
                   ("previous", {"backup": 1, "version": "2.9.0"}), ("created_seeds", [{"path": 1}]),
                   ("layout_migration", {"plan": None}), ("adoption", dict(good["adoption"], created=[{"path": "x"}])),
-                  ("adoption", dict(good["adoption"], adopt="all")), ("pre_existing_dirs", [1])]
+                  ("adoption", dict(good["adoption"], adopt="all")), ("pre_existing_dirs", [1]),
+                  ("adoption", {}), ("adoption", {"plan": ".aios/adoption.json"}), ("adoption", None)]
         for key, value in forged:
             util.write_json(path, dict(good, **{key: value}))
             for fn in (lambda: install_mod.verify(self.target),
@@ -3086,3 +3103,26 @@ class GeminiRoundFortyTwo(Layout3):
         install_mod.rollback(self.target)
         self.assertEqual(self.read("CLAUDE.md", "rb"), on_v3)
         self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.0.0")
+
+
+class ReviewRoundFortyThree(Layout3):
+    """Codex, 3.1 round 43: a seed line's entry deleted from the record never brings the line back."""
+
+    def test_a_deleted_entry_never_brings_back_a_line_you_removed(self):
+        self.up()  # 3.0.0 appends the map line
+        write(self.target, "CLAUDE.md", self.read("CLAUDE.md").replace("\n%s\n" % MAP_LINE, ""))  # taken out
+        self.git_commit("I don't want that line")
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["seed_lines"] = [e for e in record["seed_lines"] if e["line"] != MAP_LINE]
+        util.write_json(path, record)
+        note = os.path.join(self.target, ".aios", "backups", "state", "head.json")
+        if os.path.isfile(note):
+            os.remove(note)
+        self.git_commit("a pull request drops its entry")
+        rev = bump_to_v3(self.source, extra={"START_HERE.md": "# start here\n3.0.1\n"})
+        v301 = harness.approve(harness.build_manifest(self.source, rev, "3.0.1"))
+        exc = self.refuses_unchanged(self.up, v301)
+        self.assertTrue(any("has no entry for the seed line `%s`" % MAP_LINE in d for d in exc.details), exc.details)
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertTrue(any("has no entry for the seed line" in p for p in problems), problems)

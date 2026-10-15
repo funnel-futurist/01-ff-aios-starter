@@ -271,13 +271,14 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   executable bit.
 - A seed line the record says a release appended must be one that release (yours or an earlier one)
   declared, with exactly the bytes the installer appends. Rolling back an upgrade takes back only the
-  lines that upgrade itself appended, never one carried in the record from before, and trusts that
-  list only while the upgrade's own copy of the record matches it.
-- Rolling back an upgrade an earlier installer made (before 3.1, so with no such copy) takes a seed
-  line back only when `--repo` shows the release declared it, in an installer's exact bytes. Without
-  `--repo` it leaves those lines and names each one.
+  lines that upgrade itself appended, never one carried in the record from before. Every line the
+  workspace's release declares must have its entry, so a line you removed isn't appended again.
+- An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
+  back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
+  Roll it back with that release's own installer, the one in the workspace
+  (`python3 scripts/aios/aios.py rollback --target .`), or with git.
 - A record that isn't in the shape the installer writes (a list that isn't a list, a path that isn't
-  text) is refused when it's read, before anything else.
+  text, an adoption missing any of its parts) is refused when it's read, before anything else.
 - Whether a workspace was adopted comes from git history, not from the record: if any commit added
   the record with an adoption in it, the record must still say so, naming the same plan. A record
   that says adopted when no commit added it that way is refused too. A shallow clone can't show
