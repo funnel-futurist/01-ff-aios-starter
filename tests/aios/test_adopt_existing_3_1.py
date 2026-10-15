@@ -2617,3 +2617,28 @@ class ReviewRoundThirtySix(ReviewRoundThirtyFive):
         self.assertEqual(code, 0, out + err)
         for p in ADOPTED:
             self.assertFalse(os.path.lexists(os.path.join(self.target, p)), p)
+
+
+class ReviewRoundThirtySeven(ReviewRoundThirtyTwo):
+    """Codex, 3.1 round 37: a finished rollback's leftover journal is checked against the note too."""
+
+    def test_a_finished_rollback_killed_before_cleanup_refuses_a_changed_record(self):
+        self.upgraded()
+        install_mod.rollback(self.target, self.source)  # finished: the note names the restored record
+        self.commit("rolled back")
+        record_path = install_mod.install_record_path(self.target)
+        current = util.read_json(record_path)
+        util.write_json(install_mod.journal_path(self.target),
+                        {"op": "rollback", "phase": "complete", "backup": ".aios/backups/x", "current_record": current})
+        write(self.target, "notes/ours.md", "ours\n")
+        changed = json.loads(json.dumps(current))
+        changed["managed"].append({"path": "notes/ours.md", "sha256": util.sha256_file(
+            os.path.join(self.target, "notes/ours.md")), "exec": False})
+        util.write_json(record_path, changed)
+        self.commit("a pull request adds a file of ours to the record")
+        before = _tree(self.target)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(self.target, self.source)
+        self.assertIn("isn't the one this workspace's last operation wrote", ctx.exception.message)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+        self.assertTrue(os.path.isfile(install_mod.journal_path(self.target)))

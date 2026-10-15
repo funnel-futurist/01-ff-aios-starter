@@ -1820,6 +1820,9 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                       + ("" if left else ", and the workspace is no longer pinned to a release")
                       + "".join("; " + n for n in journal.get("notes") or []))
         elif journal and journal.get("op") == "rollback" and journal.get("phase") == "complete":
+            # It had finished and noted the record it wrote: the record must still be that one before
+            # anything is cleared (independent review, 3.1 round 37).
+            _check_state(target)
             record = load_record(target)
             problems, summary = verify(target, record)
             if problems:  # (independent review, round 3) never report success over drift
