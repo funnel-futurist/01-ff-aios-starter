@@ -557,15 +557,28 @@ def _adopted_subset(target, info, shipped, managed, problems):
 
 def _source_release(source_repo, release_id):
     """The source's own record of a release, from its tag or else the checked-out tree, or None."""
+    found = _source_record(source_repo, release_id)
+    return found[1] if found else None
+
+
+def _source_record(source_repo, release_id):
+    """(where, record) for the source's own record of a release: its tag's, or else the checked-out
+    tree's; None when it has none. A tag that carries only a draft is skipped: it was placed before the
+    approval was recorded (the 2.6.0 shape, which `release check-tag` refuses too), and a clone made
+    while such a tag was published keeps it after it's deleted (independent review, 3.1 round 44)."""
     if not release_id or not re.match(r"^starter-[0-9][A-Za-z0-9.+-]*$", str(release_id)):
         return None
     for ref in ("refs/tags/%s" % release_id, "HEAD"):
         text = util.git(source_repo, ["show", "%s:releases/%s.json" % (ref, release_id)], check=False)
-        if text:
-            try:
-                return json.loads(text)
-            except ValueError:
-                continue
+        if not text:
+            continue
+        try:
+            record = json.loads(text)
+        except ValueError:
+            continue
+        if not isinstance(record, dict) or (ref != "HEAD" and record.get("status") == "draft"):
+            continue
+        return ("tag " + release_id if ref != "HEAD" else "HEAD") + ":releases/%s.json" % release_id, record
     return None
 
 
@@ -667,22 +680,14 @@ def _pin_confirmation(source_repo, release_id, rev, problems):
     """Where the source records this release's pin (the release's tag, then the checked-out
     tree), or None when it has no record of it. A record naming another pin is a problem: the
     install record's pin was edited, or it is not this release."""
-    if not release_id or not re.match(r"^starter-[0-9][A-Za-z0-9.+-]*$", release_id):
+    found = _source_record(source_repo, release_id)
+    if not found:
         return None
-    for ref in ("refs/tags/%s" % release_id, "HEAD"):
-        text = util.git(source_repo, ["show", "%s:releases/%s.json" % (ref, release_id)], check=False)
-        if not text:
-            continue
-        try:
-            pin = (json.loads(text).get("created_from") or {}).get("git_rev")
-        except ValueError:
-            continue
-        where = "%s:releases/%s.json" % ("tag " + release_id if ref != "HEAD" else "HEAD", release_id)
-        if pin != rev:
-            problems.append("the install record pins %s, but %s pins %s"
-                            % ((rev or "?")[:12], where, (pin or "?")[:12]))
-        return where
-    return None
+    where, record = found
+    pin = (record.get("created_from") or {}).get("git_rev") if isinstance(record.get("created_from"), dict) else None
+    if pin != rev:
+        problems.append("the install record pins %s, but %s pins %s" % ((rev or "?")[:12], where, (pin or "?")[:12]))
+    return where
 
 
 def require_verified(target, record=None, what="workspace"):

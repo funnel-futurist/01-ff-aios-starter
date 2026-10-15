@@ -3220,3 +3220,21 @@ class ReviewRoundFortyFourVerify(Layout3):
         problems, _ = install_mod.verify(self.target)
         self.assertTrue(any("unsafe path: %r" % out_rel in p for p in problems), problems)
         self.assertTrue(any("linked/secret.md is reached through a link" in p for p in problems), problems)
+
+
+class ReviewRoundFortyFourTag(Layout3):
+    """3.1 round 44 (the upgrade rehearsal from a local clone): a tag that carries only a draft for another
+    pin, the 2.6.0 shape a clone keeps after the tag is deleted upstream, doesn't block an upgrade."""
+
+    def test_a_stale_draft_tag_doesnt_block_the_upgrade(self):
+        stale = dict(self.v2, status="draft")
+        stale.pop("approval", None)
+        stale["created_from"] = dict(stale["created_from"], git_rev=util.git(self.source, ["rev-parse", self.rev2 + "^"]))
+        run_git(self.source, "checkout", "-q", "-b", "stale-tag", self.rev2)
+        write(self.source, "releases/starter-2.10.0.json", json.dumps(stale, indent=2))
+        run_git(self.source, "add", "-A")
+        run_git(self.source, "commit", "-qm", "a draft, tagged before the approval")
+        run_git(self.source, "tag", "starter-2.10.0")
+        run_git(self.source, "checkout", "-q", "main")
+        record = self.up()
+        self.assertEqual(record["release"]["version"], "3.0.0")

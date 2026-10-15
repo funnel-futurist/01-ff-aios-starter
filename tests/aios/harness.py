@@ -128,6 +128,9 @@ def build_manifest(repo, rev, version, credentials=None, min_upgrade_from=None,
         if subprocess.run(["git", "-C", repo, "diff", "--cached", "--quiet", "--", rel]).returncode:
             run_git(repo, "commit", "-qm", "record %s" % manifest["release_id"], "--", rel)
     elif record == "tag":
+        # A tag carries the approved record, as a real release's does (a draft on a tag is skipped).
+        text = json.dumps(approve(manifest), indent=2) + "\n"
+
         def git(args, data=None, env=None):
             return subprocess.run(["git", "-C", repo] + args, input=data, env=env, check=True,
                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
