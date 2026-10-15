@@ -1948,3 +1948,84 @@ class ReviewRoundTwentyFour(Existing):
         self.commit("adopted, the people map with it")
         self.rollback_ok()
         self.assertEqual(diff(before, _tree(self.target)), [])
+
+
+class ReviewRoundTwentyFive(ReviewRoundTwentyFour):
+    """Gemini, 3.1 round 25: the people map the adoption made, as git has kept it."""
+
+    def test_a_people_map_edited_since_the_adoption_stays(self):
+        self.adopt()
+        self.commit("adopted")
+        config = os.path.join(self.target, ".aios/config.json")
+        data = util.read_json(config)
+        data["people"].append({"github": "acme-lead", "role": "operator", "display_name": "Lead"})
+        util.write_json(config, data)
+        self.commit("we added someone")
+        entry = self.entry(".aios/config.json")  # the edited file's own hash
+
+        def forged(r):
+            r["adoption"]["created"] = [c for c in r["adoption"]["created"] if c["path"] != ".aios/config.json"]
+            r["adoption"]["created"].append(entry)
+        self.forge(forged)
+        self.rollback_ok()
+        self.assertEqual(util.read_json(config), data)
+
+    def test_a_staged_but_uncommitted_adoption_rolls_back_exactly(self):
+        before = _tree(self.target)
+        self.adopt()
+        run_git(self.target, "add", "-A")  # staged, never committed
+        self.rollback_ok()
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+
+class ReviewRoundTwentyFiveCodex(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 25: neither a journal nor a later plan can widen what rollback removes."""
+
+    def test_a_tracked_journal_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        record = util.read_json(install_mod.install_record_path(self.target))
+        entry = self.entry("README.md")
+        journal = {"op": "adopt-undo", "phase": "undoing", "adoption": dict(record["adoption"], created=[entry]),
+                   "trusted": {"README.md": entry["sha256"]}}
+        util.write_json(install_mod.journal_path(self.target), journal)
+        run_git(self.target, "add", "-f", ".aios/txn.json")
+        self.commit("a journal, as a pull request could bring")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("not the installer's journal", out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, "README.md")))
+
+    def test_a_resumed_undo_re_derives_what_it_may_remove(self):
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        code, _o, _e = self.cli("rollback", "--target", self.target, "--repo", self.source,
+                                env={"AIOS_FAULT": "crash:adopt.undo_before"})
+        self.assertEqual(code, 137)
+        journal = install_mod.load_journal(self.target)
+        journal["adoption"]["created"].append(self.entry("README.md"))
+        journal["trusted"]["README.md"] = self.entry("README.md")["sha256"]  # local, but never trusted
+        util.write_json(install_mod.journal_path(self.target), journal)
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertNotEqual(code, 0, out + err)  # resuming needs the release's source too
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, "README.md")))
+        for p in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(self.target, p)), p)
+
+    def test_a_plan_changed_after_the_adoption_cant_widen_it(self):
+        self.adopt()
+        self.commit("adopted")
+        with open(os.path.join(self.source, "README.md"), "rb") as fh:
+            write(self.target, "README.md", fh.read().decode("utf-8"))  # ours, with the release's bytes
+        plan = json.loads(json.dumps(PLAN))
+        plan["instance_owned"].remove("README.md")
+        plan["adopt"].append("README.md")
+        self.write_plan(plan)
+        self.commit("the plan now says README.md is adopted")
+        self.forge(lambda r: r["adoption"]["created"].append(self.entry("README.md")))
+        self.rollback_ok()
+        self.assertTrue(os.path.isfile(os.path.join(self.target, "README.md")))

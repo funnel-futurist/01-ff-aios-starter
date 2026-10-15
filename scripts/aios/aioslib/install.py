@@ -1534,6 +1534,14 @@ def _reclaim_stale_lock(stale, target=None):
 def _rollback_after_reclaim(target, stale_lock, source_repo=None):
     with _Lock(target, "rollback"):
         journal = load_journal(target)
+        txn_rel = os.path.relpath(journal_path(target), target).replace(os.sep, "/")
+        if journal and util.is_tracked(target, txn_rel):
+            # The installer's journal is never committed (.aios/.gitignore ignores it): a tracked one is
+            # a file anyone's pull request could have written (independent review, 3.1 round 25).
+            raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's journal; "
+                                      "nothing was changed" % txn_rel,
+                          ["if an interrupted operation left it and it was committed by mistake, untrack it "
+                           "(git rm --cached %s), commit, and run rollback again" % txn_rel])
         if stale_lock and not journal and not os.path.isfile(install_record_path(target)):
             # Killed before its journal, with no release ever pinned here (an adoption that hadn't
             # started writing): nothing changed, so there is nothing to undo (independent review,
@@ -1572,13 +1580,17 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                 record = load_record(target)
                 trusted = _release_adopted(target, record, source_repo)
                 journal = {"op": "adopt-undo", "phase": "undoing", "started_at": util.now_iso(),
-                           "adoption": record["adoption"], "trusted": trusted,
+                           "adoption": record["adoption"], "release": record.get("release"), "trusted": trusted,
                            "config": orgconfig.load(target) if os.path.isfile(
                                orgconfig.default_config_path(target)) else None}
                 util.write_json(journal_path(target), journal)
             if journal.get("phase") != "complete":
                 util.fault("adopt.undo_before")
-                notes = _undo_adoption(target, journal.get("adoption") or {}, trusted=journal.get("trusted") or {})
+                # Never the journal's own list, even resuming: re-derived from the release every time
+                # (independent review, 3.1 round 25).
+                trusted = _release_adopted(target, {"release": journal.get("release") or {},
+                                                    "adoption": journal.get("adoption") or {}}, source_repo)
+                notes = _undo_adoption(target, journal.get("adoption") or {}, trusted=trusted)
                 journal["phase"] = "complete"
                 journal["notes"] = notes
                 util.write_json(journal_path(target), journal)
@@ -2263,13 +2275,13 @@ def _reachable(target, rel):
     return bool(rel) and util.safe_relpath(rel) and not _linked_paths(target, [rel])
 
 
-def _committed_plan(target, rel):
-    """The adoption plan as git has it committed (HEAD), or None: the working tree's copy could say
+def _committed_plan(target, rel, rev="HEAD"):
+    """The adoption plan as git has it committed (at `rev`), or None: the working tree's copy could say
     anything (independent review, 3.1 round 24)."""
     rel = (rel or ADOPTION_PLAN).replace(os.sep, "/")
     if not util.safe_relpath(rel):
         return None
-    text = util.git(target, ["show", "HEAD:" + rel], check=False)
+    text = util.git(target, ["show", "%s:%s" % (rev, rel)], check=False)
     try:
         plan = json.loads(text) if text else None
     except ValueError:
@@ -2300,7 +2312,13 @@ def _release_adopted(target, record, source_repo):
     if where is None or problems:
         raise Refusal(EXIT_STATE, "the release source doesn't confirm this install record's pin; nothing was "
                                   "changed", problems or ["%s has no record of %s" % (source_repo, rel.get("release_id"))])
-    plan = _committed_plan(target, (record.get("adoption") or {}).get("plan"))
+    # The plan that governed the adoption: as committed in the commit that first added the install
+    # record. A later change takes effect through an upgrade, never through rollback, so a pull request
+    # changing the plan can't make an instance-owned file removable (independent review, 3.1 round 25).
+    # While the record isn't committed yet, it is local, and HEAD's plan is the one it was made with.
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    first = _first_added(target, record_rel) if util.is_tracked(target, record_rel) else None
+    plan = _committed_plan(target, (record.get("adoption") or {}).get("plan"), first or "HEAD")
     if plan is None:
         raise Refusal(EXIT_STATE, "the adoption plan isn't committed, so rollback can't tell which files were "
                                   "adopted; nothing was changed", ["commit the plan, then run rollback again"])
@@ -2324,7 +2342,18 @@ def _config_came_with_adoption(target, config_rel, record_rel):
     if not util.is_tracked(target, record_rel):
         return False
     first = _first_added(target, config_rel)
-    return first is not None and first == _first_added(target, record_rel)
+    if first != _first_added(target, record_rel):
+        return False
+    if first is None:
+        return True  # both only staged so far: the adoption's own, not yet committed (3.1 round 25)
+    # And unchanged since: an edit committed later is the repository's, whatever the record's hash
+    # says (independent review, 3.1 round 25).
+    committed = util.git(target, ["show", "%s:%s" % (first, config_rel)], binary=True, check=False)
+    try:
+        with open(os.path.join(target, config_rel), "rb") as fh:
+            return fh.read() == committed
+    except OSError:
+        return False
 
 
 def _undo_may_remove(target, info):
