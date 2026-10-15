@@ -1366,9 +1366,14 @@ class _RecoveryGuard(object):
         if self.fd is not None:
             if getattr(self, "created", False):
                 try:
-                    os.remove(self.path)  # while still held, so no one can be locking it as it goes
+                    # Only if the name still means the very file this run holds: never a file that
+                    # replaced it meanwhile (independent review, 3.1 round 6). While still held, so no
+                    # one can be locking it as it goes.
+                    held, named = os.fstat(self.fd), os.lstat(self.path)
+                    if (held.st_dev, held.st_ino) == (named.st_dev, named.st_ino):
+                        os.remove(self.path)
                 except OSError:
-                    pass  # Windows: an open file can't be deleted; it stays, in the ignored backups
+                    pass  # gone already, or Windows (an open file can't be deleted; it stays, ignored)
             _os_unlock(self.fd)
             os.close(self.fd)
             self.fd = None

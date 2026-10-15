@@ -772,3 +772,28 @@ class ReviewRoundFive(Existing):
         with install_mod._RecoveryGuard(self.target):
             self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/backups/guard")))
         self.assertFalse(os.path.exists(os.path.join(self.target, ".aios/backups/guard")))  # made, so taken back
+
+
+class ReviewRoundSix(Existing):
+    """Codex, 3.1 round 6."""
+
+    def test_the_guard_never_deletes_a_file_that_replaced_its_own(self):
+        guard = os.path.join(self.target, ".aios/backups/guard")
+        with install_mod._RecoveryGuard(self.target):
+            os.remove(guard)  # someone takes the name while this run holds the lock
+            with open(guard, "w") as fh:
+                fh.write("theirs\n")
+        with open(guard) as fh:
+            self.assertEqual(fh.read(), "theirs\n")
+
+    def test_the_rehearsal_reads_every_checkable_rule_exact_files_included(self):
+        import importlib.util
+        path = os.path.join(harness.REPO_ROOT, "evidence/dispatch/p22-starter/release-3.1.0/rehearse_310_aios.py")
+        spec = importlib.util.spec_from_file_location("rehearse_310_aios", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        lane, reviewers = mod.lane_from_codeowners(
+            "/.github/  @a @b\n/CLAUDE.md  @a @b\n.gitignore @a\n**/*.sql @a\n.env* @a\n/docs/*/x @b\n",
+            governance.parse)
+        self.assertEqual(lane, [".github/**", "CLAUDE.md", ".gitignore"])
+        self.assertEqual(reviewers, ["@a", "@b"])
