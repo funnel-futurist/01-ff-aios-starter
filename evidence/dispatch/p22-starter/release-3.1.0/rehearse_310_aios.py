@@ -6,8 +6,9 @@ usage: rehearse_310_aios.py <empty scratch dir> --aios <local ai-os clone> [--br
 Nothing touches the real ai-os. Steps:
   1. a shared clone of ai-os at origin/main (detached), and a fresh GitHub clone of the Starter branch;
   2. a draft record for the candidate, with a REHEARSAL-ONLY approval copy;
-  3. in the ai-os copy only: FF's own role policy (G81 decision 2 draft, with the three CODEOWNERS
-     accounts as founder_lane_reviewers per G98) and the adoption plan, then a commit;
+  3. in the ai-os copy only: FF's own role policy (G81 decision 2 draft: the founder lane and its
+     reviewer accounts read from the copy's own CODEOWNERS, as founder_lane_reviewers per G98) and
+     the adoption plan, then a commit;
   4. the real `aios adopt --existing`, run by a stub founder identity;
   5. checks: exactly the 18 adopted files plus the config and record are new; no tracked file
      changed (ai-os's own 01_Foundations included); verify --repo; instance check; start;
@@ -23,9 +24,21 @@ import sys
 
 RESULTS = []
 ADOPT = ["scripts/aios/**", ".aios/.gitignore", ".template_version.json"]
-LANE = [".github/**", "13_Database_Schemas/**", ".gitignore", ".gitattributes", "CLAUDE.md", "system_context.md",
-        "taxonomy_rules.md", ".claude/skills/**", ".claude/settings.json", ".claude/hooks/**"]
-REVIEWERS = ["@Joburn-ai", "@justine-del", "@phoenix-ship-it"]
+
+
+def lane_from_codeowners(text, parse):
+    """FF's founder lane and its reviewers, read from the copy's own CODEOWNERS at run time (G81
+    decision 2: the lane is exactly what ai-os's CODEOWNERS already owner-gates, where the Starter's
+    check can verify it). Nothing of ai-os's is written into this public file."""
+    lane, reviewers = [], set()
+    for _lineno, pattern, owners in parse(text):
+        p = pattern.lstrip("/")
+        glob = p[:-1] + "/**" if p.endswith("/") else p
+        if any(c in glob[:-3] if glob.endswith("/**") else glob for c in "*?["):
+            continue  # a wildcard rule: GitHub enforces it at review; the check can't prove it
+        lane.append(glob)
+        reviewers.update(o for o in owners if o.startswith("@") and "/" not in o)
+    return lane, sorted(reviewers)
 
 
 def check(name, ok, detail=""):
@@ -75,7 +88,7 @@ def main():
     sh(["git", "clone", "-q", "--shared", "--no-checkout", a.aios, ws])
     main_rev = git(a.aios, "rev-parse", "origin/main")
     sh(["git", "-C", ws, "checkout", "-q", "--detach", main_rev])
-    print("ai-os copy: " + git(ws, "log", "--oneline", "-1"))
+    print("ai-os copy: main at " + git(ws, "rev-parse", "--short", "HEAD"))
     aios = [sys.executable, os.path.join(st, "scripts/aios/aios.py")]
 
     print("\n### S2 the candidate record (draft), and a REHEARSAL-ONLY approval copy")
@@ -97,6 +110,12 @@ def main():
     check("record built at %s (%d files)" % (pin[:7], len(man["files"])), code == 0)
 
     print("\n### S3 FF's own role policy and adoption plan, committed in the copy")
+    sys.path.insert(0, os.path.join(st, "scripts/aios"))
+    from aioslib import governance  # noqa: E402
+    with open(os.path.join(ws, ".github/CODEOWNERS")) as fh:
+        LANE, REVIEWERS = lane_from_codeowners(fh.read(), governance.parse)
+    print("founder lane: %d path(s) from the copy's CODEOWNERS; %d reviewer account(s) declared"
+          % (len(LANE), len(REVIEWERS)))
     policy = json.loads(git(st, "show", "HEAD:.aios/roles.json"))
     policy["_comment"] = ("FF's own role policy for ai-os (instance-owned; G81 decision 2 draft). The founder "
                           "lane is ai-os's own CODEOWNERS-gated paths. founder_lane_reviewers is permission to "
@@ -119,11 +138,14 @@ def main():
     check("plan: %d adopt, %d instance-owned (FF's roles.json among them), %d excluded, %d in all"
           % (len(adopt_hits), len(owned), len(exclude), len(paths)),
           len(adopt_hits) == 18 and ".aios/roles.json" in owned and len(adopt_hits) + len(owned) + len(exclude) == len(paths))
+    # A REHEARSAL-ONLY people map: the operator the stub identity names is the founder; every other
+    # reviewer account is an operator (review permission is not founder status, G98).
+    me = "phoenix-ship-it"
+    people = [{"github": me, "role": "founder", "display_name": "REHEARSAL"}] + [
+        {"github": r.lstrip("@"), "role": "operator", "display_name": "REHEARSAL"}
+        for r in REVIEWERS if r.lstrip("@").lower() != me]
     json.dump({"schema": "ff-aios-starter/org-config@1", "org_id": "funnel-futurist", "repository": "funnel-futurist/ai-os",
-               "people": [{"github": "phoenix-ship-it", "role": "founder", "display_name": "REHEARSAL"},
-                          {"github": "Joburn-ai", "role": "operator", "display_name": "REHEARSAL"},
-                          {"github": "justine-del", "role": "operator", "display_name": "REHEARSAL"}],
-               "credentials": {}, "code_owners": {}}, open(os.path.join(R, "org.json"), "w"))
+               "people": people, "credentials": {}, "code_owners": {}}, open(os.path.join(R, "org.json"), "w"))
 
     print("\n### S4 adopt --existing (the real CLI)")
     before = state(ws)
