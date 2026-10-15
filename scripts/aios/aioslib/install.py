@@ -475,7 +475,7 @@ def verify(target, record=None, source_repo=None):
     lineage = _lineage_problem(target, record)
     if lineage:
         problems.append(lineage[0])
-    problems.extend(_dropped_seed_lines(target, record))
+    problems.extend(p for p in _dropped_seed_lines(target, record) if p not in problems)
     if source_repo:
         rel = record.get("release") or {}
         rev = rel.get("git_rev")
@@ -660,9 +660,20 @@ def _pinned_release(record, source_repo):
     return problems, shipped
 
 
-def _managed_match_pin(record, source_repo):
-    """The problems `_pinned_release` finds."""
-    return _pinned_release(record, source_repo)[0]
+def _unlisted_for_upgrade(target, record, shipped):
+    """Managed files of the pinned release that the record leaves out. An upgrade works from the record's
+    list, so it would neither keep such a file current nor remove it when the new release stops shipping
+    it. For an instance installed whole, every one, as `verify --repo` reports them. For an adopted one,
+    each its committed plan adopts that is in the workspace: one that isn't is a file a changed plan newly
+    adopts, which this upgrade applies (independent review, 3.1 round 48)."""
+    want = {p for p, info in shipped.items() if info[0] == "managed"}
+    if "adoption" in record:
+        plan, _sha = load_adoption_plan(target, record["adoption"].get("plan"))
+        classes, _unclassified = classify_adoption(plan, want)
+        want = {p for p in want if classes.get(p) == "adopt" and os.path.lexists(os.path.join(target, p))}
+    listed = {e.get("path") for e in record.get("managed") or [] if isinstance(e, dict)}
+    return ["the pinned release manages %s, but the install record doesn't list it" % p
+            for p in sorted(want - listed)]
 
 
 _SEED_LINE_STATES = ("added", "present", "absent", "link", "missing")
@@ -1458,7 +1469,12 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # Every workspace, not only one whose record says it's adopted: a pull request could drop that key
     # (independent review, 3.1 round 39). An untouched record always passes: its managed files are its
     # pinned release's own.
-    pinned_problems = _managed_match_pin(record, source_repo) + _seed_line_problems(record, source_repo)
+    # And the list itself, not only each entry on it: an entry taken out would leave its file behind
+    # (independent review, 3.1 round 48).
+    pinned_problems, shipped = _pinned_release(record, source_repo)
+    if shipped is not None:
+        pinned_problems += _unlisted_for_upgrade(target, record, shipped)
+    pinned_problems += _seed_line_problems(record, source_repo)
     if pinned_problems:
         raise Refusal(EXIT_VERIFY, "this workspace's install record doesn't match the release it's pinned to; "
                                    "nothing was changed", pinned_problems[:20])
@@ -2073,8 +2089,11 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                     # changes nothing this undo decides: that comes from the anchor commit.
                     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
                     since = []
-                    for commit in util.git(target, ["log", "--format=%H", "%s..HEAD" % anchor, "--",
-                                                    ":(literal)" + record_rel], check=False).split():
+                    # Every side of every merge: git's default walk follows only a parent the merge
+                    # took this path from, so a branch that upgraded, merged with the record set back,
+                    # would go unseen while its files came along (independent review, 3.1 round 48).
+                    for commit in util.git(target, ["log", "--full-history", "--format=%H", "%s..HEAD" % anchor,
+                                                    "--", ":(literal)" + record_rel], check=False).split():
                         raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
                         try:
                             then = json.loads(raw.decode("utf-8"))
@@ -2924,9 +2943,19 @@ def _added_in(target, commit):
     return {p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p}
 
 
+def _require_whole_history(target):
+    """Refuses in a shallow clone. Git takes the cut-off commit for a root that added every file, so
+    when the install record was added, by what, and what changed it since can't be read from such a
+    history (independent review, 3.1 rounds 39 and 48)."""
+    if util.git(target, ["rev-parse", "--is-shallow-repository"], check=False) == "true":
+        raise Refusal(EXIT_STATE, "this clone's history is cut short, so what the install record went "
+                                  "through can't be read from it", ["git fetch --unshallow, then run this again"])
+
+
 def _latest_added(target, rel):
     """The commit that most recently added `rel` (the path taken literally): the start of its current
-    lifetime in this history. None if it was never committed."""
+    lifetime in this history. None if it was never committed. Refuses in a shallow clone."""
+    _require_whole_history(target)
     out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "-1", "--", ":(literal)" + rel], check=False)
     return out.strip() or None
 
@@ -2951,6 +2980,8 @@ def _adoption_anchor(target, journaled=False):
         anchor = journaled
         if anchor is not None and not re.match(r"^[0-9a-f]{40}$", str(anchor)):
             raise Refusal(EXIT_STATE, "the undo's journal names no usable anchor; nothing was changed")
+        if anchor is not None:
+            _require_whole_history(target)  # what the anchor commit added is read from history
     else:
         # Committed means in HEAD's tree, not merely staged (3.1 round 27), under any spelling a Mac or
         # Windows disk takes for this path; committed under another spelling, it's refused, never read as
@@ -3039,10 +3070,11 @@ def _adopted_lineage(target):
     if not util.head_spellings(target, record_rel) and not util.git(
             target, ["log", "-1", "--format=%H", "--", ":(literal)" + record_rel], check=False):
         return None
-    if util.git(target, ["rev-parse", "--is-shallow-repository"], check=False) == "true":
-        raise Refusal(EXIT_STATE, "this clone's history is cut short, so whether this workspace was adopted "
-                                  "can't be read from it", ["git fetch --unshallow, then run this again"])
-    out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "--", ":(literal)" + record_rel], check=False)
+    _require_whole_history(target)
+    # Every side of a merge, not only the one git would follow for this path: "ever" includes a branch
+    # whose record a merge then set aside (independent review, 3.1 round 48).
+    out = util.git(target, ["log", "--full-history", "--diff-filter=A", "--format=%H", "--",
+                            ":(literal)" + record_rel], check=False)
     for commit in out.split():
         raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
         try:
@@ -3085,7 +3117,10 @@ def _dropped_seed_lines(target, record):
     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
     if not util.in_head(target, record_rel):
         return []
-    anchor = _latest_added(target, record_rel)
+    try:
+        anchor = _latest_added(target, record_rel)
+    except Refusal as exc:
+        return [exc.message]  # a shallow clone: what was dropped can't be read
     commits = util.git(target, ["log", "--format=%H", "--", ":(literal)" + record_rel], check=False).split()
     if anchor in commits:
         commits = commits[:commits.index(anchor) + 1]

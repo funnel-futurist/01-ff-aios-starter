@@ -3410,3 +3410,140 @@ class ReviewRoundFortySeven(Existing):
         self.nest()
         exc = self.refuses_unchanged(install_mod.rollback, self.target, self.source)
         self.assertIn("another repository", exc.message)
+
+
+class ReviewRoundFortyEight(Existing):
+    """Codex, 3.1 round 48: the history an undo reads is whole (never a shallow clone's) and every side
+    of a merge; and an upgrade checks the record's managed list, not only each entry on it."""
+
+    def replay(self, target=None):
+        """Adopt, upgrade, then a pull request restores the adoption's record (round 47's case)."""
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        with open(path, "rb") as fh:
+            adopted = fh.read()
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")),
+                            self.source)
+        self.commit("upgraded")
+        with open(path, "wb") as fh:
+            fh.write(adopted)
+        self.commit("a pull request restores the adoption's record")
+
+    def shallow(self):
+        shallow = os.path.join(self.tmp, "shallow")
+        subprocess.run(["git", "clone", "-q", "--depth", "1", "file://" + self.target, shallow], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return shallow
+
+    def test_a_shallow_clone_refuses_to_undo_an_adoption(self):
+        self.replay()
+        shallow = self.shallow()
+        before = snapshot(shallow)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.rollback(shallow, self.source)
+        self.assertIn("cut short", ctx.exception.message)
+        self.assertEqual(diff(before, snapshot(shallow)), [])
+
+    def test_verify_in_a_shallow_clone_says_so_once(self):
+        self.adopt()
+        self.commit("adopted")
+        problems, _ = install_mod.verify(self.shallow())
+        self.assertEqual(sum("cut short" in p for p in problems), 1, problems)
+
+    def test_an_upgrade_merged_with_the_record_set_back_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        t = self.target
+        path = install_mod.install_record_path(t)
+        with open(path, "rb") as fh:
+            adopted = fh.read()
+        run_git(t, "checkout", "-q", "-b", "upgrade")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        install_mod.upgrade(t, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")), self.source)
+        self.commit("upgraded on a branch")
+        run_git(t, "checkout", "-q", "main")
+        write(t, "06_Clients/acme/more.md", "# more client work\n")
+        self.commit("other work")
+        run_git(t, "merge", "-q", "--no-ff", "--no-commit", "upgrade")
+        with open(path, "wb") as fh:
+            fh.write(adopted)
+        self.commit("the merge sets the record back")
+        self.assertEqual(len(util.git(t, ["rev-list", "--parents", "-1", "HEAD"]).split()), 3)  # a true merge
+        self.forget_state()
+        exc = self.refuses_unchanged(install_mod.rollback, t, self.source)
+        self.assertIn("changed the install record after the adoption committed it", exc.message)
+
+    def test_an_adoption_merged_in_still_undoes_on_a_fresh_clone(self):
+        """The usual way in: the adoption on a branch, merged with a merge commit."""
+        t = self.target
+        run_git(t, "checkout", "-q", "-b", "adopt")
+        self.adopt()
+        self.commit("adopted")
+        run_git(t, "checkout", "-q", "main")
+        write(t, "06_Clients/acme/more.md", "# more client work\n")
+        # Only that file: main doesn't ignore the installer's local folder until the merge brings it.
+        run_git(t, "add", "--", "06_Clients/acme/more.md")
+        run_git(t, "commit", "-qm", "other work")
+        run_git(t, "merge", "-q", "--no-ff", "-m", "merge the adoption", "adopt")
+        self.forget_state()
+        _r, _s, how = install_mod.rollback(t, self.source)
+        self.assertIn("the adoption was undone", how)
+
+    def drop_entry(self, rel):
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["managed"] = [e for e in record["managed"] if e["path"] != rel]
+        util.write_json(path, record)
+        self.commit("a pull request drops %s from the record" % rel)
+        self.forget_state()  # a fresh clone: no local note to catch the edit
+
+    def test_an_upgrade_refuses_a_record_that_leaves_out_an_adopted_file(self):
+        rel = "scripts/team/git-safety-check.sh"
+        self.adopt()
+        self.commit("adopted")
+        self.drop_entry(rel)
+        os.remove(os.path.join(self.source, rel))  # and the next release retires it
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1 retires the hook")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, v31, self.source)
+        said = exc.message + "\n" + "\n".join(exc.details or [])
+        self.assertIn("the pinned release manages %s, but the install record doesn't list it" % rel, said)
+
+    def test_a_plan_that_newly_adopts_a_file_not_here_still_upgrades(self):
+        """A changed plan is the upgrade's to apply: a file it now adopts that the instance doesn't have
+        isn't a dropped entry."""
+        self.adopt()
+        self.commit("adopted")
+        plan = json.loads(json.dumps(PLAN))
+        plan["exclude"].remove("templates/**")
+        plan["adopt"].append("templates/**")
+        self.write_plan(plan)
+        self.commit("adopt the templates too")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")),
+                            self.source)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, "templates/governance/CODEOWNERS.template")))
+
+
+class ReviewRoundFortyEightPlain(Layout3):
+    """Codex, 3.1 round 48, for a workspace installed whole: an upgrade refuses a record that leaves out
+    a managed file of its pinned release, as `verify --repo` does."""
+
+    def test_an_upgrade_refuses_a_record_that_leaves_out_a_managed_file(self):
+        rel = "scripts/team/git-safety-check.sh"
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["managed"] = [e for e in record["managed"] if e["path"] != rel]
+        util.write_json(path, record)
+        note = os.path.join(self.target, ".aios", "backups", "state", "head.json")
+        if os.path.isfile(note):
+            os.remove(note)
+        self.git_commit("a pull request drops the hook from the record")
+        os.remove(os.path.join(self.source, rel))
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\n3.0.1\n"}, "3.0.1 retires the hook")
+        v301 = harness.approve(harness.build_manifest(self.source, rev, "3.0.1", min_upgrade_from="2.6.0"))
+        exc = self.refuses_unchanged(self.up, v301)
+        said = exc.message + "\n" + "\n".join(exc.details or [])
+        self.assertIn("the pinned release manages %s, but the install record doesn't list it" % rel, said)

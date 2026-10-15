@@ -268,11 +268,13 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   note. Every workspace's record must also match the release it's pinned to, checked against the
   release source: the source's own record of that release names the same commit and version, and
   each file the record calls managed is one that release ships as managed, with its bytes and
-  executable bit.
+  executable bit. The record must also list every file that release manages (for an adopted
+  workspace, each its committed plan adopts that is in the workspace), so an upgrade never leaves
+  behind a file the new release stops shipping.
 - A seed line the record says a release appended must be one that release (yours or an earlier one)
   declared, with exactly the bytes the installer appends. Rolling back an upgrade takes back only the
-  lines that upgrade itself appended, never one carried in the record from before. Every line the
-  workspace's release declares must have its entry, so a line you removed isn't appended again.
+  lines that upgrade itself appended, never one carried in the record from before. An entry the
+  record's git history had can't be taken out, so a line you removed isn't appended again.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace
@@ -281,15 +283,18 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   text, an adoption missing any of its parts) is refused when it's read, before anything else.
 - Whether a workspace was adopted comes from git history, not from the record: if any commit added
   the record with an adoption in it, the record must still say so, naming the same plan. A record
-  that says adopted when no commit added it that way is refused too. A shallow clone can't show
-  that history, so it refuses until you run `git fetch --unshallow`.
+  that says adopted when no commit added it that way is refused too. That counts every branch a
+  merge brought in.
+- A shallow clone can't show the committed record's history, so an upgrade, and undoing a
+  committed adoption, refuse there, and `verify` reports it, until you run `git fetch --unshallow`.
 - A snapshot holding anything git tracks is refused.
 - The installer's folder `.aios` must be this repository's own: never a link, and never another
   repository (a submodule, or a repository inside this one), whose files this repository's checks
   can't see.
 - Undoing a committed adoption on a machine with no note of the last operation (a fresh clone)
-  needs no upgrade or rollback since the adoption, as the record's git history shows. If one
-  happened, undo the adoption where it ran, or with git.
+  needs no upgrade or rollback since the adoption, as the record's git history shows, on every
+  branch a merge brought in (even when the merge set the record back). If one happened, undo the
+  adoption where it ran, or with git.
 - An adoption plan must be committed under exactly its own name.
 - It trusts your own local, uncommitted state: the ignored journal of an operation that was
   interrupted, and a record not yet committed. Whoever can edit those can already change any file
