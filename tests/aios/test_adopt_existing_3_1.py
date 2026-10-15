@@ -876,3 +876,81 @@ class ReviewRoundNine(Existing):
         self.commit("a policy without rollback")
         exc = self.refuses_unchanged(self.adopt)
         self.assertIn("upgrade and roll back", exc.message)
+
+
+class ReviewRoundTen(Existing):
+    """Codex, 3.1 round 10."""
+
+    def killed_after_link(self):
+        """An adoption killed after its first file is linked, before the temporary copy goes."""
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:adopt.after_link"})
+        self.assertEqual(code, 137)
+        pending = install_mod.load_journal(self.target)["pending"]
+        self.assertTrue(os.path.samestat(os.lstat(os.path.join(self.target, pending["path"])),
+                                         os.lstat(os.path.join(self.target, pending["temp"]))))
+        return pending
+
+    def rolls_back_keeping(self, pending):
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, pending["path"])), "an edited file was removed")
+        self.assertFalse(os.path.lexists(os.path.join(self.target, pending["temp"])))
+        self.assertIn("left for you", out)
+        return out
+
+    def test_an_edit_after_a_kill_between_link_and_cleanup_is_kept(self):
+        pending = self.killed_after_link()
+        dest = os.path.join(self.target, pending["path"])
+        with open(dest, "a") as fh:  # in place: the inode it shares with the temporary copy
+            fh.write("\n")
+        with open(dest, "rb") as fh:
+            edited = fh.read()
+        self.rolls_back_keeping(pending)
+        with open(dest, "rb") as fh:
+            self.assertEqual(fh.read(), edited)
+
+    def test_a_mode_change_after_a_kill_between_link_and_cleanup_is_kept(self):
+        pending = self.killed_after_link()
+        os.chmod(os.path.join(self.target, pending["path"]), 0o600)
+        self.rolls_back_keeping(pending)
+
+    def no_rollback_policy(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        for role in policy["roles"].values():
+            role["lifecycle"] = [a for a in role.get("lifecycle") or [] if a != "rollback"]
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+
+    def test_a_dead_lock_before_the_journal_is_cleared_whatever_the_policy_says(self):
+        write(self.target, ".aios/config.json", json.dumps(harness.config()))
+        self.no_rollback_policy()
+        self.commit("our config, and a policy nobody may roll back with")
+        write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("cleared a dead operation's lock", out)
+        self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))
+
+    def test_a_live_lock_is_still_never_taken_without_a_role(self):
+        write(self.target, ".aios/config.json", json.dumps(harness.config()))
+        self.no_rollback_policy()
+        self.commit("our config, and a policy nobody may roll back with")
+        write(self.target, ".aios/lock", "adopt pid=%d at now\n" % os.getpid())
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertTrue(os.path.lexists(os.path.join(self.target, ".aios/lock")))
+
+    def test_an_upgrade_refuses_once_the_policy_lets_nobody_roll_back(self):
+        self.adopt()
+        self.commit("adopted")
+        self.no_rollback_policy()
+        self.commit("rollback dropped from every role")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, v31, self.source)
+        self.assertIn("upgrade and roll back", exc.message)

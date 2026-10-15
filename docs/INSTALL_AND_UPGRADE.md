@@ -213,7 +213,8 @@ python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.j
 - a file it would create is ignored by your git rules (it would never reach your commit);
 - an adopted path already exists, or the way to it runs through a link;
 - a path you called yours is missing;
-- you have no role policy of your own (rollback and upgrade read it);
+- you have no role policy of your own (rollback and upgrade read it), or nobody in the people map
+  holds a role it lets both upgrade and roll back;
 - you have uncommitted work, or the workspace is already pinned to a release.
 
 **An existing instance never gets a folder move or a seed line.** Your folders stay where they
@@ -225,10 +226,14 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - `aios rollback` takes back exactly what it created and left unchanged, whether the adoption
   finished or was killed partway.
 - A file you've changed since is left in place, and the message says so.
+- A lock left by an adoption killed before it changed anything is cleared by `aios rollback`
+  with no role needed. A running operation's lock is never taken.
 
 **Upgrades** write only what the plan adopts:
 - A new path the release ships must be added to the plan first, or the upgrade refuses.
 - A file you move from `adopt` to `instance_owned` stays where it is and becomes yours.
+- Your role policy must still let someone in the people map both upgrade and roll back, or the
+  upgrade refuses.
 
 ## What upgrade actually does
 

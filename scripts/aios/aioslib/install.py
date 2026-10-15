@@ -1036,6 +1036,7 @@ def _adopted_upgrade_view(target, record, manifest):
     if ignored:
         raise Refusal(EXIT_STATE, "%d path(s) this upgrade would create are ignored by this repository's git "
                       "rules" % len(ignored), ignored[:20] + ["un-ignore them, or exclude them in the plan"])
+    _require_lifecycle_holder(roles.load_policy(target), orgconfig.load(target))
     missing = [p for p in sorted(classes) if classes[p] == "instance_owned"
                and not os.path.lexists(os.path.join(target, p))]
     seeds = [p for p in sorted(classes) if classes[p] == "adopt" and entries[p].get("class") != "managed"]
@@ -1844,14 +1845,7 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
                        "couldn't be rolled back" % roles.POLICY_PATH])
     if os.path.islink(policy_path):
         raise Refusal(EXIT_STATE, "%s is a link, not the instance's own file" % roles.POLICY_PATH)
-    policy = roles.load_policy(target)
-    able = {name for name, role in (policy.get("roles") or {}).items()
-            if {"upgrade", "rollback"} <= set(role.get("lifecycle") or [])}
-    if not any(p.get("role") in able for p in config.get("people") or []):
-        # Otherwise the adoption could never be upgraded or rolled back (independent review, 3.1 round 9).
-        raise Refusal(EXIT_STATE, "nobody in the people map holds a role the instance's policy lets upgrade "
-                      "and roll back", ["give a role in %s the lifecycle actions upgrade and rollback, and "
-                                        "someone in the people map that role" % roles.POLICY_PATH])
+    _require_lifecycle_holder(roles.load_policy(target), config)
 
     plan_rel = (plan_rel or ADOPTION_PLAN).replace(os.sep, "/")
     plan, plan_sha = load_adoption_plan(target, plan_rel)
@@ -1946,7 +1940,8 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
 
     def create(rel, data, mode, provenance=True):
         def pending(tmp):
-            journal["pending"] = {"path": rel, "temp": os.path.relpath(tmp, target).replace(os.sep, "/")}
+            journal["pending"] = {"path": rel, "temp": os.path.relpath(tmp, target).replace(os.sep, "/"),
+                                  "sha256": sha256_bytes(data), "mode": stat.S_IMODE(os.lstat(tmp).st_mode)}
             util.write_json(journal_path(target), journal)
         tmp = util.create_new(target, rel, data, mode, pending)
         if provenance:
@@ -2021,6 +2016,18 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     return record
 
 
+def _require_lifecycle_holder(policy, config):
+    """Someone in the people map holds a role the instance's own policy lets both upgrade and roll back:
+    otherwise an adoption, or an upgrade of one, could never be rolled back (independent review, 3.1
+    rounds 9 and 10)."""
+    able = {name for name, role in (policy.get("roles") or {}).items()
+            if {"upgrade", "rollback"} <= set(role.get("lifecycle") or [])}
+    if not any(p.get("role") in able for p in (config or {}).get("people") or []):
+        raise Refusal(EXIT_STATE, "nobody in the people map holds a role the instance's policy lets upgrade "
+                      "and roll back", ["give a role in %s the lifecycle actions upgrade and rollback, and "
+                                        "someone in the people map that role" % roles.POLICY_PATH])
+
+
 def _same_bytes_and_mode(target, entry):
     full = os.path.join(target, entry["path"])
     try:
@@ -2050,8 +2057,16 @@ def _undo_adoption(target, info, pending=None):
         tmp = os.path.join(target, pending["temp"])
         if os.path.lexists(tmp):
             if os.path.lexists(dest) and os.path.samestat(os.lstat(dest), os.lstat(tmp)):
-                os.remove(dest)  # still the very copy this run made: the same inode
-                created.append(pending["path"])
+                # The very copy this run made (the same inode), and still the bytes and mode it wrote:
+                # an edit after a kill changes the shared inode, and is the instance's then
+                # (independent review, 3.1 round 10).
+                st = os.lstat(dest)
+                if sha256_file(dest) == pending.get("sha256") and stat.S_IMODE(st.st_mode) == pending.get("mode"):
+                    os.remove(dest)
+                    created.append(pending["path"])
+                else:
+                    notes.append("%s changed after an interrupted adoption made it, so it was left for you"
+                                 % pending["path"])
             os.remove(tmp)
     record_full = install_record_path(target)
     if os.path.isfile(record_full) and not os.path.islink(record_full):

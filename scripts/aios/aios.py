@@ -349,6 +349,16 @@ def cmd_upgrade(args):
 
 def cmd_rollback(args):
     target = os.path.abspath(args.target)
+    nothing_changed = (not install_mod.load_journal(target)
+                       and not os.path.lexists(install_mod.install_record_path(target)))
+    if nothing_changed and install_mod.clear_dead_lock(target):
+        # Nothing was ever changed here, only a dead holder's lock left by an adoption killed before its
+        # journal. Clearing that needs no role, whatever the people map or policy say; a live holder's
+        # lock is never taken (independent review, 3.1 round 10).
+        _say("nothing to roll back: this workspace has no install record and no journal; "
+             "cleared a dead operation's lock")
+        _say("  release:  none (nothing was changed)")
+        return EXIT_OK
     try:
         config = orgconfig.load(target)
     except Refusal:
@@ -357,12 +367,8 @@ def cmd_rollback(args):
         journal = install_mod.load_journal(target) or {}
         if journal.get("op") in ("adopt-existing", "adopt-undo") and journal.get("config"):
             config = journal["config"]
-        elif not journal and not os.path.lexists(install_mod.install_record_path(target)):
-            # Nothing was ever changed here: at most a dead holder's lock from an adoption killed
-            # before its journal. Clearing that needs no role; a live holder's is never taken.
-            cleared = install_mod.clear_dead_lock(target)
-            _say("nothing to roll back: this workspace has no install record and no journal%s"
-                 % ("; cleared a dead operation's lock" if cleared else ""))
+        elif nothing_changed:
+            _say("nothing to roll back: this workspace has no install record and no journal")
             return EXIT_OK
         else:
             raise
