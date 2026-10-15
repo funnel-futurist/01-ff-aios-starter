@@ -2229,3 +2229,35 @@ class ReviewRoundTwentyEight(ReviewRoundTwentyFour):
                 self.assertIn("isn't a journal the installer wrote", out + err)
                 self.assertNotIn("Traceback", err)
         os.remove(install_mod.journal_path(self.target))
+
+
+class ReviewRoundTwentyNine(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 29: the anchor commit must be the adoption itself."""
+
+    def test_a_record_deleted_and_re_added_forged_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        original = util.read_json(path)
+        run_git(self.target, "rm", "-q", ".aios/install.json")
+        self.commit("a pull request deletes the record")
+        forged = json.loads(json.dumps(original))
+        forged["installed_at"] = "re-added"
+        forged = install_mod._sealed(forged)  # sealed, and naming the files the real adoption made
+        with open(path, "wb") as fh:
+            fh.write(install_mod._record_bytes(forged))
+        os.chmod(path, 0o644)
+        self.commit("another pull request re-adds it")
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("didn't add as the release's adopted files", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_an_adoption_committed_in_one_commit_still_rolls_back_exactly(self):
+        before = _tree(self.target)
+        self.adopt()
+        self.commit("adopted, as one commit")
+        self.rollback_ok()
+        self.assertEqual(diff(before, _tree(self.target)), [])

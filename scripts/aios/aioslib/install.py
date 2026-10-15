@@ -1648,6 +1648,21 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                 anchor_record, anchor_plan, anchor = anchored
                 trusted = _release_adopted(anchor_record, anchor_plan, source_repo)
                 info = anchor_record.get("adoption") or {}
+                if anchor:
+                    # The commit that added the record must be the adoption itself: only files it added
+                    # alongside the record can be ones the adoption made, and a record claiming any
+                    # other path is refused outright (independent review, 3.1 round 29).
+                    added = _added_in(target, anchor)
+                    trusted = {p: s for p, s in trusted.items() if p in added}
+                    config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
+                    claimed = [c.get("path") if isinstance(c, dict) else c for c in info.get("created") or []]
+                    unproven = sorted(str(p) for p in claimed if p not in trusted and p != config_rel)
+                    if unproven:
+                        raise Refusal(EXIT_STATE, "the install record committed at %s claims %d file(s) that "
+                                      "commit didn't add as the release's adopted files; nothing was changed"
+                                      % (anchor[:12], len(unproven)),
+                                      unproven[:20] + ["commit an adoption as one commit (git add -A, then "
+                                                       "git commit), or undo it by hand from git"])
             elif not journal:
                 raise Refusal(EXIT_STATE, "there is no install record to undo")
             else:
@@ -1930,6 +1945,15 @@ def load_adoption_plan(target, rel=None):
                       ["an existing instance names every path the release ships as adopt, "
                        "instance_owned or exclude (docs/INSTALL_AND_UPGRADE.md)"])
     plan = util.read_json_safe(full, "adoption plan")
+    problems = _plan_problems(plan)
+    if problems:
+        raise Refusal(EXIT_STATE, "the adoption plan %s isn't usable" % rel, problems)
+    return plan, sha256_file(full)
+
+
+def _plan_problems(plan):
+    """Why a plan can't be used: the wrong schema, a list that isn't paths, or a list that would
+    classify every path at once. The same for the plan on disk and a committed one (3.1 round 29)."""
     problems = []
     if not isinstance(plan, dict) or plan.get("schema") != ADOPTION_SCHEMA:
         problems.append("schema is %r, expected %r" % ((plan or {}).get("schema") if isinstance(plan, dict)
@@ -1945,9 +1969,7 @@ def load_adoption_plan(target, rel=None):
             if all(util.match_any(items, probe) for probe in CATCH_ALL_PROBES):
                 problems.append("%s would classify every path at once (%s); name what it covers "
                                 "(independent review, 3.1)" % (cls, ", ".join(repr(i) for i in items[:5])))
-    if problems:
-        raise Refusal(EXIT_STATE, "the adoption plan %s isn't usable" % rel, problems)
-    return plan, sha256_file(full)
+    return problems
 
 
 def classify_adoption(plan, paths):
@@ -2359,11 +2381,16 @@ def _committed_plan(target, rel, rev="HEAD"):
         plan = json.loads(text) if text else None
     except ValueError:
         return None
-    if not isinstance(plan, dict) or plan.get("schema") != ADOPTION_SCHEMA:
-        return None
-    if not all(isinstance(plan.get(c), list) and all(isinstance(x, str) for x in plan[c]) for c in ADOPTION_CLASSES):
+    if _plan_problems(plan):
         return None
     return plan
+
+
+def _added_in(target, commit):
+    """The paths `commit` added (relative to its first parent; every path for a root commit)."""
+    out = util.git(target, ["diff-tree", "--no-commit-id", "-r", "--root", "--diff-filter=A", "--name-only",
+                            "-z", commit], binary=True, check=False)
+    return {p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p}
 
 
 def _latest_added(target, rel):

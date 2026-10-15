@@ -230,8 +230,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   `aios rollback --target . --repo <your ff-aios-starter clone>`. The install record is committed,
   so anyone's pull request could change it. Rollback therefore trusts only two things: the release
   source, and the install record and plan as they were committed with the adoption.
-  - It removes only files the pinned release ships, that the plan adopted, and that still have the
-    release's bytes.
+  - It removes only files the pinned release ships, that the plan adopted, that the adoption's own
+    commit added, and that still have the release's bytes. So commit an adoption as one commit
+    (`git add -A`, then `git commit`), as `adopt` says.
   - It removes the people map only if git shows it arrived with the adoption and hasn't changed
     since.
   - It refuses, changing nothing, if the record on disk differs from the copy committed with the
