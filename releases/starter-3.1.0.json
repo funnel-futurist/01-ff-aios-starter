@@ -20,7 +20,7 @@
   },
   "created_from": {
     "branch": "exec/lane01-starter-3.1.0-20261015",
-    "git_rev": "2f767a6ea9bf8c36b2bb310be9e238f9c719a5bb"
+    "git_rev": "f8e27f84850661b2316b5e074f1b3b873f9eaa35"
   },
   "credentials": [
     {
@@ -702,7 +702,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "docs/INSTALL_AND_UPGRADE.md",
-      "sha256": "7678f7db3a681aff859d43ef7b9b9c607ab2d1afc23988f1deab2f0af90979ab"
+      "sha256": "11713b78583b0b275b54ac8f382d84f4220f2577fe4713a6b615926768933659"
     },
     {
       "class": "managed",
@@ -846,7 +846,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/install.py",
-      "sha256": "90daae5f7411033508b6ad3e820064af35a34bb7d20ad0ab6e604b002ca5de3e"
+      "sha256": "1009363a1fd31bc0ae6d88bd18bde55d4d8fa0ba51d1f81be25574b13e80b8b1"
     },
     {
       "class": "managed",
