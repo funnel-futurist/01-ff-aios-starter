@@ -297,7 +297,7 @@ class Rollback(Existing):
         self.be("acme-founder")
         cfg = self.write_json("org.json", harness.config())
         rel = self.write_json("release.json", self.v)
-        for point in ("adopt.mid_write", "adopt.before_record"):
+        for point in ("adopt.after_journal", "adopt.mid_write", "adopt.before_record"):
             with self.subTest(point=point):
                 before = snapshot(self.target)
                 code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,

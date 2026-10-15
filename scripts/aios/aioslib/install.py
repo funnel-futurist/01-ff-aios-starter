@@ -1770,6 +1770,7 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
         # References only: an org config never carries a credential value.
         "config": config if config_created else None,
     })
+    util.fault("adopt.after_journal")
     try:
         if config_created:  # first, so a rollback after any later kill can tell who is asking
             util.write_json(config_path, config)

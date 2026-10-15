@@ -173,6 +173,57 @@ python3 scripts/aios/aios.py adopt --release releases/starter-X.Y.Z.json --targe
 Adopt succeeds only if your files match that release byte for byte, executable bits included. If it refuses, you have
 local changes to the system layer - that is information, not a failure.
 
+## Adopting into a repository you already have (3.1)
+
+If your company already runs its own repository and it was never a Starter copy, `adopt --existing`
+brings in the parts of a release you choose, and nothing else. It only ever **creates** files. It
+never overwrites, merges or deletes one of yours.
+
+You decide everything in a plan file you commit first, `.aios/adoption.json`. It lists every path
+the release ships under exactly one heading:
+
+```json
+{
+  "schema": "ff-aios-starter/adoption@1",
+  "adopt":          ["scripts/aios/**", ".aios/.gitignore", ".template_version.json"],
+  "instance_owned": ["CLAUDE.md", "README.md", ".gitignore", ".aios/roles.json", "..."],
+  "exclude":        ["docs/**", "00_AIOS/**", "..."]
+}
+```
+
+- **adopt:** the release creates these, and later upgrades keep them current. They must not
+  exist yet.
+- **instance_owned:** yours, even where the release ships a file at the same path. Never written,
+  now or on any upgrade. They must exist.
+- **exclude:** never written. The release's copy simply isn't used here.
+
+Then commit your own role policy (`.aios/roles.json`) and run:
+
+```bash
+python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.json --target . --config my-org.json
+```
+
+**It refuses, with nothing changed, if:**
+- a path the release ships isn't in the plan, or is under two headings (a catch-all like
+  `"exclude": ["**"]` always collides, so nothing is classified silently);
+- an adopted path already exists, or the way to it runs through a link;
+- a path you called yours is missing;
+- you have no role policy of your own (rollback and upgrade read it);
+- you have uncommitted work, or the workspace is already pinned to a release.
+
+**An existing instance never gets a folder move or a seed line.** Your folders stay where they
+are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
+
+**Undoing it:**
+- The adoption is journaled before its first write.
+- `aios rollback` takes back exactly what it created and left unchanged, whether the adoption
+  finished or was killed partway.
+- A file you've changed since is left in place, and the message says so.
+
+**Upgrades** write only what the plan adopts:
+- A new path the release ships must be added to the plan first, or the upgrade refuses.
+- A file you move from `adopt` to `instance_owned` stays where it is and becomes yours.
+
 ## What upgrade actually does
 
 1. Refuses unless the new release is approved, pinned and intact.
@@ -273,6 +324,21 @@ bash scripts/team/verify-branch-protection.sh
 
 A `CODEOWNERS` file full of `[REPO_OWNER]` placeholders enforces **nothing** - GitHub matches
 no one - and neither does a perfectly filled one if branch protection is off.
+
+**Who may approve the founder lane is not who is a founder.** By default, `aios instance check`
+expects every owner on a founder-lane CODEOWNERS rule to be a founder or co-founder in your people
+map, because GitHub accepts any one listed owner's approval. If other accounts are trusted to
+approve those paths without being founders, list them in your role policy:
+
+```json
+"founder_lane_reviewers": ["@founder-account", "@co-owner-account"]
+```
+
+They must be single accounts in your people map (a team can't be checked).
+
+- **The check then accepts their approval** and calls them approved founder-lane reviewers.
+- **It's review permission only.** Founder status, and the founder-only actions (upgrade,
+  rollback, governance), still come from each person's `role` in the people map.
 
 ## What protects you, and when it doesn't
 
