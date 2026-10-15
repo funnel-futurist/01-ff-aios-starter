@@ -409,12 +409,45 @@ def is_tracked(repo, relpath):
     return False
 
 
+def head_spelling(repo, relpath):
+    """How the HEAD commit spells `relpath`, or None if HEAD has no such path: each component matched
+    as a Mac or Windows disk would (case and Unicode folded), preferring the exact spelling. So a file
+    committed as `.AIOS/INSTALL.JSON` is found for `.aios/install.json` (independent review, 3.1 round 31)."""
+    import unicodedata
+
+    def fold(name):
+        return unicodedata.normalize("NFC", name).casefold()
+
+    tree, spelled = "HEAD", []
+    parts = relpath.replace(os.sep, "/").split("/")
+    for i, part in enumerate(parts):
+        proc = subprocess.run(["git", "-C", repo, "ls-tree", "-z", tree], stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            return None
+        entries = []
+        for raw in proc.stdout.split(b"\0"):
+            if not raw:
+                continue
+            meta, _, name = raw.partition(b"\t")
+            fields = meta.split()
+            entries.append((name.decode("utf-8", "surrogateescape"), fields[1].decode(), fields[2].decode()))
+        hits = [e for e in entries if fold(e[0]) == fold(part)]
+        if not hits:
+            return None
+        exact = [e for e in hits if e[0] == part]
+        name, kind, sha = (exact or hits)[0]
+        if i < len(parts) - 1 and kind != "tree":
+            return None
+        spelled.append(name)
+        tree = sha
+    return "/".join(spelled)
+
+
 def in_head(repo, relpath):
-    """Whether `relpath` is in the HEAD commit's tree: committed, not merely staged (independent review,
-    3.1 round 27). The path is taken literally."""
-    proc = subprocess.run(["git", "-C", repo, "cat-file", "-e", "HEAD:" + relpath.replace(os.sep, "/")],
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return proc.returncode == 0
+    """Whether `relpath` is in the HEAD commit's tree, committed, not merely staged (independent review,
+    3.1 round 27), under any spelling a Mac or Windows disk would take for it (round 31)."""
+    return head_spelling(repo, relpath) is not None
 
 
 def private_temp(target_root):

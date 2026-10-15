@@ -2422,8 +2422,14 @@ def _adoption_anchor(target):
         # Present but not a file: never taken for "no record" (independent review, 3.1 round 27).
         raise Refusal(EXIT_STATE, "%s isn't the install record (a link or a folder); nothing was changed"
                       % record_rel, ["restore it from git, or move it aside, then run rollback again"])
-    # Committed means in HEAD's tree, not merely staged (3.1 round 27).
-    anchor = _latest_added(target, record_rel) if util.in_head(target, record_rel) else None
+    # Committed means in HEAD's tree, not merely staged (3.1 round 27), under any spelling a Mac or
+    # Windows disk takes for this path; committed under another spelling, it's refused, never read as
+    # local (3.1 round 31).
+    spelled = util.head_spelling(target, record_rel)
+    if spelled is not None and spelled != record_rel:
+        raise Refusal(EXIT_STATE, "the install record is committed as %s, not %s; nothing was changed"
+                      % (spelled, record_rel), ["commit it under its own name (git mv), then run rollback again"])
+    anchor = _latest_added(target, record_rel) if spelled is not None else None
     if anchor:
         raw = util.git(target, ["show", "%s:%s" % (anchor, record_rel)], binary=True, check=False)
         try:
@@ -2498,10 +2504,11 @@ def _config_came_with_adoption(target, config_rel, anchor):
     never the repository's file); or added in the very commit that began the install record's current
     lifetime, and unchanged since, whatever hash a record claims; or, before that commit, only staged
     with it (independent review, 3.1 rounds 24 to 26). A config the repository had before stays."""
-    if not util.in_head(target, config_rel):
+    spelled = util.head_spelling(target, config_rel)
+    if spelled is None:
         return True  # never committed, at most staged: not the repository's committed file (3.1 round 27)
-    if anchor is None or _latest_added(target, config_rel) != anchor:
-        return False
+    if spelled != config_rel or anchor is None or _latest_added(target, config_rel) != anchor:
+        return False  # committed under another spelling (round 31), or not with the adoption
     committed = util.git(target, ["show", "%s:%s" % (anchor, config_rel)], binary=True, check=False)
     try:
         with open(os.path.join(target, config_rel), "rb") as fh:

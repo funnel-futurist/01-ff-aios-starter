@@ -2310,3 +2310,29 @@ class ReviewRoundThirtyCodex(ReviewRoundTwentyFour):
     def test_an_incomplete_created_list_is_refused(self):
         self.re_add(lambda r: r["adoption"].__setitem__("created", r["adoption"]["created"][1:]))
         self.refused_unchanged()
+
+
+class ReviewRoundThirtyOne(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 31: a record committed under another spelling is never read as local."""
+
+    def test_head_spelling_matches_as_the_disk_would(self):
+        self.adopt()
+        self.commit("adopted")
+        self.assertEqual(util.head_spelling(self.target, ".aios/install.json"), ".aios/install.json")
+        self.assertEqual(util.head_spelling(self.target, ".AIOS/Install.JSON"), ".aios/install.json")
+        self.assertIsNone(util.head_spelling(self.target, ".aios/nothing.json"))
+        self.assertTrue(util.in_head(self.target, ".AIOS/INSTALL.JSON"))
+
+    def test_a_record_committed_under_another_case_is_refused(self):
+        if not _folds_case(self.tmp):
+            self.skipTest("this disk keeps case, so the two spellings are two files")
+        self.adopt()
+        self.commit("adopted")
+        run_git(self.target, "mv", ".aios/install.json", ".aios/INSTALL.JSON")
+        self.commit("a pull request renames the record's case")
+        before = _tree(self.target)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("is committed as .aios/INSTALL.JSON", out + err)
+        self.assertEqual(diff(before, _tree(self.target)), [])
