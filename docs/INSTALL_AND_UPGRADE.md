@@ -451,9 +451,10 @@ the same commit and version as yours, and verify says when the source has no suc
 output always says which of the two it ran. Use `--repo` when the answer matters to somebody other
 than you.
 
-Either way, a path in the record that would lead outside the workspace (an absolute path, `..`, or
-a folder that is a link) is reported without reading anything there, and a record whose adoption
-doesn't match git history (see "What adoption and its rollback trust") is reported.
+Either way, a path in the record that would lead outside the workspace (an absolute path, `..`, a
+drive letter or any other colon, or a folder that is a link) is reported without reading anything
+there, and a record whose adoption doesn't match git history (see "What adoption and its rollback
+trust") is reported. An install record that is itself a link, or sits under one, is refused.
 
 ## Hearing about a new release
 

@@ -176,6 +176,11 @@ def safe_relpath(path):
     parts = path.replace("\\", "/").split("/")
     if any(p in ("..", "") for p in parts):
         return False
+    # A colon anywhere: on Windows `D:name` is relative to drive D's current folder (os.path.join keeps
+    # it, leaving the workspace), and `name:stream` is a hidden stream of another file. Neither is a path
+    # the installer writes, on any system (independent review, 3.1 round 45).
+    if any(":" in p for p in parts):
+        return False
     if any(p == "." for p in parts):
         return False
     return True

@@ -49,6 +49,14 @@ def install_record_path(target):
 
 def load_record(target):
     path = install_record_path(target)
+    # The record and the folders on the way to it are real ones, never links: the record is committed,
+    # and a committed link would have the installer trust bytes from anywhere (independent review, 3.1
+    # round 45).
+    rel = os.path.relpath(path, target).replace(os.sep, "/")
+    if os.path.islink(path) or _linked_paths(target, [rel]):
+        raise Refusal(EXIT_STATE, "the install record at %s is a link, or is reached through one; nothing was "
+                                  "changed" % path, ["restore .aios/install.json from git as a regular file, "
+                                                     "then run this again"])
     if not os.path.isfile(path):
         raise Refusal(EXIT_STATE, "no install record at %s; this workspace was never installed "
                                   "from a release" % path)
@@ -859,7 +867,12 @@ def _restore(target, backup_root, record_to_restore, remove_paths, expected=None
                 os.remove(dst)  # copying onto a link would write wherever it points
             shutil.copy2(src, dst)
     if write_record:
-        util.write_json(install_record_path(target), record_to_restore)
+        snapshot = os.path.join(backup_root, "install.json")
+        if os.path.isfile(snapshot) and not os.path.islink(snapshot):
+            with open(snapshot, "rb") as fh:  # its own bytes (3.1 round 45)
+                util.write_bytes(install_record_path(target), fh.read())
+        else:
+            util.write_json(install_record_path(target), record_to_restore)
     _prune_parents(target, remove_paths, keep_dirs)
     return notes
 
@@ -1738,7 +1751,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         _undo_seed_lines(target, seed_lines_add)
         if the_plan:
             layout_mod.reverse(target, the_plan, backup_rel)
-        util.write_json(install_record_path(target), record)
+        _restore_record(target, backup_rel)  # its own bytes, as the other two restores (3.1 round 45)
         problems, _ = verify(target, record)
         if problems:  # the journal stays: `rollback` can finish the job
             raise Refusal(EXIT_VERIFY,

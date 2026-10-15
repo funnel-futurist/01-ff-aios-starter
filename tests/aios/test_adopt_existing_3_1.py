@@ -3238,3 +3238,86 @@ class ReviewRoundFortyFourTag(Layout3):
         run_git(self.source, "checkout", "-q", "main")
         record = self.up()
         self.assertEqual(record["release"]["version"], "3.0.0")
+
+
+class ReviewRoundFortyFive(Existing):
+    """Codex, 3.1 round 45: a failed upgrade puts the record's own bytes back; a record is never read
+    through a link; a drive-qualified or stream path is never a safe one."""
+
+    def v31(self):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        return harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+
+    def test_a_failed_upgrade_puts_a_crlf_record_back_byte_for_byte(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        with open(path, "rb") as fh:
+            crlf = fh.read().replace(b"\n", b"\r\n")
+        with open(path, "wb") as fh:
+            fh.write(crlf)
+        self.commit("the record as an installer on Windows before 3.1 wrote it")
+        self.forget_state()
+        v31 = self.v31()
+        os.environ["AIOS_FAULT"] = "raise:upgrade.mid_write"
+        try:
+            with self.assertRaises(Exception):
+                install_mod.upgrade(self.target, v31, self.source)
+        finally:
+            os.environ.pop("AIOS_FAULT")
+        with open(path, "rb") as fh:
+            self.assertEqual(fh.read(), crlf)
+        self.assertEqual(util.git(self.target, ["status", "--porcelain"]), "")
+        install_mod.upgrade(self.target, v31, self.source)  # and the next operation goes ahead
+
+    def test_a_linked_record_is_never_read(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        forged = util.read_json(path)
+        forged.pop("adoption")
+        outside = os.path.join(self.tmp, "outside.json")
+        util.write_json(outside, forged)
+        os.remove(path)
+        os.symlink(outside, path)
+        self.commit("a pull request makes the record a link")
+        self.forget_state()
+        for fn in (lambda: install_mod.verify(self.target), lambda: install_mod.upgrade(self.target, self.v31(),
+                                                                                         self.source)):
+            exc = self.refuses_unchanged(fn)
+            self.assertIn("is a link, or is reached through one", exc.message)
+
+    def test_a_record_under_a_linked_folder_is_never_read(self):
+        self.adopt()
+        self.commit("adopted")
+        moved = os.path.join(self.tmp, "elsewhere")
+        os.rename(os.path.join(self.target, ".aios"), moved)
+        os.symlink(moved, os.path.join(self.target, ".aios"))
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.verify(self.target)
+        self.assertIn("is a link, or is reached through one", ctx.exception.message)
+
+    def test_drive_qualified_and_stream_paths_are_never_safe(self):
+        for path in ("D:secret.md", "C:/x.md", "notes/a:b.md", "a/D:"):
+            self.assertFalse(util.safe_relpath(path), path)
+        self.assertTrue(util.safe_relpath("notes/a.md"))
+
+
+class ReviewRoundFortyFiveVerify(Layout3):
+    """Codex, 3.1 round 45: the verify command never reads a drive-qualified seed-line path."""
+
+    def test_verify_reports_and_skips_a_drive_qualified_seed_line_path(self):
+        self.up()
+        self.git_commit("on 3.0.0")
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["seed_lines"].append({"path": "D:secret.md", "line": MAP_LINE, "state": "present", "release": "3.0.0"})
+        util.write_json(path, record)
+        self.git_commit("a pull request points a seed line at another drive")
+        self.be("acme-founder")
+        for extra in ((), ("--repo", self.source)):
+            code, out, err = self.cli("verify", "--target", self.target, *extra)
+            self.assertNotEqual(code, 0, out + err)
+            self.assertIn("'D:secret.md' not read", out)
+        problems, _ = install_mod.verify(self.target)
+        self.assertTrue(any("unsafe path: 'D:secret.md'" in p for p in problems), problems)

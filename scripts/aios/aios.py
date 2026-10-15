@@ -241,13 +241,14 @@ def cmd_verify(args):
     for e in record.get("seed_lines") or []:
         # Read only inside the workspace: the record is committed, so a pull request could point an
         # entry anywhere; verify reports such a path above (independent review, 3.1 round 44).
-        if not util.safe_relpath(e["path"]) or install_mod._linked_paths(target, [e["path"]]) \
-                or os.path.islink(os.path.join(target, e["path"])):
+        # Only a regular file, reached with no link on the way, really inside the workspace (round 45).
+        safe = util.safe_relpath(e["path"]) and not install_mod._linked_paths(target, [e["path"]])
+        full = install_mod._seed_line_target(target, e["path"]) if safe else None
+        if not safe or (full is None and os.path.lexists(os.path.join(target, e["path"]))):
             _say("  line:    %r not read: the path leaves the workspace or runs through a link" % e["path"])
             continue
-        full = os.path.join(target, e["path"])
         here = False
-        if os.path.isfile(full):
+        if full:
             with open(full, encoding="utf-8", errors="replace") as fh:
                 here = any(line.strip() == e["line"] for line in fh)
         _say("  line:    %s %s `%s` (yours to keep or remove)"
