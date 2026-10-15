@@ -143,10 +143,31 @@ def _still_this_lock(path, ident):
 
 
 def load_journal(target):
+    """The installer's journal, or None when there is none: when nothing is at its path. Anything else
+    there refuses, with nothing changed: a file git tracks, committed or staged (the installer's is
+    never committed: .aios/.gitignore ignores it), a link or a folder, one that can't be read, or one
+    that isn't a non-empty JSON object (independent review, 3.1 rounds 25 to 27)."""
     path = journal_path(target)
-    if os.path.isfile(path):
-        return util.read_json_safe(path, "transaction journal")
-    return None
+    if not os.path.lexists(path):
+        return None
+    rel = os.path.relpath(path, target).replace(os.sep, "/")
+    if util.is_tracked(target, rel) or util.in_head(target, rel):
+        raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's journal; nothing "
+                                  "was changed" % rel,
+                      ["if an interrupted operation left it and it was committed by mistake, untrack it "
+                       "(git rm --cached %s), commit, and run this again" % rel])
+    if os.path.islink(path) or not os.path.isfile(path):
+        raise Refusal(EXIT_STATE, "%s isn't a journal the installer wrote (a link or a folder); nothing was "
+                                  "changed" % rel, ["move it aside, then run this again"])
+    try:
+        journal = util.read_json(path)
+    except (OSError, ValueError) as exc:
+        raise Refusal(EXIT_STATE, "the journal at %s can't be read (%s); nothing was changed" % (rel, exc),
+                      ["move it aside, then run this again"])
+    if not isinstance(journal, dict) or not journal:
+        raise Refusal(EXIT_STATE, "%s isn't a journal the installer wrote; nothing was changed" % rel,
+                      ["move it aside, then run this again"])
+    return journal
 
 
 # ─── verification ───────────────────────────────────────────────────────────
@@ -1533,21 +1554,7 @@ def _reclaim_stale_lock(stale, target=None):
 
 def _rollback_after_reclaim(target, stale_lock, source_repo=None):
     with _Lock(target, "rollback"):
-        txn_rel = os.path.relpath(journal_path(target), target).replace(os.sep, "/")
-        if os.path.lexists(journal_path(target)):
-            # The installer's journal is never committed (.aios/.gitignore ignores it): a tracked one is
-            # a file anyone's pull request could have written, whatever it holds (independent review, 3.1
-            # rounds 25 and 26). Checked before it's read.
-            if util.is_tracked(target, txn_rel):
-                raise Refusal(EXIT_STATE, "%s is a file this repository tracks, not the installer's journal; "
-                                          "nothing was changed" % txn_rel,
-                              ["if an interrupted operation left it and it was committed by mistake, untrack "
-                               "it (git rm --cached %s), commit, and run rollback again" % txn_rel])
-            if not isinstance(util.read_json_safe(journal_path(target), "transaction journal"), dict) \
-                    or not util.read_json_safe(journal_path(target), "transaction journal"):
-                raise Refusal(EXIT_STATE, "%s isn't a journal the installer wrote; nothing was changed" % txn_rel,
-                              ["move it aside, then run rollback again"])
-        journal = load_journal(target)
+        journal = load_journal(target)  # refuses a tracked, non-file or non-journal one (3.1 rounds 25-27)
         if stale_lock and not journal and not os.path.isfile(install_record_path(target)):
             # Killed before its journal, with no release ever pinned here (an adoption that hadn't
             # started writing): nothing changed, so there is nothing to undo (independent review,
@@ -1627,8 +1634,8 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
 def clear_dead_lock(target):
     """A dead holder's lock, when there is nothing at all to roll back: no journal, no install
     record. It never takes a live holder's lock. True if one was cleared."""
-    if load_journal(target) or os.path.lexists(install_record_path(target)):
-        return False
+    if os.path.lexists(journal_path(target)) or os.path.lexists(install_record_path(target)):
+        return False  # by the path, never by what a file there says (3.1 round 27)
     if not os.path.lexists(os.path.join(target, LOCK_PATH)):
         # Nothing to clear, so no guard either: outside git it would create `.aios/backups` in a folder
         # that has nothing of the installer's (independent review, 3.1 round 15). A lock that appears
@@ -2316,7 +2323,13 @@ def _adoption_anchor(target):
     uncommitted one). Refuses, with nothing changed, otherwise."""
     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
     record_full = install_record_path(target)
-    anchor = _latest_added(target, record_rel) if util.is_tracked(target, record_rel) else None
+    present = os.path.lexists(record_full)
+    if present and (os.path.islink(record_full) or not os.path.isfile(record_full)):
+        # Present but not a file: never taken for "no record" (independent review, 3.1 round 27).
+        raise Refusal(EXIT_STATE, "%s isn't the install record (a link or a folder); nothing was changed"
+                      % record_rel, ["restore it from git, or move it aside, then run rollback again"])
+    # Committed means in HEAD's tree, not merely staged (3.1 round 27).
+    anchor = _latest_added(target, record_rel) if util.in_head(target, record_rel) else None
     if anchor:
         raw = util.git(target, ["show", "%s:%s" % (anchor, record_rel)], binary=True, check=False)
         try:
@@ -2326,16 +2339,20 @@ def _adoption_anchor(target):
         if not isinstance(record, dict):
             raise Refusal(EXIT_STATE, "the install record committed with the adoption can't be read; nothing "
                                       "was changed", [anchor[:12]])
-        if os.path.isfile(record_full):
-            with open(record_full, "rb") as fh:
-                if fh.read() != raw:
-                    raise Refusal(EXIT_STATE, "the install record differs from the one committed with the "
-                                  "adoption, so rollback can't trust which files the adoption made; nothing "
-                                  "was changed", ["restore it from git (git checkout -- %s), then run rollback "
-                                                  "again" % record_rel])
+        if present:
+            try:
+                with open(record_full, "rb") as fh:
+                    on_disk = fh.read()
+            except OSError as exc:
+                raise Refusal(EXIT_STATE, "the install record can't be read (%s); nothing was changed" % exc)
+            if on_disk != raw:
+                raise Refusal(EXIT_STATE, "the install record differs from the one committed with the "
+                              "adoption, so rollback can't trust which files the adoption made; nothing "
+                              "was changed", ["restore it from git (git checkout -- %s), then run rollback "
+                                              "again" % record_rel])
         rev = anchor
     else:
-        if not os.path.isfile(record_full):
+        if not present:
             return None
         if not _record_sealed(record_full):
             raise Refusal(EXIT_STATE, "the install record changed since the adoption wrote it, so rollback "
@@ -2387,13 +2404,10 @@ def _config_came_with_adoption(target, config_rel, anchor):
     never the repository's file); or added in the very commit that began the install record's current
     lifetime, and unchanged since, whatever hash a record claims; or, before that commit, only staged
     with it (independent review, 3.1 rounds 24 to 26). A config the repository had before stays."""
-    if not util.is_tracked(target, config_rel):
-        return True
-    added = _latest_added(target, config_rel)
-    if added != anchor:
+    if not util.in_head(target, config_rel):
+        return True  # never committed, at most staged: not the repository's committed file (3.1 round 27)
+    if anchor is None or _latest_added(target, config_rel) != anchor:
         return False
-    if anchor is None:
-        return True  # neither committed yet: both only staged, the adoption's own
     committed = util.git(target, ["show", "%s:%s" % (anchor, config_rel)], binary=True, check=False)
     try:
         with open(os.path.join(target, config_rel), "rb") as fh:

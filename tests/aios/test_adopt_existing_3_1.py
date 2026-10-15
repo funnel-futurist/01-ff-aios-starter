@@ -2110,3 +2110,62 @@ class ReviewRoundTwentySix(ReviewRoundTwentyFour):
         self.assertNotEqual(code, 0, out + err)
         self.assertIn("isn't the one the adoption was made with", out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
+
+
+class ReviewRoundTwentySeven(ReviewRoundTwentyFour):
+    """Codex, 3.1 round 27: committed means in HEAD; present means present; a journal is checked by its path."""
+
+    def kill_undo(self):
+        self.be("acme-founder")
+        code, _o, _e = self.cli("rollback", "--target", self.target, "--repo", self.source,
+                                env={"AIOS_FAULT": "crash:adopt.undo_before"})
+        self.assertEqual(code, 137)
+
+    def test_a_second_adoption_only_staged_rolls_back_exactly(self):
+        self.adopt()
+        self.commit("adopted")
+        self.rollback_ok()
+        self.commit("the first adoption undone")
+        before = _tree(self.target)
+        self.adopt()
+        run_git(self.target, "add", "-A")  # staged, never committed
+        self.rollback_ok()
+        self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_a_staged_deletion_of_the_committed_record_doesnt_stop_a_resumed_undo(self):
+        self.adopt()
+        self.commit("adopted")
+        self.kill_undo()
+        run_git(self.target, "rm", "-q", ".aios/install.json")  # staged deletion, file gone
+        self.rollback_ok()
+
+    def test_a_folder_where_the_record_was_is_refused_not_taken_for_none(self):
+        self.adopt()  # never committed
+        self.kill_undo()
+        record = install_mod.install_record_path(self.target)
+        os.remove(record)
+        os.makedirs(record)
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("isn't the install record", out + err)
+        for p in ADOPTED:
+            self.assertTrue(os.path.lexists(os.path.join(self.target, p)), p)
+        self.assertTrue(os.path.isfile(install_mod.journal_path(self.target)))
+
+    def test_with_no_record_an_invalid_journal_still_refuses(self):
+        self.be("acme-founder")
+        for text in ("null", "{}", "[]"):
+            with self.subTest(text=text):
+                write(self.target, ".aios/txn.json", text + "\n")
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+                self.assertNotEqual(code, 0, out + err)
+                self.assertIn("isn't a journal the installer wrote", out + err)
+                os.remove(install_mod.journal_path(self.target))
+
+    def test_a_folder_at_the_journal_path_is_a_refusal_not_a_crash(self):
+        os.makedirs(install_mod.journal_path(self.target))
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("isn't a journal the installer wrote", out + err)
+        self.assertNotIn("Traceback", err)

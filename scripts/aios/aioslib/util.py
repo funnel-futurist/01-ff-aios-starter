@@ -409,6 +409,14 @@ def is_tracked(repo, relpath):
     return False
 
 
+def in_head(repo, relpath):
+    """Whether `relpath` is in the HEAD commit's tree: committed, not merely staged (independent review,
+    3.1 round 27). The path is taken literally."""
+    proc = subprocess.run(["git", "-C", repo, "cat-file", "-e", "HEAD:" + relpath.replace(os.sep, "/")],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return proc.returncode == 0
+
+
 def private_temp(target_root):
     """A new, uniquely named, exclusively created regular file in the workspace's git-ignored
     backups folder: never a name something else planted (a link there would redirect the write).

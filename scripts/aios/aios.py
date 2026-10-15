@@ -354,7 +354,8 @@ def cmd_upgrade(args):
 
 def cmd_rollback(args):
     target = os.path.abspath(args.target)
-    nothing_changed = (not install_mod.load_journal(target)
+    # By the paths, never by what a file there says: a journal that isn't one refuses below (3.1 round 27).
+    nothing_changed = (not os.path.lexists(install_mod.journal_path(target))
                        and not os.path.lexists(install_mod.install_record_path(target)))
     if nothing_changed and install_mod.clear_dead_lock(target):
         # Nothing was ever changed here, only a dead holder's lock left by an adoption killed before its
