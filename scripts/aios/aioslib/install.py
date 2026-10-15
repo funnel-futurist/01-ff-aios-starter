@@ -1648,7 +1648,9 @@ def _finish_rollback(target, journal, resumed=False):
 ADOPTION_SCHEMA = "ff-aios-starter/adoption@1"
 ADOPTION_PLAN = os.path.join(AIOS_DIR, "adoption.json")
 ADOPTION_CLASSES = ("adopt", "instance_owned", "exclude")
-CATCH_ALLS = ("**", "*", "**/*", "**/**", "*/**")
+# Paths no real plan names, in every shape: top level, nested, dotted, with and without an extension.
+CATCH_ALL_PROBES = ("aios-probe-7f3a", "aios-probe-7f3a.md", ".aios-probe-7f3a", "aios-probe-7f3a/x",
+                    "aios-probe-7f3a/x/y.z", ".aios-probe-7f3a/.x/y")
 
 
 def load_adoption_plan(target, rel=None):
@@ -1673,10 +1675,11 @@ def load_adoption_plan(target, rel=None):
             if not isinstance(items, list) or not all(isinstance(x, str) and x.strip() for x in items):
                 problems.append("%s must be a list of paths or patterns" % cls)
                 continue
-            for item in items:
-                if item.strip().strip("/") in CATCH_ALLS:
-                    problems.append("%s: %r would classify everything at once; name what it covers "
-                                    "(independent review, 3.1)" % (cls, item))
+            # Judged by what the patterns match, not by how they're spelt (`***`, `?*` and `*` with
+            # `*/**` all match everything): a list that covers every kind of path at once is refused.
+            if all(util.match_any(items, probe) for probe in CATCH_ALL_PROBES):
+                problems.append("%s would classify every path at once (%s); name what it covers "
+                                "(independent review, 3.1)" % (cls, ", ".join(repr(i) for i in items[:5])))
     if problems:
         raise Refusal(EXIT_STATE, "the adoption plan %s isn't usable" % rel, problems)
     return plan, sha256_file(full)
@@ -1743,7 +1746,7 @@ def _reserved_before_adoption(target):
     if os.path.lexists(guard):
         rel = GUARD_PATH.replace(os.sep, "/")
         st = os.lstat(guard)
-        if not stat.S_ISREG(st.st_mode) or st.st_size or (os.path.isdir(os.path.join(target, ".git"))
+        if not stat.S_ISREG(st.st_mode) or st.st_size or (util.is_git_repo(target)
                                                           and util.is_tracked(target, rel)):
             out.append("%s is a file of this repository's own; the installer needs that path" % rel)
     return out
@@ -1847,17 +1850,23 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     util.write_json(journal_path(target), journal)
     util.fault("adopt.after_journal")
 
-    def create(rel, data, mode):
+    def create(rel, data, mode, provenance=True):
         def pending(tmp):
             journal["pending"] = {"path": rel, "temp": os.path.relpath(tmp, target).replace(os.sep, "/")}
             util.write_json(journal_path(target), journal)
         tmp = util.create_new(target, rel, data, mode, pending)
-        st = os.lstat(os.path.join(target, rel))
-        # The mode as the disk keeps it, so rollback compares like with like on every system.
-        info["created"].append({"path": rel, "sha256": sha256_bytes(data), "mode": stat.S_IMODE(st.st_mode)})
+        if provenance:
+            st = os.lstat(os.path.join(target, rel))
+            # The mode as the disk keeps it, so rollback compares like with like on every system.
+            info["created"].append({"path": rel, "sha256": sha256_bytes(data),
+                                    "mode": stat.S_IMODE(st.st_mode)})
+            util.write_json(journal_path(target), journal)
+        util.fault("adopt.after_link")
+        # The temporary copy goes before `pending` is cleared, so a kill in between still names it
+        # and rollback removes it (independent review, 3.1 round 2).
+        os.remove(tmp)
         journal["pending"] = None
         util.write_json(journal_path(target), journal)
-        os.remove(tmp)
 
     try:
         if config_created:  # first, so a rollback after any later kill can tell who is asking
@@ -1905,9 +1914,9 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             "previous": None,
             "adoption": info,
         }
-        tmp = util.create_new(target, record_rel, (json.dumps(record, indent=2, sort_keys=True) + "\n")
-                              .encode("utf-8"), "100644")
-        os.remove(tmp)
+        # Its own entry can't be inside it; rollback knows it by the plan's hash instead.
+        create(record_rel, (json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8"), "100644",
+               provenance=False)
     except Refusal:
         _undo_adoption(target, info, journal.get("pending"))
         if os.path.isfile(journal_path(target)):
@@ -1947,7 +1956,7 @@ def _undo_adoption(target, info, pending=None):
         tmp = os.path.join(target, pending["temp"])
         if os.path.lexists(tmp):
             if os.path.lexists(dest) and os.path.samestat(os.lstat(dest), os.lstat(tmp)):
-                os.remove(dest)
+                os.remove(dest)  # still the very copy this run made: the same inode
                 created.append(pending["path"])
             os.remove(tmp)
     record_full = install_record_path(target)

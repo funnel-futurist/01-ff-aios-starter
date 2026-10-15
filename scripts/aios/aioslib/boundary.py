@@ -206,17 +206,22 @@ def check_pr(repo, base, head, author, approvers):
         return EXIT_OK, ["%s changed no founder-lane path" % who]
     # Who may approve the founder lane: founders and co-founders, or, when the base policy declares
     # them, its founder_lane_reviewers - review permission, not founder status (G98). Never the author.
-    declared = governance.lane_reviewer_problems(policy, config) == [] and \
-        policy.get("founder_lane_reviewers") is not None
-    reviewers = governance.lane_reviewers(policy, config)[0] if declared else set()
+    # When the base policy declares the reviewers, that list is the whole permission: a founder left
+    # off it doesn't count either, and a declaration that can't be used counts nobody (fails closed;
+    # independent review, 3.1 round 2).
+    declared = policy.get("founder_lane_reviewers") is not None
+    if declared:
+        usable = governance.lane_reviewer_problems(policy, config) == []
+        reviewers = governance.lane_reviewers(policy, config)[0] if usable else set()
+        eligible = lambda a: ("@" + a.lower()) in reviewers  # noqa: E731
+    else:
+        eligible = lambda a: roles.role_for(config, a) in APPROVER_ROLES  # noqa: E731
     founder_approvals = sorted(a for a in approvers
-                               if (roles.role_for(config, a) in APPROVER_ROLES
-                                   or ("@" + a.lower()) in reviewers)
-                               and a.lower() != (author or "").lower())
+                               if eligible(a) and a.lower() != (author or "").lower())
     if founder_approvals:
         return EXIT_OK, ["%s changed %d founder-lane path(s), approved at this commit by %s"
                          % (who, len(hits), ", ".join(founder_approvals))]
-    whom = ("a founder, a co-founder or an approved founder-lane reviewer" if declared
+    whom = ("an approved founder-lane reviewer (the role policy's founder_lane_reviewers)" if declared
             else "a founder or co-founder")
     return EXIT_ROLE, (
         ["%s changed %d founder-lane path(s) without an approval of this commit from %s:"

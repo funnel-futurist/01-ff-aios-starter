@@ -18,7 +18,6 @@ The people map here is REHEARSAL-ONLY: who holds which business role in FF is FF
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -59,8 +58,9 @@ def main():
     ap.add_argument("--branch", default="exec/lane01-starter-3.1.0-20261015")
     a = ap.parse_args()
     R = os.path.abspath(a.root)
-    if os.path.exists(R):
-        shutil.rmtree(R)
+    # Never deletes anything it didn't make: the root must be new or empty (independent review).
+    if os.path.lexists(R) and (not os.path.isdir(R) or os.path.islink(R) or os.listdir(R)):
+        sys.exit("refusing: %s exists and isn't an empty folder; name a new scratch folder" % R)
     os.makedirs(os.path.join(R, "bin"))
     with open(os.path.join(R, "bin", "gh"), "w") as fh:
         fh.write('#!/bin/sh\n[ "$1" = api ] && [ "$2" = user ] && { echo phoenix-ship-it; exit 0; }; exit 1\n')

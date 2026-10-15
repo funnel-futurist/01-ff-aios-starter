@@ -128,7 +128,7 @@ class RefusesWithNothingChanged(Existing):
         self.write_plan(plan)
         self.commit("catch-all")
         exc = self.refuses_unchanged(self.adopt)
-        self.assertIn("classify everything at once", "\n".join(exc.details))
+        self.assertIn("every path at once", "\n".join(exc.details))
 
     def test_an_adopted_path_that_already_exists(self):
         write(self.target, "START_HERE.md", "# ours already\n")
@@ -535,7 +535,7 @@ class ReviewRoundOne(Existing):
         self.write_plan({"schema": "ff-aios-starter/adoption@1", "adopt": [], "instance_owned": [], "exclude": ["**"]})
         self.commit("catch-all only")
         exc = self.refuses_unchanged(self.adopt)
-        self.assertIn("classify everything at once", "\n".join(exc.details))
+        self.assertIn("every path at once", "\n".join(exc.details))
         everything = [e["path"] for e in self.v["files"]]
         owned = [p for p in everything if os.path.lexists(os.path.join(self.target, p))]
         self.write_plan({"schema": "ff-aios-starter/adoption@1", "adopt": [], "instance_owned": owned,
@@ -586,4 +586,90 @@ class BoundaryHonoursDeclaredReviewers(Sandbox):
 
     def test_nobody_approves_their_own_change(self):
         code, _lines = self.check("acme-lead", ["acme-lead"])
+        self.assertNotEqual(code, 0)
+
+
+class ReviewRoundTwo(Existing):
+    """Codex, 3.1 round 2."""
+
+    def test_r2_2_a_tracked_guard_in_a_linked_worktree_is_never_touched(self):
+        write(self.target, ".aios/backups/guard", "")  # empty, but the repository's own
+        run_git(self.target, "add", "-f", ".aios/backups/guard")
+        self.commit("an empty file of ours at the guard's path")
+        linked = os.path.join(self.tmp, "linked")
+        run_git(self.target, "worktree", "add", "-q", "--detach", linked, "HEAD")
+        self.assertTrue(os.path.isfile(os.path.join(linked, ".git")))  # a file, not a folder
+        before = snapshot(linked)
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.adopt_existing(linked, self.v, self.source, harness.config())
+        self.assertIn("own paths", ctx.exception.message)
+        self.assertEqual(diff(before, snapshot(linked)), [])
+
+    def test_r2_4_a_kill_between_link_and_cleanup_leaves_no_temporary_copy(self):
+        before = snapshot(self.target)
+        backups = os.path.join(self.target, ".aios", "backups")
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:adopt.after_link"})
+        self.assertEqual(code, 137)
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(diff(before, snapshot(self.target)), [])
+        self.assertEqual([n for n in os.listdir(backups) if n.startswith(".write-")] if os.path.isdir(backups) else [], [])
+
+    def test_r2_5_catch_alls_are_judged_by_what_they_match(self):
+        for items in (["***"], ["?*"], ["*", "*/**"], ["*", "**/*"], ["*"]):
+            with self.subTest(items=items):
+                plan = json.loads(json.dumps(PLAN))
+                plan["exclude"] = items
+                self.write_plan(plan)
+                self.commit("catch-all %r" % items)
+                exc = self.refuses_unchanged(self.adopt)
+                self.assertIn("every path at once", "\n".join(exc.details))
+
+    def test_r2_1_the_rehearsal_never_deletes_a_root_it_didnt_make(self):
+        import subprocess
+        keep = os.path.join(self.tmp, "keep")
+        write(keep, "precious.txt", "mine\n")
+        script = os.path.join(harness.REPO_ROOT, "evidence/dispatch/p22-starter/release-3.1.0/rehearse_310_aios.py")
+        proc = subprocess.run([sys.executable, script, keep, "--aios", self.target],
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.assertNotEqual(proc.returncode, 0)
+        with open(os.path.join(keep, "precious.txt")) as fh:
+            self.assertEqual(fh.read(), "mine\n")
+
+
+class BoundaryDeclaredListIsTheWholePermission(BoundaryHonoursDeclaredReviewers):
+    """Codex, 3.1 round 2: a declared list replaces founder status at the pull request too."""
+
+    def test_a_founder_left_off_the_list_does_not_count(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["founder_lane_reviewers"] = ["@acme-lead"]
+        write(self.repo, ".aios/roles.json", json.dumps(policy, indent=2))
+        run_git(self.repo, "checkout", "-q", "main")
+        run_git(self.repo, "commit", "-qam", "only acme-lead reviews")
+        self.base = util.git(self.repo, ["rev-parse", "HEAD"])
+        run_git(self.repo, "checkout", "-q", "-b", "pr2")
+        write(self.repo, "CLAUDE.md", "# rules, changed again\n")
+        run_git(self.repo, "commit", "-qam", "change")
+        self.head = util.git(self.repo, ["rev-parse", "HEAD"])
+        code, _lines = self.check("acme-va", ["acme-founder"])
+        self.assertNotEqual(code, 0)
+        code, _lines = self.check("acme-va", ["acme-lead"])
+        self.assertEqual(code, 0)
+
+    def test_an_unusable_declaration_counts_nobody(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["founder_lane_reviewers"] = ["@acme/leads"]  # a team: can't be checked
+        write(self.repo, ".aios/roles.json", json.dumps(policy, indent=2))
+        run_git(self.repo, "checkout", "-q", "main")
+        run_git(self.repo, "commit", "-qam", "a team")
+        self.base = util.git(self.repo, ["rev-parse", "HEAD"])
+        run_git(self.repo, "checkout", "-q", "-b", "pr3")
+        write(self.repo, "CLAUDE.md", "# rules, changed once more\n")
+        run_git(self.repo, "commit", "-qam", "change")
+        self.head = util.git(self.repo, ["rev-parse", "HEAD"])
+        code, _lines = self.check("acme-va", ["acme-founder", "acme-lead"])
         self.assertNotEqual(code, 0)
