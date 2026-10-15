@@ -385,10 +385,28 @@ def ignored_paths(repo, relpaths):
 
 
 def is_tracked(repo, relpath):
-    """Whether git tracks `relpath` in the worktree at `repo`."""
-    proc = subprocess.run(["git", "-C", repo, "ls-files", "--error-unmatch", "--", relpath],
+    """Whether git tracks `relpath` in the worktree at `repo`: the path taken literally, never as a
+    pattern (`adopt*.json` would match another file), either exactly as git spells it or, on a disk
+    that folds case, as a tracked spelling that is the very same file there (independent review, 3.1
+    round 19)."""
+    rel = relpath.replace(os.sep, "/")
+    proc = subprocess.run(["git", "-C", repo, "ls-files", "-z", "--", ":(icase,literal)" + rel],
                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return proc.returncode == 0
+    if proc.returncode != 0:
+        return False
+    full = os.path.join(repo, rel)
+    for raw in proc.stdout.split(b"\0"):
+        if not raw:
+            continue
+        tracked = raw.decode("utf-8", "surrogateescape")
+        if tracked == rel:
+            return True
+        try:
+            if os.path.lexists(full) and os.path.samestat(os.lstat(os.path.join(repo, tracked)), os.lstat(full)):
+                return True
+        except OSError:
+            pass
+    return False
 
 
 def private_temp(target_root):

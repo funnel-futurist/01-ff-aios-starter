@@ -1585,3 +1585,41 @@ class ReviewRoundEighteen(Existing):
             man["files"].append({"path": path, "class": "managed", "mode": "100644", "sha256": "0" * 64})
             self.assertTrue(any("installer's own state" in p for p in release.check_shape(man)), path)
         self.assertFalse(util.is_reserved(".aios/txn.json.notes.md"))
+
+
+def _folds_case(folder):
+    probe = os.path.join(folder, "CaseProbe")
+    write(folder, "CaseProbe", "x")
+    try:
+        return os.path.exists(probe.lower())
+    finally:
+        os.remove(probe)
+
+
+class ReviewRoundNineteen(Existing):
+    """Codex, 3.1 round 19: whether git tracks a path, asked literally and as the disk sees it."""
+
+    def test_a_plan_named_like_a_pattern_isnt_mistaken_for_the_committed_one(self):
+        with open(os.path.join(self.target, ".gitignore"), "a") as fh:
+            fh.write(".aios/adopt*.json\n")
+        self.commit("we ignore our scratch plans")
+        write(self.target, ".aios/adopt*.json", json.dumps(PLAN, indent=2))  # ignored, never committed
+        self.assertFalse(util.is_tracked(self.target, ".aios/adopt*.json"))
+        self.assertFalse(util.is_tracked(self.target, ".aios/adopt[i]on.json"))
+        exc = self.refuses_unchanged(self.adopt, plan_rel=".aios/adopt*.json")
+        self.assertIn("must be committed", exc.message)
+
+    def test_rollback_never_sweeps_a_file_tracked_under_another_case(self):
+        if not _folds_case(self.tmp):
+            self.skipTest("this disk keeps case, so the two spellings are two files")
+        self.adopt()
+        self.commit("adopted")
+        name = ".txn.json.aaaaaaaa.tmp"
+        write(self.target, ".aios/" + name, "ours\n")
+        blob = util.git(self.target, ["hash-object", "-w", ".aios/" + name])
+        run_git(self.target, "update-index", "--add", "--cacheinfo", "100644,%s,.AIOS/%s" % (blob, name))
+        run_git(self.target, "commit", "-qm", "tracked as .AIOS")
+        self.assertTrue(util.is_tracked(self.target, ".aios/" + name))
+        install_mod.rollback(self.target)
+        with open(os.path.join(self.target, ".aios", name)) as fh:
+            self.assertEqual(fh.read(), "ours\n")
