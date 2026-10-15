@@ -850,4 +850,29 @@ class ReviewRoundEight(Existing):
         code, out, err = self.cli("rollback", "--target", self.target)
         self.assertEqual(code, 0, out + err)
         self.assertIn("nothing to roll back", out)
+        self.assertIn("release:  none (nothing was changed)", out)
         self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))
+
+
+class ReviewRoundNine(Existing):
+    """Codex, 3.1 round 9."""
+
+    def test_an_upgrade_refuses_when_what_the_instance_runs_on_is_no_longer_committed(self):
+        self.adopt()
+        self.commit("adopted")
+        with open(os.path.join(self.target, ".gitignore"), "a") as fh:
+            fh.write(".aios/config.json\n")
+        run_git(self.target, "rm", "-q", "--cached", ".aios/config.json")
+        self.commit("the people map is only local now")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, v31, self.source)
+        self.assertIn(".aios/config.json", exc.details)
+
+    def test_a_policy_nobody_can_upgrade_and_roll_back_with_is_refused(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["roles"]["founder"]["lifecycle"] = ["install", "adopt", "upgrade", "governance"]  # no rollback
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        self.commit("a policy without rollback")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("upgrade and roll back", exc.message)

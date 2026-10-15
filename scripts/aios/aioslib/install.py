@@ -1015,6 +1015,15 @@ def _adopted_upgrade_view(target, record, manifest):
     if not util.is_tracked(target, (info.get("plan") or ADOPTION_PLAN).replace(os.sep, "/")):
         raise Refusal(EXIT_STATE, "the adoption plan isn't committed any more",
                       [info.get("plan") or ADOPTION_PLAN, "commit it, then upgrade"])
+    # Everything the adopted instance runs on stays committed: an ignored local copy would let the
+    # upgrade succeed while the commit, and a fresh clone, lack it (independent review, 3.1 round 9).
+    keep = [(info.get("plan") or ADOPTION_PLAN), os.path.relpath(orgconfig.default_config_path(target), target),
+            roles.POLICY_PATH, os.path.relpath(install_record_path(target), target)]
+    keep = [k.replace(os.sep, "/") for k in keep] + sorted(e["path"] for e in record.get("managed") or [])
+    untracked = [k for k in keep if not util.is_tracked(target, k)]
+    if untracked:
+        raise Refusal(EXIT_STATE, "%d file(s) this adopted instance runs on aren't committed" % len(untracked),
+                      untracked[:20] + ["commit them (un-ignore them first if needed), then upgrade"])
     entries = {e["path"]: e for e in manifest.get("files") or []}
     classes, problems = classify_adoption(plan, entries)
     if problems:
@@ -1460,8 +1469,8 @@ def _rollback_after_reclaim(target, stale_lock):
             # Killed before its journal, with no release ever pinned here (an adoption that hadn't
             # started writing): nothing changed, so there is nothing to undo (independent review,
             # 3.1 round 8).
-            result = (None, dict(NO_RELEASE_SUMMARY), "an interrupted operation had not changed anything; "
-                      "cleared its lock, nothing to roll back")
+            result = (None, dict(NO_RELEASE_SUMMARY, unchanged=True), "an interrupted operation had not changed "
+                      "anything; cleared its lock, nothing to roll back")
         elif stale_lock and not journal:
             # A killed upgrade or rollback with no journal either never changed anything (the
             # journal is written before the first change) or had already finished. Rolling back now
@@ -1835,6 +1844,14 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
                        "couldn't be rolled back" % roles.POLICY_PATH])
     if os.path.islink(policy_path):
         raise Refusal(EXIT_STATE, "%s is a link, not the instance's own file" % roles.POLICY_PATH)
+    policy = roles.load_policy(target)
+    able = {name for name, role in (policy.get("roles") or {}).items()
+            if {"upgrade", "rollback"} <= set(role.get("lifecycle") or [])}
+    if not any(p.get("role") in able for p in config.get("people") or []):
+        # Otherwise the adoption could never be upgraded or rolled back (independent review, 3.1 round 9).
+        raise Refusal(EXIT_STATE, "nobody in the people map holds a role the instance's policy lets upgrade "
+                      "and roll back", ["give a role in %s the lifecycle actions upgrade and rollback, and "
+                                        "someone in the people map that role" % roles.POLICY_PATH])
 
     plan_rel = (plan_rel or ADOPTION_PLAN).replace(os.sep, "/")
     plan, plan_sha = load_adoption_plan(target, plan_rel)
