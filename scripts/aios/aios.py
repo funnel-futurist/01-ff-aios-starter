@@ -181,6 +181,27 @@ def cmd_adopt(args):
                       % roles.POLICY_PATH)
     login, role = roles.require_lifecycle(policy, config, "adopt")
 
+    if args.plan and not args.existing:
+        raise Refusal(util.EXIT_STATE, "--plan is for --existing: a plain adopt pins a workspace that "
+                                       "already matches the release byte for byte")
+    if args.existing:
+        plan_rel = None
+        if args.plan:
+            plan_rel = os.path.relpath(os.path.abspath(args.plan), target)
+            if plan_rel == ".." or plan_rel.startswith(".." + os.sep):
+                raise Refusal(util.EXIT_STATE, "the adoption plan must be inside the instance it adopts "
+                                               "into: %s" % args.plan)
+        record = install_mod.adopt_existing(target, manifest, repo, config, plan_rel,
+                                            _aios_lookup_from(args.aios_releases))
+        info = record["adoption"]
+        _say("adopted %s into the existing instance %s" % (record["release"]["release_id"], target))
+        _say("  by:       %s (%s)" % (login, role))
+        _say("  plan:     %s (sha256 %s)" % (info["plan"], info["plan_sha256"][:12]))
+        _say("  created:  %d file(s), verified by readback; nothing of the instance's was written"
+             % len(info["created"]))
+        _say("  kept:     every path the plan says is the instance's; no folder move, no seed line")
+        _say("  next:     commit the change (git add -A, then git commit); `aios rollback` undoes it")
+        return EXIT_OK
     record = install_mod.adopt(target, manifest, repo, config,
                                _aios_lookup_from(args.aios_releases))
     _say("pinned %s to %s (%d managed files matched byte for byte)"
@@ -327,12 +348,23 @@ def cmd_upgrade(args):
 
 def cmd_rollback(args):
     target = os.path.abspath(args.target)
-    config = orgconfig.load(target)
+    try:
+        config = orgconfig.load(target)
+    except Refusal:
+        # An adoption killed before its org config landed: its journal holds the people map it was
+        # about to write, so the operator is still checked against it (3.1).
+        journal = install_mod.load_journal(target) or {}
+        if journal.get("op") != "adopt-existing" or not journal.get("config"):
+            raise
+        config = journal["config"]
     policy = roles.load_policy(target)
     login, role = roles.require_lifecycle(policy, config, "rollback")
     record, summary, how = install_mod.rollback(target)
     _say("%s" % how)
     _say("  by:       %s (%s)" % (login, role))
+    if summary["release_id"] is None:
+        _say("  release:  none (the adoption is undone; this is the instance it was before)")
+        return EXIT_OK
     _say("  release:  %s (%s)" % (summary["release_id"], summary["version"]))
     _say("  managed:  %d/%d files re-hashed from disk"
          % (summary["managed_checked"], summary["managed_total"]))
@@ -424,10 +456,15 @@ def cmd_instance_check(args):
         else:
             rel, path = governance.find_file(target)
             local_text = open(path, encoding="utf-8", errors="replace").read() if path else None
-            founders = governance.founders_of(config)
-            for status, detail in governance.founder_review_remote(slug, policy, founders, local_text):
+            # Whoever may approve the founder lane: the founders, or the accounts the role policy
+            # declares as founder-lane reviewers (review permission, not founder status; G98).
+            founders, declared = governance.lane_reviewers(policy, config)
+            for status, detail in governance.founder_review_remote(
+                    slug, policy, sorted(founders), local_text,
+                    governance.REVIEWERS_NOUN if declared else "founders"):
                 results.append(("founder", status, detail))
-            for status, detail in governance.founder_review_enforced(slug, founders):
+            for status, detail in governance.founder_review_enforced(
+                    slug, sorted(founders), "founder-lane" if declared else "founder"):
                 results.append(("founder", status, detail))
     for control, status, detail in results:
         _say("  %-5s %-9s %s" % (status, control, detail))
@@ -748,6 +785,11 @@ def build_parser():
     ad.add_argument("--config", required=True)
     ad.add_argument("--repo", default=_repo_root())
     ad.add_argument("--aios-releases", dest="aios_releases")
+    ad.add_argument("--existing", action="store_true",
+                    help="adopt into an instance that already exists and isn't a Starter copy: create-only, "
+                         "every path classified by the instance's own plan (3.1)")
+    ad.add_argument("--plan", help="the instance's adoption plan, a path inside the target "
+                                   "(default .aios/adoption.json); with --existing")
     ad.set_defaults(func=cmd_adopt)
 
     ve = sub.add_parser("verify", help="readback the workspace against its release")

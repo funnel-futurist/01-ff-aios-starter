@@ -334,7 +334,7 @@ def founders_only(owners, founders):
     return bool(named) and named <= set(founders)
 
 
-def lane_coverage(rules, base, founders):
+def lane_coverage(rules, base, founders, noun="founders"):
     """(ok, detail) for every path inside `base`, proven, not sampled: the last rule that covers the
     whole folder names a founder, and so does every later rule that could match anything in it.
     (GitHub applies the last matching rule, so those are the only rules that can decide a path.)"""
@@ -346,12 +346,12 @@ def lane_coverage(rules, base, founders):
         return False, "no rule covers the whole folder, so some files in it reach no founder"
     _l, pattern, owners = rules[last_cover]
     if not founders_only(owners, founders):
-        return False, "the last rule covering the whole folder (%s) names %s: not only founders, and " \
-                      "GitHub accepts any one of them" % (pattern, " ".join(owners) or "nobody")
+        return False, "the last rule covering the whole folder (%s) names %s: not only %s, and " \
+                      "GitHub accepts any one of them" % (pattern, " ".join(owners) or "nobody", noun)
     for _lineno, later, later_owners in rules[last_cover + 1:]:
         if _overlaps(later, base) and not founders_only(later_owners, founders):
-            return False, "a later rule (%s, owned by %s) takes over files in it, and not only founders " \
-                          "own it" % (later, " ".join(later_owners) or "nobody")
+            return False, "a later rule (%s, owned by %s) takes over files in it, and not only %s " \
+                          "own it" % (later, " ".join(later_owners) or "nobody", noun)
     return True, "%s sends it to %s, and no later rule takes any of it away" % (pattern, " ".join(owners))
 
 
@@ -372,22 +372,61 @@ def _probe(glob):
     return None if any(c in glob for c in "*?[") else glob
 
 
-def founder_rules_check(rules, policy, founders, where):
-    """[(status, detail)] for each founder-lane path against one CODEOWNERS file's rules."""
+def founder_rules_check(rules, policy, founders, where, noun="founders"):
+    """[(status, detail)] for each founder-lane path against one CODEOWNERS file's rules. `founders`
+    is whoever may approve the founder lane: see lane_reviewers."""
     out = []
     for glob in founder_lane_paths(policy):
         if glob.endswith("/**") and not any(c in glob[:-3] for c in "*?["):
-            ok, detail = lane_coverage(rules, glob[:-3], founders)
+            ok, detail = lane_coverage(rules, glob[:-3], founders, noun)
         elif not any(c in glob for c in "*?["):
             pattern, owners = owners_for(rules, glob)
             ok = bool(pattern) and founders_only(owners, founders)
             detail = ("%s sends it to %s" % (pattern, " ".join(owners)) if ok else
                       "no rule covers it" if not pattern else
-                      "the rule that applies (%s) names %s: not only founders, and GitHub accepts any "
-                      "one of them" % (pattern, " ".join(owners) or "nobody"))
+                      "the rule that applies (%s) names %s: not only %s, and GitHub accepts any "
+                      "one of them" % (pattern, " ".join(owners) or "nobody", noun))
         else:
             ok, detail = False, "too broad to check, so it can't be shown to reach a founder"
         out.append(("PASS" if ok else "FAIL", "founder lane %s (%s): %s" % (glob, where, detail)))
+    return out
+
+
+REVIEWER_RE = re.compile(r"^@?[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$")
+REVIEWERS_NOUN = "approved founder-lane reviewers"
+
+
+def lane_reviewers(policy, config):
+    """(accounts, declared): whose CODEOWNERS approval counts as founder-lane review.
+
+    By default the founders and co-founders in the people map, as before. An instance can declare
+    the accounts separately in its role policy, `founder_lane_reviewers`: that is review permission
+    on the founder lane, never business founder status, which stays the people map's `role`
+    (Phoenix, 2026-10-15, G98: "business founder role separate from CODEOWNER permission")."""
+    declared = (policy or {}).get("founder_lane_reviewers")
+    if declared is None:
+        return set(founders_of(config)), False
+    if not isinstance(declared, list):
+        return set(), True
+    return {"@" + h.strip().lstrip("@").lower() for h in declared
+            if isinstance(h, str) and REVIEWER_RE.match(h.strip())}, True
+
+
+def lane_reviewer_problems(policy, config):
+    """Why the declared founder-lane reviewers can't be used, if they're declared at all."""
+    declared = (policy or {}).get("founder_lane_reviewers")
+    if declared is None:
+        return []
+    if not isinstance(declared, list) or not declared:
+        return ["the role policy's founder_lane_reviewers must be a non-empty list of GitHub accounts"]
+    known = {(p.get("github") or "").lower() for p in (config or {}).get("people") or []}
+    out = []
+    for h in declared:
+        if not isinstance(h, str) or not REVIEWER_RE.match(h.strip()):
+            out.append("founder_lane_reviewers: %r is not one GitHub account (a team can't be checked "
+                       "from here)" % (h,))
+        elif h.strip().lstrip("@").lower() not in known:
+            out.append("founder_lane_reviewers: %s is not in this workspace's people map" % h.strip())
     return out
 
 
@@ -405,11 +444,18 @@ def founder_review_local(root, policy, config, retired_folders=()):
         return [("FAIL", "no CODEOWNERS file, so GitHub asks no founder about the founder lane")]
     with open(path, encoding="utf-8", errors="replace") as fh:
         rules = parse(fh.read())
-    founders = set(founders_of(config))
+    founders, declared = lane_reviewers(policy, config)
+    problems = lane_reviewer_problems(policy, config)
+    if problems:
+        return [("FAIL", p) for p in problems]
     if not founders:
         return [("FAIL", "no founder in this workspace's people map (.aios/config.json), so no rule "
                          "can send the founder lane to one")]
-    out.extend(founder_rules_check(rules, policy, founders, rel))
+    if declared:
+        out.append(("INFO", "founder-lane review is the role policy's founder_lane_reviewers (%s): "
+                            "permission to approve those paths, not founder status, which is each "
+                            "person's role in the people map" % " ".join(sorted(founders))))
+    out.extend(founder_rules_check(rules, policy, founders, rel, REVIEWERS_NOUN if declared else "founders"))
     for _lineno, pattern, _owners in rules:
         first = pattern.lstrip("/").split("/", 1)[0]
         if first in retired_folders and not os.path.exists(os.path.join(root, first)):
@@ -496,7 +542,7 @@ def remote_codeowners(slug):
     return branch, None, None, ["%s has no CODEOWNERS on %s, so GitHub asks nobody" % (slug, branch)]
 
 
-def founder_review_remote(slug, policy, founders, local_text=None):
+def founder_review_remote(slug, policy, founders, local_text=None, noun="founders"):
     """[(status, detail)] for the CODEOWNERS GitHub enforces on the default branch."""
     if not slug:
         return [("FAIL", "can't tell which GitHub repository this is (no origin remote), so the "
@@ -506,14 +552,14 @@ def founder_review_remote(slug, policy, founders, local_text=None):
     if text is None:
         return out or [("FAIL", "no CODEOWNERS on GitHub's default branch")]
     out.extend(founder_rules_check(parse(text), policy, set(founders), "%s on %s, as GitHub enforces it"
-                                   % (loc, branch)))
+                                   % (loc, branch), noun))
     if local_text is not None and local_text != text:
         out.append(("INFO", "the local CODEOWNERS differs from %s's; GitHub enforces %s's until "
                             "the change is merged" % (branch, branch)))
     return out
 
 
-def founder_review_enforced(slug, founders=()):
+def founder_review_enforced(slug, founders=(), noun="founder"):
     """[(status, detail)]: does GitHub require code-owner review on the default branch, and can
     each founder actually be a code owner (GitHub ignores an owner without write access)?"""
     out = [_enforced(slug)]
@@ -527,8 +573,8 @@ def founder_review_enforced(slug, founders=()):
             out.append(("PASS", "%s has %s access, so GitHub can ask them as a code owner" % (handle, level)))
         else:
             out.append(("FAIL", "%s has %s access to %s; GitHub ignores a code owner without write "
-                                "access, so founder review can't be required of them"
-                        % (handle, level or "no", slug)))
+                                "access, so %s review can't be required of them"
+                        % (handle, level or "no", slug, noun)))
     return out
 
 

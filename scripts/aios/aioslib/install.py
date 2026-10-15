@@ -210,6 +210,9 @@ def verify(target, record=None, source_repo=None):
             except Refusal as exc:
                 problems.append("cannot derive the release's files at %s: %s" % (rev[:12], exc.message))
                 want_managed = None
+            if want_managed is not None and record.get("adoption"):
+                want_managed = {p for p in want_managed
+                                if _adoption_class(record["adoption"], p) == "adopt"}
             if want_managed is not None:
                 listed = {e["path"] for e in record.get("managed") or []}
                 for path in sorted(want_managed - listed):
@@ -676,7 +679,7 @@ def _founder_review_after_move(target, record, manifest):
 
 def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=False):
     """What `upgrade` would do, writing nothing: the same refusals, then the managed-file changes."""
-    record, _version, _min_from, _creds, files, old_managed, old_seeded = _upgrade_preflight(
+    record, _version, _min_from, _creds, files, old_managed, old_seeded, manifest = _upgrade_preflight(
         target, manifest, source_repo, aios_lookup)
     managed = {p: e for p, e in files.items() if e["class"] == "managed"}
     the_plan, site_rows, blocked = _layout_preflight(target, record, manifest, files, old_managed,
@@ -920,6 +923,10 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
                       [journal_path(target)])
 
     release_mod.require_consumable(manifest, source_repo, aios_lookup)
+    manifest = dict(manifest)
+    manifest.pop("_adoption", None)  # only ever set below, in this process, never read from a file
+    if record.get("adoption"):
+        manifest = _adopted_upgrade_view(target, record, manifest)
 
     current_version = (record.get("release") or {}).get("version")
     cur = util.parse_semver(current_version or "")
@@ -983,11 +990,28 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
             "managed by the installed release" % (manifest["version"], len(collisions)),
             sorted(collisions)[:20] + ["move or delete them, then upgrade again"],
         )
-    return record, current_version, min_from, creds, files, old_managed, old_seeded
+    return record, current_version, min_from, creds, files, old_managed, old_seeded, manifest
+
+
+def _adopted_upgrade_view(target, record, manifest):
+    """An adopted instance upgrades only what it adopted, as its plan says today: a path the new
+    release ships that the plan doesn't classify exactly once refuses, with nothing changed."""
+    info = record["adoption"]
+    plan, plan_sha = load_adoption_plan(target, info.get("plan"))
+    classes, problems = classify_adoption(plan, [e["path"] for e in manifest.get("files") or []])
+    if problems:
+        raise Refusal(EXIT_STATE, "this instance's adoption plan doesn't classify every path release %s "
+                      "ships exactly once" % manifest["version"],
+                      problems[:30] + ["add each to adopt, instance_owned or exclude, then upgrade again"])
+    view = adopted_view(manifest, classes)
+    view["_adoption"] = {"plan": info.get("plan"), "plan_sha256": plan_sha, "adopt": plan["adopt"],
+                         "instance_owned": plan["instance_owned"], "exclude": plan["exclude"],
+                         "shipped": sorted(classes)}
+    return view
 
 
 def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=False):
-    record, current_version, min_from, creds, files, old_managed, old_seeded = _upgrade_preflight(
+    record, current_version, min_from, creds, files, old_managed, old_seeded, manifest = _upgrade_preflight(
         target, manifest, source_repo, aios_lookup)
     the_plan, site_rows, blocked = _layout_preflight(target, record, manifest, files, old_managed,
                                                      no_vercel)
@@ -1094,8 +1118,11 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
                 if written == 1:
                     util.fault("upgrade.mid_write")
 
-        # Managed files the new release dropped.
-        dropped = sorted(set(old_managed) - set(files))
+        # Managed files the new release dropped. On an adopted instance, a file the release still
+        # ships but the plan no longer adopts stays where it is and becomes the instance's: only a
+        # file the release stopped shipping goes.
+        shipped = set((manifest.get("_adoption") or {}).get("shipped") or ())
+        dropped = sorted(set(old_managed) - set(files) - shipped)
         for path in dropped:
             full = os.path.join(target, path)
             if os.path.isfile(full):
@@ -1122,6 +1149,9 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         }
         new_record["managed"] = sorted(new_managed, key=lambda e: e["path"])
         new_record["seeded"] = sorted(new_seeded, key=lambda e: e["path"])
+        if manifest.get("_adoption"):  # the plan as it stands now; set only by the preflight, in-process
+            new_record["adoption"] = dict(record.get("adoption") or {},
+                                          **{k: v for k, v in manifest["_adoption"].items() if k != "shipped"})
         new_record["seed_history"] = sorted(_seed_history(record, manifest, source_repo)
                                             | {p for p, e in files.items() if e["class"] == "seed"})
         if seed_lines_kept or seed_lines_add or seed_lines_settled:
@@ -1377,6 +1407,15 @@ def _rollback_after_reclaim(target, stale_lock):
                               "doesn't match its release", problems)
             result = (record, summary, "an interrupted operation had either not changed anything yet or "
                                        "had finished; cleared its lock, rolled nothing back")
+        elif journal and journal.get("op") == "adopt-existing":
+            notes = _undo_adoption(target, journal.get("adoption") or {})
+            result = (None, dict(NO_RELEASE_SUMMARY), "an interrupted adoption was undone: every file it "
+                      "created and left unchanged is gone" + "".join("; " + n for n in notes))
+        elif not journal and _completed_adoption(target):
+            notes = _undo_adoption(target, load_record(target)["adoption"])
+            result = (None, dict(NO_RELEASE_SUMMARY), "the adoption was undone: every file it created and "
+                      "left unchanged is gone, and the workspace is no longer pinned to a release"
+                      + "".join("; " + n for n in notes))
         elif journal and journal.get("op") == "rollback" and journal.get("phase") == "complete":
             record = load_record(target)
             problems, summary = verify(target, record)
@@ -1393,6 +1432,17 @@ def _rollback_after_reclaim(target, stale_lock):
     if done and done.get("op") == "rollback" and done.get("phase") == "complete":
         os.remove(journal_path(target))
     return result
+
+
+NO_RELEASE_SUMMARY = {"release_id": None, "version": None, "managed_checked": 0, "managed_total": 0}
+
+
+def _completed_adoption(target):
+    """An adopted instance with nothing before the adoption to go back to: rollback undoes it."""
+    if not os.path.isfile(install_record_path(target)):
+        return False
+    record = load_record(target)
+    return bool(record.get("adoption")) and not record.get("previous")
 
 
 def _rollback_locked(target, journal):
@@ -1551,6 +1601,268 @@ def _finish_rollback(target, journal, resumed=False):
 
 
 # ─── adopt ──────────────────────────────────────────────────────────────────
+
+# ─── adopting into an existing instance (3.1, G81) ──────────────────────────
+#
+# Phoenix, 2026-10-14 (ai-os #532): "safe Starter adoption into FF's existing AIOS with NO
+# OVERWRITE. ... Implement approved components/explicit overrides with rehearsal and rollback; do not
+# infer existing adoption works already." So: the instance's own plan names every path the release
+# ships as adopted, the instance's own, or excluded; nothing is inferred; adoption only ever creates
+# files; an existing instance never gets a folder move or a seed line.
+
+ADOPTION_SCHEMA = "ff-aios-starter/adoption@1"
+ADOPTION_PLAN = os.path.join(AIOS_DIR, "adoption.json")
+ADOPTION_CLASSES = ("adopt", "instance_owned", "exclude")
+
+
+def load_adoption_plan(target, rel=None):
+    """(plan, sha256) of the instance's own adoption plan: a file the instance commits and owns."""
+    rel = (rel or ADOPTION_PLAN).replace(os.sep, "/")
+    if not util.safe_relpath(rel):
+        raise Refusal(EXIT_STATE, "the adoption plan must be a path inside the workspace: %s" % rel)
+    full = os.path.join(target, rel)
+    linked = _linked_paths(target, [rel])
+    if linked or os.path.islink(full) or not os.path.isfile(full):
+        raise Refusal(EXIT_STATE, "no adoption plan at %s" % rel,
+                      ["an existing instance names every path the release ships as adopt, "
+                       "instance_owned or exclude (docs/INSTALL_AND_UPGRADE.md)"])
+    plan = util.read_json_safe(full, "adoption plan")
+    problems = []
+    if not isinstance(plan, dict) or plan.get("schema") != ADOPTION_SCHEMA:
+        problems.append("schema is %r, expected %r" % ((plan or {}).get("schema") if isinstance(plan, dict)
+                                                      else None, ADOPTION_SCHEMA))
+    else:
+        for cls in ADOPTION_CLASSES:
+            items = plan.get(cls)
+            if not isinstance(items, list) or not all(isinstance(x, str) and x.strip() for x in items):
+                problems.append("%s must be a list of paths or patterns" % cls)
+    if problems:
+        raise Refusal(EXIT_STATE, "the adoption plan %s isn't usable" % rel, problems)
+    return plan, sha256_file(full)
+
+
+def classify_adoption(plan, paths):
+    """({path: class}, problems). Every path in exactly one list: unlisted or twice-listed refuses."""
+    classes, problems = {}, []
+    for path in sorted(paths):
+        hits = [c for c in ADOPTION_CLASSES if util.match_any(plan.get(c), path)]
+        if len(hits) == 1:
+            classes[path] = hits[0]
+        elif not hits:
+            problems.append("%s: not in the plan (adopt it, keep it as the instance's, or exclude it)" % path)
+        else:
+            problems.append("%s: in more than one list (%s)" % (path, ", ".join(hits)))
+    return classes, problems
+
+
+def _adoption_class(info, path):
+    hits = [c for c in ADOPTION_CLASSES if util.match_any((info or {}).get(c), path)]
+    return hits[0] if len(hits) == 1 else None
+
+
+def adopted_view(manifest, classes):
+    """The release as an adopted instance has it: only its adopted files, and never a folder move or
+    a seed line (an existing instance keeps its own folders and its own CLAUDE.md)."""
+    view = json.loads(json.dumps(manifest))
+    view["files"] = [e for e in view.get("files") or [] if classes.get(e["path"]) == "adopt"]
+    view.pop("layout", None)
+    view.pop("seed_lines", None)
+    return view
+
+
+def _config_text(config):
+    return (json.dumps(config, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def adopt_existing(target, manifest, source_repo, config, plan_rel=None, aios_lookup=None):
+    """Adopt an approved release into an instance that already exists: create-only, as its plan says.
+
+    Refuses, with nothing changed, unless every path the release ships is classified exactly once;
+    every adopted path is absent and reachable without a link; every path declared the instance's
+    exists; the instance has its own role policy (rollback and upgrade read it); and the workspace
+    is committed. Journaled before the first write, so `rollback` undoes even a killed adoption.
+    """
+    with _Lock(target, "adopt"):
+        return _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios_lookup)
+
+
+def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios_lookup):
+    release_mod.require_consumable(manifest, source_repo, aios_lookup)
+    orgconfig.require_valid(config)
+    if os.path.lexists(install_record_path(target)):
+        raise Refusal(EXIT_STATE, "this workspace already has an install record; use upgrade",
+                      [install_record_path(target)])
+    if load_journal(target):
+        raise Refusal(EXIT_STATE, "a previous operation did not finish; run rollback first",
+                      [journal_path(target)])
+    if util.worktree_dirty(target):
+        raise Refusal(EXIT_STATE, "the workspace has uncommitted git changes; commit them first, so the "
+                                  "adoption is one reviewable diff")
+    policy_path = os.path.join(target, roles.POLICY_PATH)
+    try:
+        roles.load_policy(target)
+    except Refusal as exc:
+        raise Refusal(EXIT_STATE, "this instance has no usable role policy of its own (%s)" % exc.message,
+                      ["write %s first: upgrade and rollback read it, so without it an adoption "
+                       "couldn't be rolled back" % roles.POLICY_PATH])
+    if os.path.islink(policy_path):
+        raise Refusal(EXIT_STATE, "%s is a link, not the instance's own file" % roles.POLICY_PATH)
+
+    plan_rel = (plan_rel or ADOPTION_PLAN).replace(os.sep, "/")
+    plan, plan_sha = load_adoption_plan(target, plan_rel)
+    entries = {e["path"]: e for e in manifest.get("files") or []}
+    classes, problems = classify_adoption(plan, entries)
+    if problems:
+        raise Refusal(EXIT_STATE, "the adoption plan doesn't classify every path release %s ships exactly "
+                      "once" % manifest["version"], problems[:30] + ["%d problem(s) in all" % len(problems)])
+    adopt = [entries[p] for p in sorted(entries) if classes[p] == "adopt"]
+    present = [e["path"] for e in adopt if os.path.lexists(os.path.join(target, e["path"]))]
+    if present:
+        raise Refusal(EXIT_STATE, "%d path(s) the plan adopts already exist; adoption never overwrites"
+                      % len(present), present[:20] + ["keep them as the instance's (instance_owned) or "
+                                                       "exclude them"])
+    missing = [p for p in sorted(entries) if classes[p] == "instance_owned"
+               and not os.path.lexists(os.path.join(target, p))]
+    if missing:
+        raise Refusal(EXIT_STATE, "%d path(s) the plan says are the instance's don't exist" % len(missing),
+                      missing[:20] + ["adopt them, exclude them, or restore the instance's own file"])
+    config_path = orgconfig.default_config_path(target)
+    config_rel = os.path.relpath(config_path, target).replace(os.sep, "/")
+    config_created = not os.path.lexists(config_path)
+    if not config_created:
+        same = False
+        if os.path.isfile(config_path) and not os.path.islink(config_path):
+            try:
+                same = util.read_json(config_path) == config
+            except (ValueError, OSError, Refusal):
+                same = False
+        if not same:
+            raise Refusal(EXIT_STATE, "this workspace already has a different organization config",
+                          [config_path, "adopt with --config pointing at it, or move it aside"])
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    linked = _linked_paths(target, [e["path"] for e in adopt] + [config_rel, record_rel])
+    if linked:
+        raise Refusal(EXIT_STATE, "adoption would write through a link or a file in a folder's place",
+                      linked[:20])
+    creds = orgconfig.resolve(manifest.get("credentials"), config, target)
+    orgconfig.require_resolved(creds)
+
+    pre_dirs = set()
+    for rel in [e["path"] for e in adopt] + [config_rel, record_rel]:
+        parts = rel.split("/")[:-1]
+        for i in range(1, len(parts) + 1):
+            d = "/".join(parts[:i])
+            if os.path.isdir(os.path.join(target, d)):
+                pre_dirs.add(d)
+    created = [{"path": e["path"], "sha256": e["sha256"],
+                "mode": 0o755 if e.get("mode") == "100755" else 0o644} for e in adopt]
+    info = {
+        "plan": plan_rel, "plan_sha256": plan_sha,
+        "adopt": plan["adopt"], "instance_owned": plan["instance_owned"], "exclude": plan["exclude"],
+        "created": created, "config_created": config_created,
+        "config_sha256": sha256_bytes(_config_text(config)) if config_created else None,
+        "pre_dirs": sorted(pre_dirs),
+    }
+    util.write_json(journal_path(target), {
+        "op": "adopt-existing", "phase": "writing", "started_at": util.now_iso(),
+        "release_id": manifest["release_id"], "to_version": manifest["version"], "adoption": info,
+        # The people map rollback checks the operator against, if a kill comes before it lands.
+        # References only: an org config never carries a credential value.
+        "config": config if config_created else None,
+    })
+    try:
+        if config_created:  # first, so a rollback after any later kill can tell who is asking
+            util.write_json(config_path, config)
+        managed, seeded, written = [], [], 0
+        for path, _mode, data in util.read_tree(source_repo, manifest["created_from"]["git_rev"]):
+            entry = entries.get(path)
+            if entry is None or classes[path] != "adopt":
+                continue
+            if entry["sha256"] != sha256_bytes(data):
+                raise Refusal(EXIT_PACKAGE, "content at the pin does not match the manifest: %s" % path)
+            sha = util.write_file(target, path, data, entry.get("mode", "100644"))
+            written += 1
+            if written == 1:
+                util.fault("adopt.mid_write")
+            rec = {"path": path, "sha256": sha}
+            if entry["class"] == "managed":
+                rec["exec"] = entry.get("mode") == "100755"
+                managed.append(rec)
+            else:
+                seeded.append(rec)
+        bad = [e["path"] for e in adopt if not _same_bytes_and_mode(target, e)]
+        if bad:
+            raise Refusal(EXIT_VERIFY, "the adopted files did not read back as the release", bad[:20])
+        util.fault("adopt.before_record")
+        record = {
+            "schema": INSTALL_SCHEMA,
+            "package": manifest["package"],
+            "release": {
+                "release_id": manifest["release_id"], "version": manifest["version"],
+                "git_rev": manifest["created_from"]["git_rev"], "status": manifest["status"],
+                "approved_by": (manifest.get("approval") or {}).get("approved_by"),
+                "approved_at": (manifest.get("approval") or {}).get("approved_at"),
+                "min_upgrade_from": (manifest.get("compatibility") or {}).get("min_upgrade_from"),
+            },
+            "installed_at": util.now_iso(),
+            "source": os.path.abspath(source_repo),
+            "status": "installed",
+            "credentials": [{"name": c["name"], "ref": c["ref"], "required": c["required"],
+                             "resolved": c["resolved"]} for c in creds],
+            "managed": sorted(managed, key=lambda e: e["path"]),
+            "seeded": sorted(seeded, key=lambda e: e["path"]),
+            "seed_history": sorted(e["path"] for e in seeded),
+            "rendered": [],
+            "previous": None,
+            "adoption": info,
+        }
+        util.write_json(install_record_path(target), record)
+    except Refusal:
+        _undo_adoption(target, info)
+        raise
+    os.remove(journal_path(target))
+    require_verified(target, record, "adopted workspace")
+    return record
+
+
+def _same_bytes_and_mode(target, entry):
+    full = os.path.join(target, entry["path"])
+    try:
+        st = os.lstat(full)
+    except OSError:
+        return False
+    if not stat.S_ISREG(st.st_mode) or sha256_file(full) != entry["sha256"]:
+        return False
+    return not _EXEC_BITS or bool(st.st_mode & 0o100) == (entry.get("mode") == "100755")
+
+
+def _undo_adoption(target, info):
+    """Take back exactly what an adoption created, and only while it is still what it wrote. Returns
+    notes about anything left because it changed since (the instance's now)."""
+    notes = []
+    created = [c["path"] for c in info.get("created") or []]
+    for c in info.get("created") or []:
+        note = _remove_if_ours(target, c["path"], c["sha256"], c["mode"])
+        if note:
+            notes.append(note)
+    record_full = install_record_path(target)
+    if os.path.isfile(record_full) and not os.path.islink(record_full):
+        try:
+            if (util.read_json(record_full).get("adoption") or {}).get("plan_sha256") == info.get("plan_sha256"):
+                os.remove(record_full)
+        except (ValueError, OSError):
+            notes.append("the install record couldn't be read, so it was left")
+    config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
+    if info.get("config_created"):
+        note = _remove_if_ours(target, config_rel, info.get("config_sha256"))
+        if note:
+            notes.append(note)
+    record_rel = os.path.relpath(record_full, target).replace(os.sep, "/")
+    _prune_parents(target, created + [config_rel, record_rel], keep=info.get("pre_dirs"))
+    if os.path.isfile(journal_path(target)):
+        os.remove(journal_path(target))
+    return notes
+
 
 def adopt(target, manifest, source_repo, config, aios_lookup=None):
     """Pin an existing workspace that matches a release byte for byte.
