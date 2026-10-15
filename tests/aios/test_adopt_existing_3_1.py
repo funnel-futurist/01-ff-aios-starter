@@ -1062,11 +1062,25 @@ class ReviewRoundTwelve(Existing):
             self.assertFalse(os.path.lexists(os.path.join(self.target, path)), path)
 
     def test_an_edited_record_with_the_same_plan_hash_is_kept(self):
+        # Since round 22 an edited record isn't trusted to say which files the adoption made: rollback
+        # refuses and changes nothing until it's restored from git.
         record = self.adopted()
         data = util.read_json(record)
         data["installed_at"] = "edited by hand"
         util.write_json(record, data)  # canonical bytes, same plan hash: only the seal tells
-        self.rolls_back_keeping_the_record(record)
+        with open(record, "rb") as fh:
+            edited = fh.read()
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertNotEqual(code, 0, out + err)
+        self.assertIn("can't trust which files the adoption made", out + err)
+        with open(record, "rb") as fh:
+            self.assertEqual(fh.read(), edited)
+        for path in ADOPTED:
+            self.assertTrue(os.path.lexists(os.path.join(self.target, path)), path)
+        run_git(self.target, "checkout", "--", ".aios/install.json")  # restored, it rolls back
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertFalse(os.path.lexists(record))
 
     def test_a_record_whose_permissions_changed_is_kept(self):
         record = self.adopted()
@@ -1712,3 +1726,66 @@ class ReviewRoundTwentyOne(Existing):
             install_mod.rollback(self.target)
         self.assertIn("is a link or a file, not a folder", ctx.exception.message)
         self.assertEqual(diff(before, _tree(outside)), [])
+
+
+class ReviewRoundTwentyTwo(Existing):
+    """Codex and Gemini, 3.1 round 22."""
+
+    def test_a_finished_adoptions_record_naming_another_file_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["adoption"]["created"].append({"path": "README.md", "sha256": None})  # the instance's own
+        util.write_json(path, record)
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertNotEqual(code, 0, out + err)
+        with open(os.path.join(self.target, "README.md")) as fh:
+            self.assertEqual(fh.read(), "# our company repo\n")
+        for p in ADOPTED:
+            self.assertTrue(os.path.lexists(os.path.join(self.target, p)), p)
+
+    def test_an_interrupted_adoptions_entry_without_provenance_is_left(self):
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        code, _o, _e = self.cli("adopt", "--existing", "--release", rel, "--target", self.target,
+                                "--config", cfg, "--repo", self.source, env={"AIOS_FAULT": "crash:adopt.mid_write"})
+        self.assertEqual(code, 137)
+        journal = install_mod.load_journal(self.target)
+        journal["adoption"]["created"].append({"path": "README.md", "sha256": None})
+        util.write_json(install_mod.journal_path(self.target), journal)
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("without a usable hash and mode", out)
+        with open(os.path.join(self.target, "README.md")) as fh:
+            self.assertEqual(fh.read(), "# our company repo\n")
+
+    def test_a_file_where_aios_should_be_is_a_refusal_not_a_crash(self):
+        for make in ("file", "link to a file"):
+            with self.subTest(make=make):
+                aios = os.path.join(self.tmp, "ws-" + make.replace(" ", "-"))
+                os.makedirs(aios)
+                if make == "file":
+                    write(aios, ".aios", "not a folder\n")
+                else:
+                    write(self.tmp, "a-file", "x\n")
+                    os.symlink(os.path.join(self.tmp, "a-file"), os.path.join(aios, ".aios"))
+                with self.assertRaises(Refusal) as ctx:
+                    with install_mod._Lock(aios, "upgrade"):
+                        pass
+                self.assertIn("is a link or a file, not a folder", ctx.exception.message)
+
+    def test_the_backup_step_refuses_a_linked_backups_folder(self):
+        self.adopt()
+        self.commit("adopted")
+        outside = os.path.join(self.tmp, "outside")
+        os.makedirs(outside)
+        backups = os.path.join(self.target, ".aios", "backups")
+        if os.path.isdir(backups):
+            os.rmdir(backups)
+        os.symlink(outside, backups)
+        with self.assertRaises(Refusal):
+            install_mod._backup(self.target, install_mod.load_record(self.target), "txn-test")
+        self.assertEqual(os.listdir(outside), [])

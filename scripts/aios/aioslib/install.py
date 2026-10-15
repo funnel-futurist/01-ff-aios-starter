@@ -81,10 +81,11 @@ class _Lock(object):
         self.fd = None
 
     def __enter__(self):
-        util.ensure_parent(self.path)
         # Taken under the workspace guard, so it can't land between a recovery's "this lock is
-        # dead" and its removal (independent review, round 10).
+        # dead" and its removal (independent review, round 10). Its folder is made only there too,
+        # after the guard has refused a `.aios` that is a link or a file (3.1 round 22).
         with _RecoveryGuard(self.target):
+            util.ensure_parent(self.path)
             try:
                 self.fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
             except OSError:
@@ -354,6 +355,11 @@ def state_fingerprint(target):
 def _backup(target, record, txn_id):
     """Snapshot the managed files and the install record before mutating either."""
     backup_root = os.path.join(target, BACKUP_DIR, txn_id)
+    # Again right before writing, as private_temp does: the backups must stay inside the workspace
+    # (independent review, 3.1 round 22).
+    linked = _linked_paths(target, [BACKUP_DIR.replace(os.sep, "/") + "/" + txn_id + "/x"])
+    if linked:
+        raise Refusal(EXIT_STATE, "the backups would go through a link or a file: %s" % ", ".join(linked))
     files_root = os.path.join(backup_root, "files")
     for entry in record.get("managed") or []:
         src = os.path.join(target, entry["path"])
@@ -1542,6 +1548,13 @@ def _rollback_after_reclaim(target, stale_lock):
                       + "".join("; " + n for n in notes))
         elif (journal and journal.get("op") == "adopt-undo") or (not journal and _completed_adoption(target)):
             if not journal:
+                # Only a record with its sealed content says which files the adoption made: an edited
+                # one could name any file (independent review, 3.1 round 22).
+                if not _record_sealed(install_record_path(target)):
+                    raise Refusal(EXIT_STATE, "the install record changed since the adoption wrote it, so "
+                                  "rollback can't trust which files the adoption made; nothing was changed",
+                                  ["restore it from git (git checkout -- .aios/install.json), then run "
+                                   "rollback again"])
                 # Journaled before the first removal, so a kill partway through is finished by the
                 # next rollback, not left half-undone (independent review, 3.1).
                 record = load_record(target)
@@ -1883,18 +1896,39 @@ def _sealed(record):
     return dict(body, **{RECORD_SEAL: sha256_bytes(_record_bytes(body))})
 
 
+def _record_sealed(full):
+    """Whether an adoption's install record still has the content it was written with: the same
+    canonical bytes, and a seal that matches them. Only such a record says which files the adoption
+    made (independent review, 3.1 round 22)."""
+    try:
+        with open(full, "rb") as fh:
+            raw = fh.read()
+        record = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError):
+        return False
+    return (isinstance(record, dict) and record.get(RECORD_SEAL) is not None
+            and _sealed(record) == record and raw == _record_bytes(record))
+
+
 def _record_unchanged(full):
-    """Whether an adoption's install record is still what it was written as: the same canonical bytes,
-    a seal that matches them, and the mode it was written with (0644, written and restored alike)."""
-    with open(full, "rb") as fh:
-        raw = fh.read()
-    record = json.loads(raw.decode("utf-8"))
+    """Whether an adoption's install record is still what it was written as: sealed content, and the
+    mode it was written with (0644, written and restored alike)."""
     mode = os.lstat(full).st_mode
     # Written and restored as 0644. Windows keeps no POSIX bits, only read-only, so there it must
     # still be writable (independent review, 3.1 round 13).
     same_mode = stat.S_IMODE(mode) == 0o644 if _EXEC_BITS else bool(mode & stat.S_IWRITE)
-    return (isinstance(record, dict) and record.get(RECORD_SEAL) is not None
-            and _sealed(record) == record and raw == _record_bytes(record) and same_mode)
+    return _record_sealed(full) and same_mode
+
+
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _provenance_ok(entry):
+    """A created file's entry as the adoption writes it: a path, its sha256 and its mode. One without
+    them can't show the file is still what was made, so it's never removed (3.1 round 22)."""
+    return (isinstance(entry, dict) and isinstance(entry.get("path"), str)
+            and isinstance(entry.get("sha256"), str) and bool(_HEX64.match(entry["sha256"]))
+            and isinstance(entry.get("mode"), int) and not isinstance(entry.get("mode"), bool))
 
 
 def _config_text(config):
@@ -2222,7 +2256,7 @@ def _undo_adoption(target, info, pending=None):
     copy (same inode as its temporary file). Returns notes about anything left. Never removes the
     journal: the caller does, last."""
     notes = []
-    created = [c["path"] for c in info.get("created") or []]
+    created = [c["path"] for c in info.get("created") or [] if _provenance_ok(c)]
     decided = set()
     if pending:
         # First, the file a kill caught being created, whatever else says about it: removed only if
@@ -2250,7 +2284,10 @@ def _undo_adoption(target, info, pending=None):
             if os.path.lexists(tmp):
                 os.remove(tmp)
     for i, c in enumerate(info.get("created") or []):
-        if c["path"] not in decided and not _reachable(target, c["path"]):
+        if not _provenance_ok(c):
+            notes.append("an entry without a usable hash and mode was left alone: %s"
+                         % (c.get("path") if isinstance(c, dict) else c))
+        elif c["path"] not in decided and not _reachable(target, c["path"]):
             notes.append("%s is reached through a link now, so it was left" % c["path"])
         elif c["path"] not in decided:
             note = _remove_if_ours(target, c["path"], c["sha256"], c.get("mode"))

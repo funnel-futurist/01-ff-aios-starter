@@ -226,9 +226,11 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - Each new file appears whole and can never replace one that appeared meanwhile.
 - `aios rollback` takes back exactly what it created and left unchanged, whether the adoption
   finished or was killed partway.
-- A file you've changed since is left in place, and the message says so. That includes the
-  install record (`.aios/install.json`): if you've edited it, rollback leaves it and says so, and
-  the workspace stays pinned until you delete it.
+- A file you've changed since is left in place, and the message says so.
+- The install record (`.aios/install.json`) is what says which files the adoption made, so it is
+  sealed. If its content has been edited, rollback refuses and changes nothing until you restore
+  it from git (`git checkout -- .aios/install.json`). If only its permissions changed, rollback
+  undoes the adoption, leaves the record, and says the workspace stays pinned until you delete it.
 - Folders the adoption made are removed once they're empty again; a folder it can't prove it
   made (one you replaced, say) is left. So is a folder of yours that a kill caught between being
   made and being recorded: an empty folder, left rather than risk removing one that isn't the
