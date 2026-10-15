@@ -829,3 +829,25 @@ class ReviewRoundSeven(Existing):
         exc = self.refuses_unchanged(self.adopt)
         self.assertIn("own paths", exc.message)
         self.assertTrue(any("already holds files" in d for d in exc.details), exc.details)
+
+
+class ReviewRoundEight(Existing):
+    """Codex, 3.1 round 8."""
+
+    def test_an_ignored_people_map_already_here_is_refused(self):
+        write(self.target, ".aios/config.json", json.dumps(harness.config()))
+        with open(os.path.join(self.target, ".gitignore"), "a") as fh:
+            fh.write(".aios/config.json\n")
+        self.commit("our config, ignored")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("isn't committed", exc.message)
+
+    def test_a_dead_lock_before_the_journal_is_cleared_when_a_people_map_exists(self):
+        write(self.target, ".aios/config.json", json.dumps(harness.config()))
+        self.commit("our config, committed")
+        write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("nothing to roll back", out)
+        self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))

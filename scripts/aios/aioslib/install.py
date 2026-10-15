@@ -1456,7 +1456,13 @@ def _reclaim_stale_lock(stale):
 def _rollback_after_reclaim(target, stale_lock):
     with _Lock(target, "rollback"):
         journal = load_journal(target)
-        if stale_lock and not journal:
+        if stale_lock and not journal and not os.path.isfile(install_record_path(target)):
+            # Killed before its journal, with no release ever pinned here (an adoption that hadn't
+            # started writing): nothing changed, so there is nothing to undo (independent review,
+            # 3.1 round 8).
+            result = (None, dict(NO_RELEASE_SUMMARY), "an interrupted operation had not changed anything; "
+                      "cleared its lock, nothing to roll back")
+        elif stale_lock and not journal:
             # A killed upgrade or rollback with no journal either never changed anything (the
             # journal is written before the first change) or had already finished. Rolling back now
             # would undo the PREVIOUS release, which nobody asked for (found by the 3.0 rehearsal's
@@ -1874,6 +1880,12 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
         if not same:
             raise Refusal(EXIT_STATE, "this workspace already has a different organization config",
                           [config_path, "adopt with --config pointing at it, or move it aside"])
+        if not util.is_tracked(target, config_rel):
+            # An ignored or uncommitted people map would never reach the commit, and a fresh clone
+            # couldn't tell who may run upgrades or approve the founder lane (independent review, 3.1
+            # round 8).
+            raise Refusal(EXIT_STATE, "the organization config already here isn't committed",
+                          [config_rel, "commit it (it holds references, never secrets), or move it aside"])
     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
     ignored = util.ignored_paths(target, [e["path"] for e in adopt] + [record_rel]
                                  + ([config_rel] if config_created else []))
