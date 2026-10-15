@@ -1764,7 +1764,10 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
             # What the adoption made comes only from its anchor (the record and plan as committed with it)
             # and the release source, on the first pass and on every resumed one: the journal holds
             # progress only (independent review, 3.1 rounds 22 to 26).
-            anchored = _adoption_anchor(target)
+            # A resumed undo uses the anchor its first pass journaled: it never infers progress from a
+            # record that's gone, which a pull request could have deleted (independent review, 3.1 round 36).
+            anchored = _adoption_anchor(target, journal["anchor"]) if journal and "anchor" in journal \
+                else _adoption_anchor(target)
             if anchored is not None:
                 anchor_record, anchor_plan, anchor = anchored
                 trusted = _release_adopted(anchor_record, anchor_plan, source_repo)
@@ -1801,6 +1804,7 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                 # Journaled before the first removal, so a kill partway through is finished by the
                 # next rollback, not left half-undone (independent review, 3.1).
                 journal = {"op": "adopt-undo", "phase": "undoing", "started_at": util.now_iso(),
+                           "anchor": anchor,
                            "config": orgconfig.load(target) if os.path.isfile(
                                orgconfig.default_config_path(target)) else None}
                 util.write_json(journal_path(target), journal)
@@ -1915,9 +1919,17 @@ def _rollback_locked(target, journal):
     if journal:
         # Before anything changes: the record on disk must be the one this upgrade started from or the
         # one it was writing, and the snapshot and every path must be the installer's own (round 35).
-        if current is not None and journal.get("record_sha256_before"):
-            on_disk = sha256_file(record_path)
-            if on_disk not in (journal.get("record_sha256_before"), journal.get("record_sha256_after")):
+        if journal.get("record_sha256_before"):
+            # An upgrade never leaves the record missing or half-written (every write is atomic), so a
+            # missing, unreadable or different one isn't the upgrade's (independent review, 3.1 round 36).
+            try:
+                if os.path.islink(record_path) or not os.path.isfile(record_path):
+                    raise OSError("not a file")
+                on_disk = sha256_file(record_path)
+            except OSError:
+                on_disk = None
+            allowed = {h for h in (journal.get("record_sha256_before"), journal.get("record_sha256_after")) if h}
+            if on_disk is None or on_disk not in allowed:
                 raise Refusal(EXIT_STATE, "the install record isn't the one the interrupted upgrade started "
                                           "from or was writing; nothing was changed",
                               ["restore it from git, then run rollback again"])
@@ -2584,7 +2596,7 @@ def _latest_added(target, rel):
     return out.strip() or None
 
 
-def _adoption_anchor(target):
+def _adoption_anchor(target, journaled=False):
     """(record, plan, commit) of the adoption a rollback undoes, from what can't be edited after the
     fact (independent review, 3.1 rounds 24 to 26): the install record and the plan as committed in the
     commit that most recently added the record, the plan checked against the record's plan_sha256, and
@@ -2599,15 +2611,21 @@ def _adoption_anchor(target):
         # Present but not a file: never taken for "no record" (independent review, 3.1 round 27).
         raise Refusal(EXIT_STATE, "%s isn't the install record (a link or a folder); nothing was changed"
                       % record_rel, ["restore it from git, or move it aside, then run rollback again"])
-    # Committed means in HEAD's tree, not merely staged (3.1 round 27), under any spelling a Mac or
-    # Windows disk takes for this path; committed under another spelling, it's refused, never read as
-    # local (3.1 round 31).
-    spellings = util.head_spellings(target, record_rel)
-    if spellings and spellings != [record_rel]:
-        raise Refusal(EXIT_STATE, "the install record is committed as %s, not just %s; nothing was changed"
-                      % (", ".join(spellings), record_rel),
-                      ["keep one copy, under its own name (git mv / git rm), commit, then run rollback again"])
-    anchor = _latest_added(target, record_rel) if spellings else None
+    if journaled is not False:
+        # Resuming: the anchor the first pass journaled (a commit, or None for an uncommitted adoption).
+        anchor = journaled
+        if anchor is not None and not re.match(r"^[0-9a-f]{40}$", str(anchor)):
+            raise Refusal(EXIT_STATE, "the undo's journal names no usable anchor; nothing was changed")
+    else:
+        # Committed means in HEAD's tree, not merely staged (3.1 round 27), under any spelling a Mac or
+        # Windows disk takes for this path; committed under another spelling, it's refused, never read as
+        # local (3.1 round 31).
+        spellings = util.head_spellings(target, record_rel)
+        if spellings and spellings != [record_rel]:
+            raise Refusal(EXIT_STATE, "the install record is committed as %s, not just %s; nothing was changed"
+                          % (", ".join(spellings), record_rel),
+                          ["keep one copy, under its own name (git mv / git rm), commit, then run rollback again"])
+        anchor = _latest_added(target, record_rel) if spellings else None
     if anchor:
         raw = util.git(target, ["show", "%s:%s" % (anchor, record_rel)], binary=True, check=False)
         try:

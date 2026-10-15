@@ -2581,3 +2581,39 @@ class ReviewRoundThirtyFive(ReviewRoundThirtyTwo):
                 with self.assertRaises(Refusal) as ctx:
                     install_mod.rollback(self.target, self.source)
                 self.assertIn("outside the workspace", ctx.exception.message)
+
+
+class ReviewRoundThirtySix(ReviewRoundThirtyFive):
+    """Codex, 3.1 round 36: a missing record is never mistaken for progress."""
+
+    def test_an_interrupted_upgrades_record_deleted_or_broken_is_refused(self):
+        for how in ("deleted", "invalid"):
+            with self.subTest(how=how):
+                self.setUp()
+                self.killed_upgrade()
+                path = install_mod.install_record_path(self.target)
+                if how == "deleted":
+                    os.remove(path)
+                else:
+                    with open(path, "w") as fh:
+                        fh.write("{not json")
+                before = _tree(self.target)
+                code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+                self.assertNotEqual(code, 0, out + err)
+                self.assertIn("isn't the one the interrupted upgrade started from", out + err)
+                # nothing changed but the killed upgrade's dead lock, which rollback reclaims by design
+                self.assertEqual([d for d in diff(before, _tree(self.target)) if d != ".aios/lock"], [])
+
+    def test_a_resumed_undo_finishes_even_after_the_committed_record_was_deleted(self):
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-founder")
+        code, _o, _e = self.cli("rollback", "--target", self.target, "--repo", self.source,
+                                env={"AIOS_FAULT": "crash:adopt.undo_before"})
+        self.assertEqual(code, 137)
+        run_git(self.target, "rm", "-q", ".aios/install.json")
+        run_git(self.target, "commit", "-qm", "a pull request deletes the record meanwhile")
+        code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        for p in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(self.target, p)), p)
