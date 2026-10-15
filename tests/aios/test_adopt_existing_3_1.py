@@ -89,7 +89,8 @@ class Adoption(Existing):
         self.assertEqual([k for k in changed if k != "<git status>"], [], changed)
         new_files = sorted(k for k in after if k not in before and os.path.isfile(os.path.join(self.target, k)))
         self.assertEqual(new_files, sorted(ADOPTED + [".aios/config.json", ".aios/install.json"]))
-        self.assertEqual(sorted(e["path"] for e in record["adoption"]["created"]), ADOPTED)
+        self.assertEqual(sorted(e["path"] for e in record["adoption"]["created"]),
+                         sorted(ADOPTED + [".aios/config.json"]))
         self.assertEqual(install_mod.verify(self.target)[0], [])
         self.assertEqual(install_mod.verify(self.target, source_repo=self.source)[0], [])
 
@@ -127,7 +128,7 @@ class RefusesWithNothingChanged(Existing):
         self.write_plan(plan)
         self.commit("catch-all")
         exc = self.refuses_unchanged(self.adopt)
-        self.assertIn("in more than one list", "\n".join(exc.details))
+        self.assertIn("classify everything at once", "\n".join(exc.details))
 
     def test_an_adopted_path_that_already_exists(self):
         write(self.target, "START_HERE.md", "# ours already\n")
@@ -389,3 +390,200 @@ class LaneReviewers(Sandbox):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewRoundOne(Existing):
+    """Gemini and Codex, 3.1 round 1."""
+
+    def test_g1_a_file_the_plan_keeps_is_never_deleted_when_the_release_drops_it(self):
+        self.adopt()
+        self.commit("adopted")
+        plan = json.loads(json.dumps(PLAN))
+        plan["adopt"].remove("START_HERE.md")
+        plan["instance_owned"].append("START_HERE.md")
+        self.write_plan(plan)
+        self.commit("START_HERE.md is ours now")
+        run_git(self.source, "rm", "-q", "START_HERE.md")  # and the next release stops shipping it
+        v31 = harness.approve(harness.build_manifest(self.source, harness.bump_source(self.source, {}, "3.1"),
+                                                     "3.1.0"))
+        self.assertNotIn("START_HERE.md", install_mod.upgrade_plan(self.target, v31, self.source)["removed"])
+        install_mod.upgrade(self.target, v31, self.source)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, "START_HERE.md")))
+
+    def test_g1_a_file_the_plan_still_adopts_goes_when_the_release_drops_it(self):
+        self.adopt()
+        self.commit("adopted")
+        run_git(self.source, "rm", "-q", "START_HERE.md")
+        v31 = harness.approve(harness.build_manifest(self.source, harness.bump_source(self.source, {}, "3.1"),
+                                                     "3.1.0"))
+        self.assertIn("START_HERE.md", install_mod.upgrade_plan(self.target, v31, self.source)["removed"])
+        install_mod.upgrade(self.target, v31, self.source)
+        self.assertFalse(os.path.exists(os.path.join(self.target, "START_HERE.md")))
+
+    def test_c1_a_guard_file_of_the_repositorys_own_is_never_touched(self):
+        write(self.target, ".aios/backups/guard", "ours\n")
+        self.commit("a file of ours at the guard's path")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("own paths", exc.message)
+        with open(os.path.join(self.target, ".aios/backups/guard")) as fh:
+            self.assertEqual(fh.read(), "ours\n")
+
+    def test_c2_json_is_never_written_through_a_planted_temporary_name(self):
+        outside = os.path.join(self.tmp, "outside.json")
+        with open(outside, "w") as fh:
+            fh.write("untouched\n")
+        path = os.path.join(self.tmp, "state", "record.json")
+        os.makedirs(os.path.dirname(path))
+        os.symlink(outside, path + ".tmp")
+        util.write_json(path, {"a": 1})
+        with open(outside) as fh:
+            self.assertEqual(fh.read(), "untouched\n")
+        self.assertTrue(os.path.islink(path + ".tmp"))
+        self.assertEqual(util.read_json(path), {"a": 1})
+
+    def test_c3_a_file_that_appears_while_adopting_is_never_replaced(self):
+        real_fault = install_mod.util.fault
+
+        def plant(point):
+            if point == "adopt.mid_write":
+                write(self.target, "scripts/team/git-safety-check.sh", "someone else's, just now\n")
+            real_fault(point)
+        install_mod.util.fault = plant
+        try:
+            with self.assertRaises(Refusal) as ctx:
+                self.adopt()
+        finally:
+            install_mod.util.fault = real_fault
+        self.assertIn("appeared while this ran", ctx.exception.message)
+        with open(os.path.join(self.target, "scripts/team/git-safety-check.sh")) as fh:
+            self.assertEqual(fh.read(), "someone else's, just now\n")
+        self.assertFalse(os.path.exists(os.path.join(self.target, ".aios/.gitignore")))  # the rest undone
+        self.assertIsNone(install_mod.load_journal(self.target))
+
+    def kill(self, point, *args):
+        self.be("acme-founder")
+        cfg = self.write_json("org.json", harness.config())
+        rel = self.write_json("release.json", self.v)
+        return self.cli(*(args or ("adopt", "--existing", "--release", rel, "--target", self.target,
+                                   "--config", cfg, "--repo", self.source)),
+                        env={"AIOS_FAULT": "crash:" + point})
+
+    def test_c4_rollback_never_deletes_a_matching_file_it_didnt_write(self):
+        code, _o, _e = self.kill("adopt.mid_write")
+        self.assertEqual(code, 137)
+        # The script isn't written yet; someone puts the release's exact bytes there by hand.
+        with open(os.path.join(self.source, "scripts/team/git-safety-check.sh"), "rb") as fh:
+            write(self.target, "scripts/team/git-safety-check.sh", fh.read())
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, "scripts/team/git-safety-check.sh")))
+        self.assertFalse(os.path.exists(os.path.join(self.target, ".aios/install.json")))
+
+    def test_c5_a_killed_undo_is_finished_by_the_next_rollback(self):
+        before = snapshot(self.target)
+        self.adopt()
+        for point in ("adopt.undo_before", "adopt.undo_mid"):
+            with self.subTest(point=point):
+                if not os.path.isfile(install_mod.install_record_path(self.target)):
+                    self.adopt()
+                code, _o, _e = self.kill(point, "rollback", "--target", self.target)
+                self.assertEqual(code, 137)
+                code, out, err = self.cli("rollback", "--target", self.target)
+                self.assertEqual(code, 0, out + err)
+                self.assertEqual(diff(before, snapshot(self.target)), [])
+
+    def test_c5_a_dead_lock_from_before_the_journal_clears_without_a_people_map(self):
+        write(self.target, ".aios/lock", "adopt pid=999999 at then\n")
+        code, out, err = self.cli("rollback", "--target", self.target)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("nothing to roll back", out)
+        self.assertFalse(os.path.lexists(os.path.join(self.target, ".aios/lock")))
+
+    def test_c6_c8_rollback_compares_the_mode_the_disk_reported(self):
+        record = self.adopt()
+        for c in record["adoption"]["created"]:
+            self.assertEqual(c["mode"], os.lstat(os.path.join(self.target, c["path"])).st_mode & 0o7777)
+        os.chmod(os.path.join(self.target, ".aios/config.json"), 0o600)
+        _r, _s, how = install_mod.rollback(self.target)
+        self.assertIn(".aios/config.json changed permissions", how)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, ".aios/config.json")))
+
+    def test_c7_a_release_may_never_ship_the_installers_own_paths(self):
+        man = json.loads(json.dumps(self.v))
+        man["files"].append({"path": ".aios/txn.json", "class": "managed", "mode": "100644", "sha256": "0" * 64})
+        self.assertTrue(any("installer's own state" in p for p in __import__("aioslib.release").release.check_shape(man)))
+        write(self.source, ".aios/txn.json", "{}\n")
+        run_git(self.source, "add", "-f", ".aios/txn.json")  # the source's own ignore rules would skip it
+        rev = harness.bump_source(self.source, {}, "ships a journal")
+        with self.assertRaises(Refusal) as ctx:
+            harness.build_manifest(self.source, rev, "3.0.1")
+        self.assertIn("installer's own state", ctx.exception.message)
+
+    def test_c9_not_a_git_repository_and_an_uncommitted_plan(self):
+        plain = os.path.join(self.tmp, "plain")
+        shutil.copytree(self.target, plain, ignore=shutil.ignore_patterns(".git"))
+        with self.assertRaises(Refusal) as ctx:
+            install_mod.adopt_existing(plain, self.v, self.source, harness.config())
+        self.assertIn("isn't a git repository", ctx.exception.message)
+        write(self.target, ".gitignore", "node_modules/\n.env\n.aios/adoption.json\n")
+        run_git(self.target, "rm", "-q", "--cached", ".aios/adoption.json")
+        self.commit("the plan is only ignored, not committed")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("must be committed", exc.message)
+
+    def test_c11_a_catch_all_or_a_plan_that_adopts_nothing(self):
+        self.write_plan({"schema": "ff-aios-starter/adoption@1", "adopt": [], "instance_owned": [], "exclude": ["**"]})
+        self.commit("catch-all only")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("classify everything at once", "\n".join(exc.details))
+        everything = [e["path"] for e in self.v["files"]]
+        owned = [p for p in everything if os.path.lexists(os.path.join(self.target, p))]
+        self.write_plan({"schema": "ff-aios-starter/adoption@1", "adopt": [], "instance_owned": owned,
+                         "exclude": [p for p in everything if p not in owned]})
+        self.commit("adopts nothing")
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("adopts no path", exc.message)
+
+
+class BoundaryHonoursDeclaredReviewers(Sandbox):
+    """Codex round 1, finding 10: G98 at the pull request too."""
+
+    def setUp(self):
+        super(BoundaryHonoursDeclaredReviewers, self).setUp()
+        self.repo = os.path.join(self.tmp, "client")
+        os.makedirs(self.repo)
+        run_git(self.repo, "init", "-q", "-b", "main")
+        run_git(self.repo, "config", "user.email", "t@example.com")
+        run_git(self.repo, "config", "user.name", "t")
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["founder_lane_reviewers"] = ["@acme-founder", "@acme-lead"]
+        write(self.repo, ".aios/roles.json", json.dumps(policy, indent=2))
+        write(self.repo, ".aios/config.json", json.dumps(harness.config(people=[
+            {"github": "acme-founder", "role": "founder", "display_name": "F"},
+            {"github": "acme-lead", "role": "operator", "display_name": "L"},
+            {"github": "acme-va", "role": "operator", "display_name": "V"}]), indent=2))
+        write(self.repo, "CLAUDE.md", "# rules\n")
+        run_git(self.repo, "add", "-A")
+        run_git(self.repo, "commit", "-qm", "base")
+        self.base = util.git(self.repo, ["rev-parse", "HEAD"])
+        run_git(self.repo, "checkout", "-q", "-b", "pr")
+        write(self.repo, "CLAUDE.md", "# rules, changed\n")
+        run_git(self.repo, "commit", "-qam", "change")
+        self.head = util.git(self.repo, ["rev-parse", "HEAD"])
+
+    def check(self, author, approvers):
+        from aioslib import boundary
+        return boundary.check_pr(self.repo, self.base, self.head, author, approvers)
+
+    def test_a_declared_reviewer_who_isnt_a_founder_satisfies_it(self):
+        code, lines = self.check("acme-va", ["acme-lead"])
+        self.assertEqual(code, 0, lines)
+
+    def test_an_undeclared_operator_does_not_and_the_message_names_who_may(self):
+        code, lines = self.check("acme-lead", ["acme-va"])
+        self.assertNotEqual(code, 0)
+        self.assertIn("approved founder-lane reviewer", "\n".join(lines))
+
+    def test_nobody_approves_their_own_change(self):
+        code, _lines = self.check("acme-lead", ["acme-lead"])
+        self.assertNotEqual(code, 0)

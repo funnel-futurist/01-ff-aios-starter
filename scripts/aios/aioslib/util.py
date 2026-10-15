@@ -68,13 +68,29 @@ def write_json(path, obj):
     text = json.dumps(obj, indent=2, sort_keys=True) + "\n"
     # Atomic. Mode "w" truncates before writing, so a kill mid-write left a half-written
     # install record that no recovery path could parse - the crash handler itself crashed.
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(text)
-        fh.flush()
-        os.fsync(fh.fileno())
-    os.replace(tmp, path)
+    # The temporary file is new and uniquely named, never a fixed `<name>.tmp` that something else
+    # could already be, or a link that would send the write elsewhere (independent review, 3.1).
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".", suffix=".tmp",
+                               dir=os.path.dirname(os.path.abspath(path)))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    finally:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
     return text
+
+
+# The installer's own state in a workspace. A release may never ship these paths, and adopting
+# into an existing repository refuses while one is already there (independent review, 3.1).
+TOOL_RESERVED = (".aios/install.json", ".aios/config.json", ".aios/txn.json", ".aios/lock",
+                 ".aios/backups/**")
 
 
 def read_json_safe(path, what="file"):
@@ -284,6 +300,50 @@ def write_file(target_root, relpath, data, mode):
         if os.path.lexists(tmp):
             os.remove(tmp)
     return sha256_bytes(data)
+
+
+def create_new(target_root, relpath, data, mode, before_link=None):
+    """Create `relpath` only if nothing is there, atomically: the whole file appears at once (a
+    hard link from a finished temporary copy), and never replaces anything, even something that
+    appeared a moment ago. Returns the temporary copy's path, still linked: the caller records the
+    new file, then removes it. `before_link(tmp)` runs once the copy is ready (journal it there)."""
+    if not safe_relpath(relpath):
+        raise Refusal(EXIT_PACKAGE, "unsafe path refused: %s" % relpath)
+    dest = os.path.join(target_root, relpath)
+    ensure_parent(dest)
+    real_root = os.path.realpath(target_root)
+    real_parent = os.path.realpath(os.path.dirname(dest))
+    if real_parent != real_root and not real_parent.startswith(real_root + os.sep):
+        raise Refusal(EXIT_STATE, "refusing to write outside the workspace: %s resolves to %s"
+                      % (relpath, real_parent))
+    tmp = private_temp(target_root)
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, 0o755 if mode == "100755" else 0o644)
+        if before_link:
+            before_link(tmp)
+        try:
+            os.link(tmp, dest)  # fails if anything is at dest, a link included: never a replace
+        except FileExistsError:
+            raise Refusal(EXIT_STATE, "%s appeared while this ran; it was not overwritten" % relpath)
+        except OSError as exc:
+            raise Refusal(EXIT_STATE, "this disk can't create %s without risking a replace (%s)"
+                          % (relpath, exc), ["adopting into an existing instance needs a disk with hard links"])
+    except BaseException:
+        if os.path.lexists(tmp) and not (os.path.lexists(dest) and os.path.samestat(os.lstat(tmp), os.lstat(dest))):
+            os.remove(tmp)
+        raise
+    return tmp
+
+
+def is_tracked(repo, relpath):
+    """Whether git tracks `relpath` in the worktree at `repo`."""
+    proc = subprocess.run(["git", "-C", repo, "ls-files", "--error-unmatch", "--", relpath],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return proc.returncode == 0
 
 
 def private_temp(target_root):

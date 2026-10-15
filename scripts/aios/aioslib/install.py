@@ -701,7 +701,7 @@ def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=Fals
         "changed": sorted(p for p, e in managed.items()
                           if p in old_managed and old_managed[p].get("sha256") != e["sha256"]),
         "added": sorted(p for p in managed if p not in old_managed),
-        "removed": sorted(set(old_managed) - set(files)),
+        "removed": _to_drop(old_managed, files, manifest),
         "unchanged": sum(1 for p, e in managed.items()
                          if p in old_managed and old_managed[p].get("sha256") == e["sha256"]),
         "new_seeds": sorted(p for p, e in files.items() if e["class"] == "seed"
@@ -993,6 +993,18 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     return record, current_version, min_from, creds, files, old_managed, old_seeded, manifest
 
 
+def _to_drop(old_managed, files, manifest):
+    """Managed files an upgrade removes because the new release stopped shipping them. On an
+    adopted instance, only those its plan still adopts: one the plan now calls the instance's, or
+    excludes, or no longer lists, stays where it is (independent review, 3.1)."""
+    dropped = set(old_managed) - set(files)
+    adoption = manifest.get("_adoption")
+    if adoption:
+        shipped = set(adoption.get("shipped") or ())
+        dropped = {p for p in dropped if p not in shipped and _adoption_class(adoption, p) == "adopt"}
+    return sorted(dropped)
+
+
 def _adopted_upgrade_view(target, record, manifest):
     """An adopted instance upgrades only what it adopted, as its plan says today: a path the new
     release ships that the plan doesn't classify exactly once refuses, with nothing changed."""
@@ -1121,8 +1133,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         # Managed files the new release dropped. On an adopted instance, a file the release still
         # ships but the plan no longer adopts stays where it is and becomes the instance's: only a
         # file the release stopped shipping goes.
-        shipped = set((manifest.get("_adoption") or {}).get("shipped") or ())
-        dropped = sorted(set(old_managed) - set(files) - shipped)
+        dropped = _to_drop(old_managed, files, manifest)
         for path in dropped:
             full = os.path.join(target, path)
             if os.path.isfile(full):
@@ -1408,14 +1419,29 @@ def _rollback_after_reclaim(target, stale_lock):
             result = (record, summary, "an interrupted operation had either not changed anything yet or "
                                        "had finished; cleared its lock, rolled nothing back")
         elif journal and journal.get("op") == "adopt-existing":
-            notes = _undo_adoption(target, journal.get("adoption") or {})
+            notes = _undo_adoption(target, journal.get("adoption") or {}, journal.get("pending"))
+            os.remove(journal_path(target))
             result = (None, dict(NO_RELEASE_SUMMARY), "an interrupted adoption was undone: every file it "
                       "created and left unchanged is gone" + "".join("; " + n for n in notes))
-        elif not journal and _completed_adoption(target):
-            notes = _undo_adoption(target, load_record(target)["adoption"])
+        elif (journal and journal.get("op") == "adopt-undo") or (not journal and _completed_adoption(target)):
+            if not journal:
+                # Journaled before the first removal, so a kill partway through is finished by the
+                # next rollback, not left half-undone (independent review, 3.1).
+                record = load_record(target)
+                journal = {"op": "adopt-undo", "phase": "undoing", "started_at": util.now_iso(),
+                           "adoption": record["adoption"],
+                           "config": orgconfig.load(target) if os.path.isfile(
+                               orgconfig.default_config_path(target)) else None}
+                util.write_json(journal_path(target), journal)
+            if journal.get("phase") != "complete":
+                util.fault("adopt.undo_before")
+                notes = _undo_adoption(target, journal.get("adoption") or {})
+                journal["phase"] = "complete"
+                journal["notes"] = notes
+                util.write_json(journal_path(target), journal)
             result = (None, dict(NO_RELEASE_SUMMARY), "the adoption was undone: every file it created and "
                       "left unchanged is gone, and the workspace is no longer pinned to a release"
-                      + "".join("; " + n for n in notes))
+                      + "".join("; " + n for n in journal.get("notes") or []))
         elif journal and journal.get("op") == "rollback" and journal.get("phase") == "complete":
             record = load_record(target)
             problems, summary = verify(target, record)
@@ -1429,9 +1455,18 @@ def _rollback_after_reclaim(target, stale_lock):
     # A finished rollback keeps its journal, marked complete, until its lock is gone: a kill in
     # between must not make the next rollback go back one release too far (independent review).
     done = load_journal(target)
-    if done and done.get("op") == "rollback" and done.get("phase") == "complete":
+    if done and done.get("op") in ("rollback", "adopt-undo") and done.get("phase") == "complete":
         os.remove(journal_path(target))
     return result
+
+
+def clear_dead_lock(target):
+    """A dead holder's lock, when there is nothing at all to roll back: no journal, no install
+    record. It never takes a live holder's lock. True if one was cleared."""
+    if load_journal(target) or os.path.lexists(install_record_path(target)):
+        return False
+    with _RecoveryGuard(target):
+        return _reclaim_stale_lock(os.path.join(target, LOCK_PATH))
 
 
 NO_RELEASE_SUMMARY = {"release_id": None, "version": None, "managed_checked": 0, "managed_total": 0}
@@ -1613,6 +1648,7 @@ def _finish_rollback(target, journal, resumed=False):
 ADOPTION_SCHEMA = "ff-aios-starter/adoption@1"
 ADOPTION_PLAN = os.path.join(AIOS_DIR, "adoption.json")
 ADOPTION_CLASSES = ("adopt", "instance_owned", "exclude")
+CATCH_ALLS = ("**", "*", "**/*", "**/**", "*/**")
 
 
 def load_adoption_plan(target, rel=None):
@@ -1636,6 +1672,11 @@ def load_adoption_plan(target, rel=None):
             items = plan.get(cls)
             if not isinstance(items, list) or not all(isinstance(x, str) and x.strip() for x in items):
                 problems.append("%s must be a list of paths or patterns" % cls)
+                continue
+            for item in items:
+                if item.strip().strip("/") in CATCH_ALLS:
+                    problems.append("%s: %r would classify everything at once; name what it covers "
+                                    "(independent review, 3.1)" % (cls, item))
     if problems:
         raise Refusal(EXIT_STATE, "the adoption plan %s isn't usable" % rel, problems)
     return plan, sha256_file(full)
@@ -1682,8 +1723,30 @@ def adopt_existing(target, manifest, source_repo, config, plan_rel=None, aios_lo
     exists; the instance has its own role policy (rollback and upgrade read it); and the workspace
     is committed. Journaled before the first write, so `rollback` undoes even a killed adoption.
     """
+    # Before the lock, which itself writes: the installer's own paths must be free, or be a guard
+    # it left (empty, untracked), so a repository that was never a Starter keeps every file it has.
+    problems = _reserved_before_adoption(target)
+    if problems:
+        raise Refusal(EXIT_STATE, "the installer's own paths aren't free in this workspace; nothing was "
+                                  "changed", problems)
     with _Lock(target, "adopt"):
         return _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios_lookup)
+
+
+def _reserved_before_adoption(target):
+    out = []
+    for rel in (LOCK_PATH, os.path.relpath(journal_path(target), target)):
+        if os.path.lexists(os.path.join(target, rel)):
+            out.append("%s exists: another operation is running, or one was interrupted "
+                       "(`aios rollback` clears it)" % rel.replace(os.sep, "/"))
+    guard = os.path.join(target, GUARD_PATH)
+    if os.path.lexists(guard):
+        rel = GUARD_PATH.replace(os.sep, "/")
+        st = os.lstat(guard)
+        if not stat.S_ISREG(st.st_mode) or st.st_size or (os.path.isdir(os.path.join(target, ".git"))
+                                                          and util.is_tracked(target, rel)):
+            out.append("%s is a file of this repository's own; the installer needs that path" % rel)
+    return out
 
 
 def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios_lookup):
@@ -1695,6 +1758,9 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
     if load_journal(target):
         raise Refusal(EXIT_STATE, "a previous operation did not finish; run rollback first",
                       [journal_path(target)])
+    if not util.is_git_repo(target):
+        raise Refusal(EXIT_STATE, "this isn't a git repository; adopting into an existing instance needs "
+                                  "one, so the plan is committed and git gives a second way back")
     if util.worktree_dirty(target):
         raise Refusal(EXIT_STATE, "the workspace has uncommitted git changes; commit them first, so the "
                                   "adoption is one reviewable diff")
@@ -1710,12 +1776,20 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
 
     plan_rel = (plan_rel or ADOPTION_PLAN).replace(os.sep, "/")
     plan, plan_sha = load_adoption_plan(target, plan_rel)
+    untracked = [rel for rel in (plan_rel, roles.POLICY_PATH.replace(os.sep, "/"))
+                 if not util.is_tracked(target, rel)]
+    if untracked:
+        raise Refusal(EXIT_STATE, "the plan and the role policy must be committed, not just on disk",
+                      untracked + ["git add them and commit, then adopt"])
     entries = {e["path"]: e for e in manifest.get("files") or []}
     classes, problems = classify_adoption(plan, entries)
     if problems:
         raise Refusal(EXIT_STATE, "the adoption plan doesn't classify every path release %s ships exactly "
                       "once" % manifest["version"], problems[:30] + ["%d problem(s) in all" % len(problems)])
     adopt = [entries[p] for p in sorted(entries) if classes[p] == "adopt"]
+    if not adopt:
+        raise Refusal(EXIT_STATE, "the plan adopts no path release %s ships, so there is nothing to adopt"
+                      % manifest["version"])
     present = [e["path"] for e in adopt if os.path.lexists(os.path.join(target, e["path"]))]
     if present:
         raise Refusal(EXIT_STATE, "%d path(s) the plan adopts already exist; adoption never overwrites"
@@ -1754,26 +1828,40 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             d = "/".join(parts[:i])
             if os.path.isdir(os.path.join(target, d)):
                 pre_dirs.add(d)
-    created = [{"path": e["path"], "sha256": e["sha256"],
-                "mode": 0o755 if e.get("mode") == "100755" else 0o644} for e in adopt]
     info = {
         "plan": plan_rel, "plan_sha256": plan_sha,
         "adopt": plan["adopt"], "instance_owned": plan["instance_owned"], "exclude": plan["exclude"],
-        "created": created, "config_created": config_created,
-        "config_sha256": sha256_bytes(_config_text(config)) if config_created else None,
-        "pre_dirs": sorted(pre_dirs),
+        "created": [], "pre_dirs": sorted(pre_dirs),
     }
-    util.write_json(journal_path(target), {
+    journal = {
         "op": "adopt-existing", "phase": "writing", "started_at": util.now_iso(),
         "release_id": manifest["release_id"], "to_version": manifest["version"], "adoption": info,
+        # The file being created right now, and its temporary copy: until it's recorded below,
+        # rollback removes it only if it's still that very copy (same inode), never a file that
+        # merely matches (independent review, 3.1).
+        "pending": None,
         # The people map rollback checks the operator against, if a kill comes before it lands.
         # References only: an org config never carries a credential value.
         "config": config if config_created else None,
-    })
+    }
+    util.write_json(journal_path(target), journal)
     util.fault("adopt.after_journal")
+
+    def create(rel, data, mode):
+        def pending(tmp):
+            journal["pending"] = {"path": rel, "temp": os.path.relpath(tmp, target).replace(os.sep, "/")}
+            util.write_json(journal_path(target), journal)
+        tmp = util.create_new(target, rel, data, mode, pending)
+        st = os.lstat(os.path.join(target, rel))
+        # The mode as the disk keeps it, so rollback compares like with like on every system.
+        info["created"].append({"path": rel, "sha256": sha256_bytes(data), "mode": stat.S_IMODE(st.st_mode)})
+        journal["pending"] = None
+        util.write_json(journal_path(target), journal)
+        os.remove(tmp)
+
     try:
         if config_created:  # first, so a rollback after any later kill can tell who is asking
-            util.write_json(config_path, config)
+            create(config_rel, _config_text(config), "100644")
         managed, seeded, written = [], [], 0
         for path, _mode, data in util.read_tree(source_repo, manifest["created_from"]["git_rev"]):
             entry = entries.get(path)
@@ -1781,11 +1869,11 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
                 continue
             if entry["sha256"] != sha256_bytes(data):
                 raise Refusal(EXIT_PACKAGE, "content at the pin does not match the manifest: %s" % path)
-            sha = util.write_file(target, path, data, entry.get("mode", "100644"))
+            create(path, data, entry.get("mode", "100644"))
             written += 1
             if written == 1:
                 util.fault("adopt.mid_write")
-            rec = {"path": path, "sha256": sha}
+            rec = {"path": path, "sha256": entry["sha256"]}
             if entry["class"] == "managed":
                 rec["exec"] = entry.get("mode") == "100755"
                 managed.append(rec)
@@ -1817,9 +1905,13 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
             "previous": None,
             "adoption": info,
         }
-        util.write_json(install_record_path(target), record)
+        tmp = util.create_new(target, record_rel, (json.dumps(record, indent=2, sort_keys=True) + "\n")
+                              .encode("utf-8"), "100644")
+        os.remove(tmp)
     except Refusal:
-        _undo_adoption(target, info)
+        _undo_adoption(target, info, journal.get("pending"))
+        if os.path.isfile(journal_path(target)):
+            os.remove(journal_path(target))
         raise
     os.remove(journal_path(target))
     require_verified(target, record, "adopted workspace")
@@ -1837,15 +1929,27 @@ def _same_bytes_and_mode(target, entry):
     return not _EXEC_BITS or bool(st.st_mode & 0o100) == (entry.get("mode") == "100755")
 
 
-def _undo_adoption(target, info):
-    """Take back exactly what an adoption created, and only while it is still what it wrote. Returns
-    notes about anything left because it changed since (the instance's now)."""
+def _undo_adoption(target, info, pending=None):
+    """Take back exactly what an adoption created: the files it recorded, while each is still the
+    bytes and mode it wrote, and a file it was creating when killed only if it is still that very
+    copy (same inode as its temporary file). Returns notes about anything left. Never removes the
+    journal: the caller does, last."""
     notes = []
     created = [c["path"] for c in info.get("created") or []]
-    for c in info.get("created") or []:
-        note = _remove_if_ours(target, c["path"], c["sha256"], c["mode"])
+    for i, c in enumerate(info.get("created") or []):
+        note = _remove_if_ours(target, c["path"], c["sha256"], c.get("mode"))
         if note:
             notes.append(note)
+        if i == 0:
+            util.fault("adopt.undo_mid")
+    if pending:
+        dest = os.path.join(target, pending["path"])
+        tmp = os.path.join(target, pending["temp"])
+        if os.path.lexists(tmp):
+            if os.path.lexists(dest) and os.path.samestat(os.lstat(dest), os.lstat(tmp)):
+                os.remove(dest)
+                created.append(pending["path"])
+            os.remove(tmp)
     record_full = install_record_path(target)
     if os.path.isfile(record_full) and not os.path.islink(record_full):
         try:
@@ -1853,15 +1957,8 @@ def _undo_adoption(target, info):
                 os.remove(record_full)
         except (ValueError, OSError):
             notes.append("the install record couldn't be read, so it was left")
-    config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
-    if info.get("config_created"):
-        note = _remove_if_ours(target, config_rel, info.get("config_sha256"))
-        if note:
-            notes.append(note)
     record_rel = os.path.relpath(record_full, target).replace(os.sep, "/")
-    _prune_parents(target, created + [config_rel, record_rel], keep=info.get("pre_dirs"))
-    if os.path.isfile(journal_path(target)):
-        os.remove(journal_path(target))
+    _prune_parents(target, created + [record_rel], keep=info.get("pre_dirs"))
     return notes
 
 

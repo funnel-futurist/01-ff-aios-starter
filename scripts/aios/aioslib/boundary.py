@@ -28,7 +28,7 @@ import shutil
 import subprocess
 import time
 
-from . import roles, util
+from . import governance, roles, util
 from .util import EXIT_OK, EXIT_ROLE, Refusal
 
 # The role an unidentified person is held to. The most restricted lane, never the least.
@@ -204,15 +204,23 @@ def check_pr(repo, base, head, author, approvers):
     who = "%s (%s)" % (author, role or "not in the people map")
     if not hits:
         return EXIT_OK, ["%s changed no founder-lane path" % who]
+    # Who may approve the founder lane: founders and co-founders, or, when the base policy declares
+    # them, its founder_lane_reviewers - review permission, not founder status (G98). Never the author.
+    declared = governance.lane_reviewer_problems(policy, config) == [] and \
+        policy.get("founder_lane_reviewers") is not None
+    reviewers = governance.lane_reviewers(policy, config)[0] if declared else set()
     founder_approvals = sorted(a for a in approvers
-                               if roles.role_for(config, a) in APPROVER_ROLES
+                               if (roles.role_for(config, a) in APPROVER_ROLES
+                                   or ("@" + a.lower()) in reviewers)
                                and a.lower() != (author or "").lower())
     if founder_approvals:
         return EXIT_OK, ["%s changed %d founder-lane path(s), approved at this commit by %s"
                          % (who, len(hits), ", ".join(founder_approvals))]
+    whom = ("a founder, a co-founder or an approved founder-lane reviewer" if declared
+            else "a founder or co-founder")
     return EXIT_ROLE, (
-        ["%s changed %d founder-lane path(s) without a founder's approval of this commit:"
-         % (who, len(hits))]
+        ["%s changed %d founder-lane path(s) without an approval of this commit from %s:"
+         % (who, len(hits), whom)]
         + ["  - %s" % p for p in hits[:20]]
-        + ["a founder or co-founder approves the pull request, then this check re-runs and "
-           "passes. A new push needs a new approval."])
+        + ["%s approves the pull request, then this check re-runs and passes. A new push needs a "
+           "new approval." % (whom[0].upper() + whom[1:])])

@@ -204,8 +204,11 @@ python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.j
 ```
 
 **It refuses, with nothing changed, if:**
-- a path the release ships isn't in the plan, or is under two headings (a catch-all like
-  `"exclude": ["**"]` always collides, so nothing is classified silently);
+- a path the release ships isn't in the plan, or is under two headings;
+- the plan uses a catch-all such as `**` (name what each heading covers, so nothing is
+  classified silently), or adopts nothing;
+- the plan or the role policy isn't committed, or this isn't a git repository;
+- one of the installer's own paths (`.aios/lock`, `.aios/txn.json`, `.aios/backups/`) is taken;
 - an adopted path already exists, or the way to it runs through a link;
 - a path you called yours is missing;
 - you have no role policy of your own (rollback and upgrade read it);
@@ -215,7 +218,8 @@ python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.j
 are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 
 **Undoing it:**
-- The adoption is journaled before its first write.
+- The adoption is journaled before its first write, and each file is recorded once it exists.
+- Each new file appears whole and can never replace one that appeared meanwhile.
 - `aios rollback` takes back exactly what it created and left unchanged, whether the adoption
   finished or was killed partway.
 - A file you've changed since is left in place, and the message says so.

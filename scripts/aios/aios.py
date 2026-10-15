@@ -197,8 +197,9 @@ def cmd_adopt(args):
         _say("adopted %s into the existing instance %s" % (record["release"]["release_id"], target))
         _say("  by:       %s (%s)" % (login, role))
         _say("  plan:     %s (sha256 %s)" % (info["plan"], info["plan_sha256"][:12]))
-        _say("  created:  %d file(s), verified by readback; nothing of the instance's was written"
-             % len(info["created"]))
+        made = [c for c in info["created"] if c["path"] != ".aios/config.json"]
+        _say("  created:  %d file(s), verified by readback%s; nothing of the instance's was written"
+             % (len(made), ", and the org config" if len(made) < len(info["created"]) else ""))
         _say("  kept:     every path the plan says is the instance's; no folder move, no seed line")
         _say("  next:     commit the change (git add -A, then git commit); `aios rollback` undoes it")
         return EXIT_OK
@@ -351,12 +352,20 @@ def cmd_rollback(args):
     try:
         config = orgconfig.load(target)
     except Refusal:
-        # An adoption killed before its org config landed: its journal holds the people map it was
-        # about to write, so the operator is still checked against it (3.1).
+        # An adoption killed before its org config landed, or an undo that already removed it: the
+        # journal holds the people map, so the operator is still checked against it (3.1).
         journal = install_mod.load_journal(target) or {}
-        if journal.get("op") != "adopt-existing" or not journal.get("config"):
+        if journal.get("op") in ("adopt-existing", "adopt-undo") and journal.get("config"):
+            config = journal["config"]
+        elif not journal and not os.path.lexists(install_mod.install_record_path(target)):
+            # Nothing was ever changed here: at most a dead holder's lock from an adoption killed
+            # before its journal. Clearing that needs no role; a live holder's is never taken.
+            cleared = install_mod.clear_dead_lock(target)
+            _say("nothing to roll back: this workspace has no install record and no journal%s"
+                 % ("; cleared a dead operation's lock" if cleared else ""))
+            return EXIT_OK
+        else:
             raise
-        config = journal["config"]
     policy = roles.load_policy(target)
     login, role = roles.require_lifecycle(policy, config, "rollback")
     record, summary, how = install_mod.rollback(target)
