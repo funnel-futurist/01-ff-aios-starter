@@ -54,8 +54,8 @@ def load_record(target):
     # round 45).
     rel = os.path.relpath(path, target).replace(os.sep, "/")
     if os.path.islink(path) or _linked_paths(target, [rel]):
-        raise Refusal(EXIT_STATE, "the install record at %s is a link, or is reached through one; nothing was "
-                                  "changed" % path, ["restore .aios/install.json from git as a regular file, "
+        raise Refusal(EXIT_STATE, "the install record at %s is a link, or is reached through one (a link, or a "
+                                  "folder that is another repository); nothing was changed" % path, ["restore .aios/install.json from git as a regular file, "
                                                      "then run this again"])
     if not os.path.isfile(path):
         raise Refusal(EXIT_STATE, "no install record at %s; this workspace was never installed "
@@ -249,9 +249,10 @@ def load_journal(target):
     # The folders on the way first, before anything there is looked at: through a linked `.aios` the
     # "journal" would be a file from anywhere (independent review, 3.1 round 46).
     if _linked_paths(target, [rel]):
-        raise Refusal(EXIT_STATE, "%s is reached through a link or a file in a folder's place; nothing was "
-                                  "changed" % rel, ["make .aios a real folder again (restore it from git), then "
-                                                    "run this again"])
+        raise Refusal(EXIT_STATE, "%s is reached through a link, another repository, or a file in a folder's "
+                                  "place; nothing was changed" % rel,
+                      ["make .aios this repository's own real folder again (restore it from git), then run "
+                       "this again"])
     if not os.path.lexists(path):
         return None
     if util.is_tracked(target, rel) or util.in_head(target, rel):
@@ -388,6 +389,10 @@ def _repo_owned(target, rel):
     """Whether git has `rel` as the repository's file: in the index, or committed in HEAD (a file
     `git rm --cached` left on disk is still the repository's). Cleanup never removes one (3.1 round 28)."""
     rel = rel.replace(os.sep, "/")
+    parts = rel.split("/")
+    # Inside another repository (a submodule), a file is that repository's, whatever this one's index says.
+    if any(_another_repository(target, "/".join(parts[:i])) for i in range(1, len(parts))):
+        return True
     return util.is_tracked(target, rel) or util.in_head(target, rel)
 
 
@@ -892,17 +897,36 @@ def _restore(target, backup_root, record_to_restore, remove_paths, expected=None
 
 def _linked_paths(target, rels):
     """Paths rollback would write whose way there runs through a link or a file (a client folder
-    turned into a link after the upgrade would send the restored file outside the workspace).
+    turned into a link after the upgrade would send the restored file outside the workspace), or
+    through a folder that is another repository (a submodule: files in it are that repository's,
+    which this one's tracking checks can't see; independent review, 3.1 round 47).
     Checked before anything changes (independent review)."""
     out = []
     for rel in rels:
         parts = rel.replace(os.sep, "/").split("/")
         for i in range(1, len(parts)):
             full = os.path.join(target, *parts[:i])
-            if os.path.islink(full) or (os.path.lexists(full) and not os.path.isdir(full)):
+            if os.path.islink(full) or (os.path.lexists(full) and not os.path.isdir(full)) \
+                    or _another_repository(target, "/".join(parts[:i])):
                 out.append("/".join(parts[:i]))
                 break
     return sorted(set(out))
+
+
+def _another_repository(target, rel_folder):
+    """Whether the workspace folder `rel_folder` is another repository: it holds a `.git` (an initialized
+    submodule, or a repository inside this one), or, for the installer's own folder, this repository
+    records it as a submodule (a gitlink, in the index or in HEAD)."""
+    if os.path.lexists(os.path.join(target, rel_folder, ".git")):
+        return True
+    if rel_folder != AIOS_DIR.replace(os.sep, "/"):
+        return False
+    for args in (["ls-files", "-s", "--", rel_folder], ["ls-tree", "HEAD", "--", rel_folder]):
+        for line in util.git(target, args, check=False).splitlines():
+            meta, _, path = line.partition("\t")
+            if path == rel_folder and meta.split()[:1] == ["160000"]:
+                return True
+    return False
 
 
 def _remove_if_ours(target, rel, sha=None, mode=None):
@@ -2040,6 +2064,31 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                 anchor_record, anchor_plan, anchor = anchored
                 trusted = _release_adopted(anchor_record, anchor_plan, source_repo)
                 info = anchor_record.get("adoption") or {}
+                if anchor and not journal and not os.path.isfile(os.path.join(target, STATE_PATH)):
+                    # No upgrade or rollback since the adoption, as git history shows it, unless this
+                    # machine's own note says the record here is the one its last operation wrote (the note
+                    # matched just above, or rollback refused). Otherwise a pull request could restore the
+                    # adoption's exact record after an upgrade, and the undo would leave the upgrade's files
+                    # behind (independent review, 3.1 round 47). An edit that kept the release, then undone,
+                    # changes nothing this undo decides: that comes from the anchor commit.
+                    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+                    since = []
+                    for commit in util.git(target, ["log", "--format=%H", "%s..HEAD" % anchor, "--",
+                                                    ":(literal)" + record_rel], check=False).split():
+                        raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
+                        try:
+                            then = json.loads(raw.decode("utf-8"))
+                        except ValueError:
+                            then = None
+                        if not isinstance(then, dict) or then.get("release") != anchor_record.get("release") \
+                                or then.get("previous"):
+                            since.append(commit)
+                    if since:
+                        raise Refusal(EXIT_STATE, "an upgrade or rollback changed the install record after the "
+                                      "adoption committed it (commit %s), and this machine has no note of the "
+                                      "operation that wrote the record here; nothing was changed" % since[-1][:12],
+                                      ["undo it where the last upgrade or rollback ran, or with git: revert the "
+                                       "later commits, then the adoption commit %s" % anchor[:12]])
                 if anchor:
                     # The commit that added the record must be the adoption itself: only files it added
                     # alongside the record can be ones the adoption made, and a record claiming any

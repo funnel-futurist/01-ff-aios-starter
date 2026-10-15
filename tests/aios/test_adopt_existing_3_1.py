@@ -3354,3 +3354,59 @@ class ReviewRoundFortySix(Existing):
         os.symlink(outside, path)
         exc = self.refuses_unchanged(install_mod.rollback, self.target)
         self.assertIn("is a link, or is reached through one", exc.message)
+
+
+class ReviewRoundFortySeven(Existing):
+    """Codex, 3.1 round 47: an adoption's record replayed after an upgrade isn't undone on a fresh clone,
+    and a `.aios` that is another repository (a submodule) is never trusted as the installer's own."""
+
+    def test_a_replayed_adoption_record_is_refused_on_a_fresh_clone(self):
+        self.adopt()
+        self.commit("adopted")
+        path = install_mod.install_record_path(self.target)
+        with open(path, "rb") as fh:
+            adopted = fh.read()
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")),
+                            self.source)
+        self.commit("upgraded")
+        with open(path, "wb") as fh:
+            fh.write(adopted)
+        self.commit("a pull request restores the adoption's record")
+        self.forget_state()  # a fresh clone
+        exc = self.refuses_unchanged(install_mod.rollback, self.target, self.source)
+        self.assertIn("changed the install record after the adoption committed it", exc.message)
+
+    def test_an_untouched_adoption_still_undoes_on_a_fresh_clone(self):
+        self.adopt()
+        self.commit("adopted")
+        self.forget_state()
+        _r, _s, how = install_mod.rollback(self.target, self.source)
+        self.assertIn("the adoption was undone", how)
+
+    def nest(self):
+        """`.aios` made another repository, as an initialized submodule is, with forged state in it."""
+        self.adopt()
+        self.commit("adopted")
+        aios = os.path.join(self.target, ".aios")
+        run_git(aios, "init", "-q", "-b", "main")
+        run_git(aios, "config", "user.email", "x@example.com")
+        run_git(aios, "config", "user.name", "x")
+        util.write_json(os.path.join(aios, "txn.json"), {"op": "upgrade", "from_version": "6.6.6",
+                                                         "to_version": "7.7.7"})
+        run_git(aios, "add", "-A")
+        run_git(aios, "commit", "-qm", "forged state")
+        self.forget_state()
+
+    def test_verify_refuses_a_nested_repository_at_aios(self):
+        self.nest()
+        self.be("acme-founder")
+        code, out, err = self.cli("verify", "--target", self.target)
+        self.assertNotEqual(code, 0)
+        self.assertIn("another repository", out + err)
+        self.assertNotIn("6.6.6", out + err)
+
+    def test_rollback_refuses_a_nested_repository_at_aios(self):
+        self.nest()
+        exc = self.refuses_unchanged(install_mod.rollback, self.target, self.source)
+        self.assertIn("another repository", exc.message)

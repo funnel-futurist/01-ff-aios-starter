@@ -284,6 +284,12 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   that says adopted when no commit added it that way is refused too. A shallow clone can't show
   that history, so it refuses until you run `git fetch --unshallow`.
 - A snapshot holding anything git tracks is refused.
+- The installer's folder `.aios` must be this repository's own: never a link, and never another
+  repository (a submodule, or a repository inside this one), whose files this repository's checks
+  can't see.
+- Undoing a committed adoption on a machine with no note of the last operation (a fresh clone)
+  needs no upgrade or rollback since the adoption, as the record's git history shows. If one
+  happened, undo the adoption where it ran, or with git.
 - An adoption plan must be committed under exactly its own name.
 - It trusts your own local, uncommitted state: the ignored journal of an operation that was
   interrupted, and a record not yet committed. Whoever can edit those can already change any file
