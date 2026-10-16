@@ -24,10 +24,21 @@
 | **Upgrading an adopted repository** | It writes only what the plan adopts, and the plan must still be committed. A new release path must be classified first, or the upgrade refuses. A file the plan stops adopting stays as the repository's own. |
 | **`founder_lane_reviewers`** (new, optional) | It names who may approve founder-gated paths. `instance check` and the pull-request boundary check both honour it, and when it's set it's the whole permission. Unset, nothing changes for clients. |
 | **Safer state files, for every workspace** | The installer's own records are written through unique temporary files, never a fixed name that something else could be. A release may never ship the installer's state paths, compared the way a Mac or Windows disk compares names. |
-| **The committed install record isn't trusted, for every workspace** | Anyone's pull request can edit `.aios/install.json`. So upgrade and `verify --repo` check the record against the release source and git history: the pinned release, its managed files, its folder layout, the seed lines (and, for an upgrade, the seeds already handled), and whether the workspace was adopted. Rollback acts only on the record its last operation here wrote or, to undo an adoption, the one committed with it. An edit that fails these checks is refused by upgrade and rollback, with nothing changed, and reported by verify. |
+| **The committed install record isn't trusted, for every workspace** | Anyone's pull request can edit `.aios/install.json`. So upgrade and `verify --repo` check the record against the release source and git history: the pinned release, its managed files, its folder layout, the seed lines (and, for an upgrade, the seeds already handled), and whether the workspace was adopted. On a fresh clone an adopted repository's record may call a file the release's only if git history shows the installer made it. Rollback acts only on the record its last operation here wrote or, to undo an adoption, the one committed with it. An edit that fails these checks is refused by upgrade and rollback, with nothing changed, and reported by verify. Every command that reads the record or the plan is listed, with what it trusts, in the install guide. |
 | **A shallow clone can't upgrade** | A `git clone --depth 1` can't show that history, so an upgrade, or undoing an adoption, refuses until `git fetch --unshallow`. In a client's repository, the workflows the Starter ships never upgrade or undo an adoption against their own checkout (the job that runs the installer's tests runs only in the Starter's own repository, on temporary repositories it makes), so CI is unaffected. |
 | **Undoing a finished adoption** | It needs the release's source, `aios rollback --repo <your ff-aios-starter clone>`, so only that release's files are removed. On a fresh clone it refuses if an upgrade or rollback came after the adoption, or if the record was added more than once: undo it where it ran, or with git. |
 | **Rolling back an upgrade made before 3.1** | Refused, changing nothing: those installers kept no copy of the record they wrote. Roll it back with that release's own installer (`python3 scripts/aios/aios.py rollback --target .`, run in the workspace) or with git. |
+
+**Who reads the install record, and what each one trusts**
+- **Upgrade, and its dry run:** each field checked against the release source and git history, plus this machine's note of its last operation when there is one; the plan file you committed, which it applies.
+- **Verify:** with `--repo`, the same checks, reported rather than acted on. Without it, only the record's own consistency, its paths and its git history.
+- **Rolling back an upgrade:** only a record equal to the copy that upgrade kept on this machine.
+- **Undoing an adoption:** only the record and plan as committed with the adoption (added once), the release source, and git history since.
+- **Recovering an interrupted operation:** its local journal, and a record that journal names.
+- **Install and adopt:** they write the record, and read it only to refuse when one is already there.
+- **`aios start`:** the release line and any drift it shows. The founder-review check doesn't use it.
+- **The new-release notice:** the installed version, which only changes the notice's text.
+- **Clearing a dead lock:** only whether a record exists.
 
 **What was proven** (detail in `evidence/dispatch/p22-starter/release-3.1.0/`):
 @@PROOF@@

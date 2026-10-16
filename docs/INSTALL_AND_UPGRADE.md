@@ -295,6 +295,14 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - Every seed a release this workspace has had shipped, and every seed path the record's git history
   listed (for its release or an older one), stays yours: a later release never recreates it where
   you deleted it, nor takes it over, whatever the record now lists.
+- On a machine with no note of the last operation, an adopted workspace's record may call a file
+  managed (the release's to update, and to remove once a release retires it) only if git history
+  shows the installer made it: the adoption's own commit added it and listed it, or the first commit
+  ever to add it, on any side of any merge, listed it (an upgrade's). Otherwise upgrade refuses,
+  changing nothing, and `verify --repo` reports it. So commit each upgrade as one commit (`git add -A`, then
+  `git commit`), as for the adoption. If you once had a file of your own at a path a later upgrade
+  created, a fresh clone can't tell the two apart and refuses: run the next upgrade where the last
+  operation ran.
 - Every field of the record is accounted for. `release`, `managed`, `layout`, `seeded`,
   `seed_history`, `seed_lines`, `seed_lines_added` and `adoption` are checked as above. `schema`
   and `package` must be the installer's own. `created_seeds`, `pre_existing_dirs` and
@@ -311,6 +319,21 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   are never read. `aios start` checks founder review from the files in every pinned workspace (the
   local check `aios instance check` also makes), whatever the record says about its layout; with no
   usable install record it says UNPINNED instead.
+- Every command that reads the record or the plan, and what it trusts:
+  - `upgrade` and its dry run: each field as described above (the release source, git history, and
+    this machine's note when there is one), and the plan file you committed, which it applies.
+  - `verify --repo`: the same checks, reported rather than acted on, without the note. Plain
+    `verify` checks only the record's own consistency, its paths and its git history.
+  - Rolling back an upgrade: only a record equal to the copy that upgrade kept on this machine.
+  - Undoing an adoption: only the record and plan as committed with the adoption, the release
+    source, and git history since; with a note, the record that note names.
+  - Recovering an interrupted operation: its local journal, and a record it names.
+  - `install`, `adopt` and `adopt --existing`: they write the record, and read it only to refuse
+    when one is already there.
+  - `aios start`: the release line and any drift it shows; the founder-review check doesn't use it.
+  - The new-release notice (also run by the session hook): the installed version, to say whether a
+    newer approved release exists. Only the notice's text depends on it.
+  - Clearing a dead lock: only whether a record exists.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace

@@ -3838,3 +3838,107 @@ class ReviewRoundFiftyThree(Existing):
         self.forget_state()
         exc = self.refuses_unchanged(install_mod.rollback, self.target, self.source)
         self.assertIn("added more than once", exc.message)
+
+
+class ReviewRoundFiftyFour(Existing):
+    """Codex, 3.1 round 54: on a fresh clone, an adopted instance's record calls a file managed only if git
+    history shows the installer made it (the adoption's own commit, or the first commit ever to add it,
+    listed it). Otherwise upgrade refuses, changing nothing, and verify reports it."""
+
+    REL = ".claude/settings.json"  # instance_owned in PLAN, managed in the release
+    TEMPLATE = "templates/governance/CODEOWNERS.template"  # managed in the release, excluded in PLAN
+
+    def v31(self):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        return harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+
+    def release_bytes(self, rel):
+        with open(os.path.join(self.source, rel), "rb") as fh:
+            return fh.read()
+
+    def claim(self, rel, plan_change):
+        """A pull request moves `rel` into `adopt` and lists it in the record as managed, with the release's
+        hash (its bytes are the release's)."""
+        import hashlib
+        plan = json.loads(json.dumps(PLAN))
+        plan_change(plan)
+        self.write_plan(plan)
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        record["managed"] = sorted(record["managed"] + [{"path": rel, "exec": False,
+                                   "sha256": hashlib.sha256(self.release_bytes(rel)).hexdigest()}],
+                                   key=lambda e: e["path"])
+        util.write_json(path, record)
+        self.commit("a pull request claims %s for the release" % rel)
+        self.forget_state()  # a fresh clone
+
+    def refused(self, rel):
+        before = os.path.join(self.target, rel)
+        with open(before, "rb") as fh:
+            ours = fh.read()
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, self.v31(), self.source)
+        said = exc.message + "\n" + "\n".join(exc.details or [])
+        self.assertIn("%s: the install record calls it the release's, but git history doesn't show" % rel, said)
+        with open(before, "rb") as fh:
+            self.assertEqual(fh.read(), ours)
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertTrue(any(p.startswith(rel + ": the install record calls it") for p in problems), problems)
+
+    def own_copy_then_adopt(self):
+        write(self.target, self.REL, self.release_bytes(self.REL))
+        self.commit("ours, the same bytes as the release's")
+        self.adopt()
+        self.commit("adopted")
+
+    def to_adopt(self, rel, heading):
+        def change(plan):
+            plan[heading] = [p for p in plan[heading] if p != rel and not (heading == "exclude" and p == "templates/**")]
+            plan["adopt"].append(rel)
+        return change
+
+    def test_a_file_the_repository_had_claimed_in_place_is_refused(self):
+        self.own_copy_then_adopt()
+        self.claim(self.REL, self.to_adopt(self.REL, "instance_owned"))
+        self.refused(self.REL)
+
+    def test_a_file_made_after_the_adoption_then_claimed_is_refused(self):
+        self.adopt()
+        self.commit("adopted")
+        write(self.target, self.TEMPLATE, self.release_bytes(self.TEMPLATE))
+        self.commit("we add a template of our own")
+        self.claim(self.TEMPLATE, self.to_adopt(self.TEMPLATE, "exclude"))
+        self.refused(self.TEMPLATE)
+
+    def test_a_claim_through_a_re_added_record_is_refused(self):
+        self.own_copy_then_adopt()
+        run_git(self.target, "rm", "-q", "--", ".aios/install.json")
+        run_git(self.target, "commit", "-qm", "a pull request removes the record")
+        path = install_mod.install_record_path(self.target)
+        with open(path, "wb") as fh:  # back, as it was, so the claim below is the only edit
+            fh.write(util.git(self.target, ["show", "HEAD~1:.aios/install.json"], binary=True))
+        run_git(self.target, "add", "--", ".aios/install.json")
+        run_git(self.target, "commit", "-qm", "and adds it back")
+        self.claim(self.REL, self.to_adopt(self.REL, "instance_owned"))
+        exc = self.refuses_unchanged(install_mod.upgrade, self.target, self.v31(), self.source)
+        self.assertIn("added 2 times", exc.message + "\n" + "\n".join(exc.details or []))
+
+    def test_a_file_an_upgrade_made_is_the_installers_on_a_fresh_clone(self):
+        """The plan newly adopts a template the repository doesn't have; the upgrade makes it and lists it,
+        in one commit; a later upgrade, on a fresh clone, accepts it as the installer's."""
+        self.adopt()
+        self.commit("adopted")
+        plan = json.loads(json.dumps(PLAN))
+        plan["exclude"].remove("templates/**")
+        plan["adopt"].append("templates/**")
+        self.write_plan(plan)
+        self.commit("adopt the templates too")
+        install_mod.upgrade(self.target, self.v31(), self.source)
+        self.commit("upgraded")
+        self.assertIn(self.TEMPLATE, [e["path"] for e in install_mod.load_record(self.target)["managed"]])
+        self.forget_state()
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertFalse([p for p in problems if "git history doesn't show" in p], problems)
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnewer.\n"}, "3.2")
+        install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.2.0")),
+                            self.source)
+        self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.2.0")

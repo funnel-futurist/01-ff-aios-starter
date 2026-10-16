@@ -487,6 +487,9 @@ def verify(target, record=None, source_repo=None):
         problems.append(lineage[0])
     problems.extend(p for p in _dropped_seed_lines(target, record) if p not in problems)
     if source_repo:
+        # With the release source, as an upgrade checks it after this machine's note (independent review,
+        # 3.1 round 54).
+        problems.extend(p for p in _adopted_ownership_problems(target, record) if p not in problems)
         rel = record.get("release") or {}
         rev = rel.get("git_rev")
         pin_problems, shipped = _pinned_release(record, source_repo)
@@ -1576,6 +1579,7 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     if shipped is not None:
         pinned_problems += _unlisted_for_upgrade(target, record, shipped)
     pinned_problems += _seed_line_problems(record, source_repo)
+    pinned_problems += _adopted_ownership_problems(target, record)
     if pinned_problems:
         raise Refusal(EXIT_VERIFY, "this workspace's install record doesn't match the release it's pinned to; "
                                    "nothing was changed", pinned_problems[:20])
@@ -2194,13 +2198,12 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                     # back with a forged record and a wider plan: the newest addition would then pass for the
                     # adoption, and the undo would remove a file the repository owned (independent review,
                     # 3.1 round 53).
-                    added_by = util.git(target, ["log", "--full-history", "--no-renames", "--diff-filter=A",
-                                                 "--format=%H", "--", ":(literal)" + record_rel], check=False).split()
+                    added_by = _additions(target, record_rel)  # oldest first, merge commits' additions included
                     if len(added_by) > 1:
                         raise Refusal(EXIT_STATE, "the install record was added more than once in this history "
                                       "(commits %s), so which addition was the adoption can't be read from it, "
                                       "and this machine has no note of the operation that wrote the record here; "
-                                      "nothing was changed" % ", ".join(c[:12] for c in reversed(added_by[:5])),
+                                      "nothing was changed" % ", ".join(c[:12] for c in added_by[:5]),
                                       ["undo it where the adoption ran, or with git: revert the commits from the "
                                        "first adoption on"])
                     since = []
@@ -3067,6 +3070,100 @@ def _require_whole_history(target):
                                   "through can't be read from it", ["git fetch --unshallow, then run this again"])
 
 
+def _has_file(target, commit, rel):
+    """Whether `rel` is a file in `commit`'s tree."""
+    return util.git(target, ["cat-file", "-t", "%s:%s" % (commit, rel)], check=False) == "blob"
+
+
+def _additions(target, rel):
+    """Every commit that added `rel` (the path taken literally), oldest first, on every side of every merge:
+    each commit where it is a file and none of its parents has it. A merge commit that adds it, from no
+    parent, counts, which `git log --diff-filter=A` misses; a merge that brings it in from a side that
+    already had it doesn't (independent review, 3.1 round 54). Refuses in a shallow clone."""
+    _require_whole_history(target)
+    out = util.git(target, ["log", "--full-history", "--reverse", "--format=%H %P", "--", ":(literal)" + rel],
+                   check=False)
+    found = []
+    for line in out.splitlines():
+        commit, _, parents = line.partition(" ")
+        if commit and _has_file(target, commit, rel) and not any(_has_file(target, q, rel) for q in parents.split()):
+            found.append(commit)
+    return found
+
+
+def _vouched_by_note(target):
+    """Whether this machine's note of its last operation names exactly the install record on disk."""
+    full = os.path.join(target, STATE_PATH)
+    try:
+        if os.path.islink(full) or not os.path.isfile(full) or _repo_owned(target, STATE_PATH.replace(os.sep, "/")):
+            return False
+        state = util.read_json(full)
+        with open(install_record_path(target), "rb") as fh:
+            return isinstance(state, dict) and state.get("record_sha256") == sha256_bytes(fh.read())
+    except (OSError, ValueError):
+        return False
+
+
+def _adopted_ownership_problems(target, record):
+    """An adopted instance's record calls a file managed, the installer's to update and to remove, only if git
+    history shows the installer made it: the adoption's own commit added it and its record listed it, or the
+    first commit ever to add it (an upgrade's) listed it. The record is committed, so a pull request could add
+    one of the repository's own files to `managed`, with the release's hash where its bytes match, and an
+    upgrade would then overwrite it or, once a release retires it, delete it. Checked when this machine's note
+    doesn't vouch for the record (a fresh clone): with one, the record is the one this machine's last
+    operation wrote. A file the repository had before an upgrade created it under the same name is refused
+    here too; run that upgrade where the last operation ran (independent review, 3.1 round 54)."""
+    if "adoption" not in record or _vouched_by_note(target):
+        return []
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    # Only the record exactly as committed: one an operation here just wrote, or one not committed yet, is
+    # this machine's own local state (and an upgrade refuses uncommitted changes anyway).
+    committed_now = util.git(target, ["show", "HEAD:" + record_rel], binary=True, check=False)
+    try:
+        with open(install_record_path(target), "rb") as fh:
+            if not committed_now or fh.read() != committed_now:
+                return []
+    except OSError:
+        return []
+    try:
+        added = _additions(target, record_rel)
+    except Refusal as exc:
+        return [exc.message]
+    if len(added) != 1:
+        return ["the install record was added %d times in this history, so which addition was the adoption "
+                "can't be read from it" % len(added)]
+
+    def committed(commit):
+        raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
+        try:
+            then = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            return {}
+        return then if isinstance(then, dict) else {}
+
+    def managed_in(then):
+        return {e.get("path") for e in then.get("managed") or [] if isinstance(e, dict)}
+
+    anchor = added[0]
+    at_anchor = committed(anchor)
+    made = {c.get("path") for c in (at_anchor.get("adoption") or {}).get("created") or [] if isinstance(c, dict)}
+    adopted = managed_in(at_anchor) & made & _added_in(target, anchor)
+    problems = []
+    for entry in record.get("managed") or []:
+        path = entry.get("path") if isinstance(entry, dict) else None
+        if not isinstance(path, str) or path in adopted:
+            continue
+        try:
+            first = _additions(target, path)
+        except Refusal as exc:
+            return problems + [exc.message]
+        if not first or path not in managed_in(committed(first[0])):
+            problems.append("%s: the install record calls it the release's, but git history doesn't show the "
+                            "installer made it (the adoption didn't, and the commit that first added it didn't "
+                            "list it)" % path)
+    return problems
+
+
 def _latest_added(target, rel):
     """The commit that most recently added `rel` (the path taken literally): the start of its current
     lifetime in this history. None if it was never committed. Refuses in a shallow clone."""
@@ -3191,9 +3288,7 @@ def _adopted_lineage(target):
     _require_whole_history(target)
     # Every side of a merge, not only the one git would follow for this path: "ever" includes a branch
     # whose record a merge then set aside (independent review, 3.1 round 48).
-    out = util.git(target, ["log", "--full-history", "--no-renames", "--diff-filter=A", "--format=%H", "--",
-                            ":(literal)" + record_rel], check=False)
-    for commit in out.split():
+    for commit in reversed(_additions(target, record_rel)):
         raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
         try:
             added = json.loads(raw.decode("utf-8"))
