@@ -145,9 +145,10 @@ def read_local_cache(root, rel):
 
 
 def _local_cache_path_ok(root, rel):
-    """Whether `rel` can be this machine's own cache: git neither tracks nor has committed it, and no part
-    of the path, folders included, is a link."""
-    if is_tracked(root, rel) or in_head(root, rel):
+    """Whether `rel` can be this machine's own cache: git neither tracks nor has committed it, no part of the
+    path, folders included, is a link, and no folder on the way is another repository (a submodule's file is
+    that repository's, which this one's tracking can't see; independent review, 3.1 round 57)."""
+    if is_tracked(root, rel) or in_head(root, rel) or inside_another_repository(root, rel):
         return False
     here = root
     for part in rel.split("/"):
@@ -471,6 +472,46 @@ def is_tracked(repo, relpath):
         except OSError:
             pass
     return False
+
+
+def fold_path(path):
+    """A path as a Mac or Windows disk compares names: case- and Unicode-folded, with `/` between parts."""
+    import unicodedata
+    return unicodedata.normalize("NFC", path.replace(os.sep, "/")).casefold()
+
+
+def gitlinks(repo):
+    """Every path this repository records as a submodule (a gitlink, mode 160000), in the index or in HEAD,
+    initialized or not, each as fold_path gives it (independent review, 3.1 round 57)."""
+    out = set()
+    for args in (["ls-files", "-s", "-z"], ["ls-tree", "-r", "-z", "HEAD"]):
+        proc = subprocess.run(["git", "-C", repo] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            continue
+        for raw in proc.stdout.split(b"\0"):
+            meta, sep, name = raw.partition(b"\t")
+            if sep and meta.split()[:1] == [b"160000"]:
+                out.add(fold_path(name.decode("utf-8", "surrogateescape")))
+    return out
+
+
+def another_repository(repo, rel_folder, links=None):
+    """Whether the folder `rel_folder` is another repository: it holds a `.git` (an initialized submodule, or
+    a repository inside this one), or this repository records it as a submodule, initialized or not. Files
+    there are that repository's, which this one can't commit and whose tracking its checks can't see."""
+    if os.path.lexists(os.path.join(repo, rel_folder, ".git")):
+        return True
+    return fold_path(rel_folder) in (gitlinks(repo) if links is None else links)
+
+
+def inside_another_repository(repo, relpath, links=None):
+    """The first folder on the way to `relpath` (not `relpath` itself) that is another repository, or None."""
+    parts = relpath.replace(os.sep, "/").split("/")
+    links = gitlinks(repo) if links is None else links
+    for i in range(1, len(parts)):
+        if another_repository(repo, "/".join(parts[:i]), links):
+            return "/".join(parts[:i])
+    return None
 
 
 def head_spellings(repo, relpath):

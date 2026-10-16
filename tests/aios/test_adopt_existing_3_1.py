@@ -4202,3 +4202,90 @@ class ReviewRoundFiftySix(Existing):
         self.assertFalse(allowed)
         for rel in self.CACHES:
             self.assertIsInstance(util.read_local_cache(self.target, rel), dict, rel)  # rewritten, as its own
+
+
+class ReviewRoundFiftySeven(Existing):
+    """Codex, 3.1 round 57: a folder this repository records as a submodule (a gitlink) is another repository
+    wherever it is, initialized or not. Adoption and upgrade never create a file under one (the parent could
+    never commit it), and no tool cache is read from or written into one."""
+
+    def gitlink(self, rel):
+        """Record `rel` as a submodule, uninitialized: a gitlink in the index and in HEAD, an empty folder."""
+        t = self.target
+        sha = util.git(t, ["rev-parse", "HEAD"])
+        run_git(t, "update-index", "--add", "--cacheinfo", "160000,%s,%s" % (sha, rel))
+        os.makedirs(os.path.join(t, rel), exist_ok=True)
+        run_git(t, "commit", "-qm", "%s is a submodule here" % rel)
+        self.assertTrue(util.git(t, ["ls-tree", "HEAD", "--", rel]).startswith("160000"))
+        self.assertEqual(util.git(t, ["status", "--porcelain"]), "")
+
+    def test_adoption_refuses_a_path_under_an_uninitialized_submodule(self):
+        self.gitlink("scripts")  # the plan adopts scripts/team/**
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertIn("adoption would write through a link, a file in a folder's place, or another repository",
+                      exc.message)
+        self.assertEqual(exc.details, ["scripts"])
+        self.assertFalse(os.path.lexists(os.path.join(self.target, "scripts/team")))
+
+    def test_adoption_refuses_a_submodule_recorded_under_another_case(self):
+        self.gitlink("SCRIPTS")  # one folder on a Mac or Windows disk
+        exc = self.refuses_unchanged(self.adopt)
+        self.assertEqual(exc.details, ["scripts"])
+
+    def test_an_upgrade_refuses_a_path_under_an_uninitialized_submodule(self):
+        t = self.target
+        self.adopt()
+        self.commit("adopted")
+        rev = harness.bump_source(self.source, {".claude/skills/new-skill/SKILL.md": "# a new skill\n"}, "3.1")
+        manifest = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        self.gitlink(".claude/skills/new-skill")
+        # Byte for byte, everything outside .git (backups, lock and state folders included), and git's own view.
+        tree, git_view = _tree(t), self.git_view()
+        exc = self.refuses_unchanged(install_mod.upgrade, t, manifest, self.source)
+        self.assertIn("would write under a link, a file in a folder's place, or another repository", exc.message)
+        self.assertEqual(exc.details[0], ".claude/skills/new-skill")
+        self.assertEqual(diff(tree, _tree(t)), [])
+        self.assertEqual(git_view, self.git_view())
+        self.assertFalse(os.path.lexists(os.path.join(t, ".claude/skills/new-skill/SKILL.md")))
+
+    def git_view(self):
+        t = self.target
+        return (util.git(t, ["rev-parse", "HEAD"]), util.git(t, ["ls-files", "-s"]),
+                util.git(t, ["status", "--porcelain", "--ignored", "--untracked-files=all"]))
+
+    def test_an_initialized_submodule_never_supplies_the_identity_cache(self):
+        import time
+        from aioslib import boundary
+        t = self.target
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-va")
+        sub = os.path.join(t, ".aios/usage")
+        os.makedirs(sub)
+        run_git(sub, "init", "-q", "-b", "main")
+        run_git(sub, "config", "user.email", "pr@example.com")
+        run_git(sub, "config", "user.name", "pr")
+        planted = json.dumps({"login": "acme-founder", "at": time.time(), "gh": boundary._gh_fingerprint()})
+        write(sub, "identity.json", planted)
+        run_git(sub, "add", "-A")
+        run_git(sub, "commit", "-qm", "a planted identity")
+        run_git(t, "add", "-f", "--", ".aios/usage")
+        run_git(t, "commit", "-qm", "a pull request makes the cache folder a submodule")
+        self.assertTrue(util.git(t, ["ls-files", "-s", "--", ".aios/usage"]).startswith("160000"))
+        self.assertEqual(boundary._cached_identity(t), "acme-va")
+        with open(os.path.join(sub, "identity.json")) as fh:
+            self.assertEqual(fh.read(), planted)  # and never written over
+
+    def test_no_tool_cache_is_written_into_an_uninitialized_submodule(self):
+        from aioslib import boundary, notice
+        t = self.target
+        os.environ.pop("AIOS_NO_RELEASE_NOTICE", None)
+        self.addCleanup(os.environ.__setitem__, "AIOS_NO_RELEASE_NOTICE", "1")
+        self.adopt()
+        self.commit("adopted")
+        self.gitlink(".aios/usage")
+        self.be("acme-va")
+        self.assertEqual(boundary._cached_identity(t), "acme-va")
+        self.assertFalse(os.path.lexists(os.path.join(t, ".aios/usage/identity.json")))
+        notice.check(t, now=1e9, tags_fn=lambda: [], fetch_fn=lambda ref, v: None)
+        self.assertTrue(os.path.isfile(os.path.join(t, ".aios/release_notice.json")))  # its own folder: written

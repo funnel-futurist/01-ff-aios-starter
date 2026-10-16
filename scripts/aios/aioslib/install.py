@@ -399,9 +399,8 @@ def _repo_owned(target, rel):
     """Whether git has `rel` as the repository's file: in the index, or committed in HEAD (a file
     `git rm --cached` left on disk is still the repository's). Cleanup never removes one (3.1 round 28)."""
     rel = rel.replace(os.sep, "/")
-    parts = rel.split("/")
     # Inside another repository (a submodule), a file is that repository's, whatever this one's index says.
-    if any(_another_repository(target, "/".join(parts[:i])) for i in range(1, len(parts))):
+    if util.inside_another_repository(target, rel):
         return True
     return util.is_tracked(target, rel) or util.in_head(target, rel)
 
@@ -473,13 +472,14 @@ def verify(target, record=None, source_repo=None):
     # Every path the record names is checked before anything on disk is read: the record is committed,
     # so a pull request could point it outside the workspace (independent review, 3.1 round 40).
     unsafe = set()
+    links = util.gitlinks(target)
     for kind in ("managed", "rendered", "seeded", "seed_lines", "seed_lines_added"):
         for entry in record.get(kind) or []:
             path = entry.get("path") if isinstance(entry, dict) else None
             if not isinstance(path, str) or not util.safe_relpath(path):
                 problems.append("the install record names an unsafe path: %r" % (path,))
                 unsafe.add(path if isinstance(path, str) else None)
-            elif _linked_paths(target, [path]):
+            elif _linked_paths(target, [path], links):
                 problems.append("the install record's %s is reached through a link or a file" % path)
                 unsafe.add(path)
     lineage = _lineage_problem(target, record)
@@ -923,38 +923,32 @@ def _restore(target, backup_root, record_to_restore, remove_paths, expected=None
     return notes
 
 
-def _linked_paths(target, rels):
+def _linked_paths(target, rels, links=None):
     """Paths rollback would write whose way there runs through a link or a file (a client folder
     turned into a link after the upgrade would send the restored file outside the workspace), or
     through a folder that is another repository (a submodule: files in it are that repository's,
     which this one's tracking checks can't see; independent review, 3.1 round 47).
     Checked before anything changes (independent review)."""
     out = []
+    if links is None:
+        links = util.gitlinks(target) if rels else set()
     for rel in rels:
         parts = rel.replace(os.sep, "/").split("/")
         for i in range(1, len(parts)):
             full = os.path.join(target, *parts[:i])
             if os.path.islink(full) or (os.path.lexists(full) and not os.path.isdir(full)) \
-                    or _another_repository(target, "/".join(parts[:i])):
+                    or _another_repository(target, "/".join(parts[:i]), links):
                 out.append("/".join(parts[:i]))
                 break
     return sorted(set(out))
 
 
-def _another_repository(target, rel_folder):
+def _another_repository(target, rel_folder, links=None):
     """Whether the workspace folder `rel_folder` is another repository: it holds a `.git` (an initialized
-    submodule, or a repository inside this one), or, for the installer's own folder, this repository
-    records it as a submodule (a gitlink, in the index or in HEAD)."""
-    if os.path.lexists(os.path.join(target, rel_folder, ".git")):
-        return True
-    if rel_folder != AIOS_DIR.replace(os.sep, "/"):
-        return False
-    for args in (["ls-files", "-s", "--", rel_folder], ["ls-tree", "HEAD", "--", rel_folder]):
-        for line in util.git(target, args, check=False).splitlines():
-            meta, _, path = line.partition("\t")
-            if path == rel_folder and meta.split()[:1] == ["160000"]:
-                return True
-    return False
+    submodule, or a repository inside this one), or this repository records it as a submodule (a gitlink,
+    in the index or in HEAD), initialized or not. Any folder, not only the installer's own: a file made
+    under an uninitialized submodule could never be committed here (independent review, 3.1 round 57)."""
+    return util.another_repository(target, rel_folder, links)
 
 
 def _remove_if_ours(target, rel, sha=None, mode=None):
@@ -1625,6 +1619,19 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
             "managed by the installed release" % (manifest["version"], len(collisions)),
             sorted(collisions)[:20] + ["move or delete them, then upgrade again"],
         )
+    # Nothing it will write may sit under a link, a file in a folder's place, or another repository (a
+    # submodule, initialized or not, whose files this repository could never commit). Checked here, before
+    # the first write: found after it, the undo of the half-made upgrade would refuse on the same folder
+    # (independent review, 3.1 round 57).
+    writes = sorted(p for p, e in files.items() if e["class"] == "managed"
+                    or not (os.path.lexists(os.path.join(target, p)) or layout_mod.key(p) in seed_keys))
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    linked = _linked_paths(target, writes + [record_rel])
+    if linked:
+        raise Refusal(EXIT_STATE, "release %s would write under a link, a file in a folder's place, or another "
+                      "repository (a submodule); nothing was changed" % manifest["version"],
+                      linked[:20] + ["make each a plain folder of this repository, or keep the release's files "
+                                     "out of it, then upgrade again"])
     return record, current_version, min_from, creds, files, old_managed, old_seeded, manifest
 
 
@@ -2876,8 +2883,8 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
                       "rules" % len(ignored), ignored[:20] + ["un-ignore them, or exclude them in the plan"])
     linked = _linked_paths(target, [e["path"] for e in adopt] + [config_rel, record_rel])
     if linked:
-        raise Refusal(EXIT_STATE, "adoption would write through a link or a file in a folder's place",
-                      linked[:20])
+        raise Refusal(EXIT_STATE, "adoption would write through a link, a file in a folder's place, or another "
+                      "repository (a submodule, initialized or not)", linked[:20])
     creds = orgconfig.resolve(manifest.get("credentials"), config, target)
     orgconfig.require_resolved(creds)
 

@@ -219,7 +219,8 @@ python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.j
 - your repository tracks a file at a path the Starter's tools write and keep local
   (`.aios/release_notice.json`, `.aios/usage/identity.json`);
 - a file it would create is ignored by your git rules (it would never reach your commit);
-- an adopted path already exists, or the way to it runs through a link;
+- an adopted path already exists, or the way to it runs through a link or another repository (a
+  submodule, initialized or not, whose files your repository could never commit);
 - a path you called yours is missing;
 - you have no role policy of your own (rollback and upgrade read it), or nobody in the people map
   holds a role it lets both upgrade and roll back;
@@ -338,8 +339,8 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   - Clearing a dead lock: only whether a record exists.
   - The release notice's cache and the session's identity cache are written only where your
     repository has no file of its own. A copy your repository tracks, or one reached through a link
-    in any folder on its path, is never read as a cache, and a cache that isn't a JSON object is
-    ignored, never an error.
+    or a submodule in any folder on its path, is never read as a cache, and a cache that isn't a
+    JSON object is ignored, never an error.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace
@@ -355,7 +356,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - A snapshot holding anything git tracks is refused.
 - The installer's folder `.aios` must be this repository's own: never a link, and never another
   repository (a submodule, or a repository inside this one), whose files this repository's checks
-  can't see.
+  can't see. No file an install, adoption, upgrade or rollback writes goes under another repository
+  anywhere: a folder with its own `.git`, or one your repository records as a submodule,
+  initialized or not. Each refuses before its first write.
 - Undoing a committed adoption on a machine with no note of the last operation (a fresh clone)
   needs no upgrade or rollback since the adoption, as the record's git history shows, on every
   branch a merge brought in (even when the merge set the record back). It also needs the record to
