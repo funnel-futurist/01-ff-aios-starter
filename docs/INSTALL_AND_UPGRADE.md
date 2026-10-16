@@ -191,17 +191,22 @@ the release ships under exactly one heading:
 }
 ```
 
-- **adopt:** the release creates these, and later upgrades keep them current. They must not
-  exist yet.
+- **adopt:** files the release manages. It creates them, and later upgrades keep them current.
+  They must not exist yet. A plan that adopts a seed file (such as `CLAUDE.md` or `.gitignore`)
+  is refused: a seed is written once and is then yours, so it can't be kept current.
 - **instance_owned:** yours, even where the release ships a file at the same path. Never written,
   now or on any upgrade. They must exist.
 - **exclude:** never written. The release's copy simply isn't used here.
 
 Then commit your own role policy (`.aios/roles.json`) and run it as someone that policy lets
-`adopt` (your instance's policy decides, not the release's):
+`adopt` (your instance's policy decides, not the release's). Run it from an up-to-date clone of
+`ff-aios-starter`, which is the release's source, beside your repository. Your repository doesn't
+have the installer yet, and the people map file must stay outside it (an uncommitted file inside it
+is uncommitted work, which refuses):
 
 ```bash
-python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.json --target . --config my-org.json
+cd ../ff-aios-starter
+python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.json --target ../my-repo --config ../my-org.json
 ```
 
 **It refuses, with nothing changed, if:**
@@ -228,15 +233,18 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   finished or was killed partway.
 - Undoing a finished adoption needs the release's source, as an upgrade does:
   `aios rollback --target . --repo <your ff-aios-starter clone>`. The install record is committed,
-  so anyone's pull request could change it. Rollback therefore trusts only two things: the release
-  source, and the install record and plan as they were committed with the adoption.
-  - It removes only files the pinned release ships, that the plan adopted, that the adoption's own
-    commit added, and that still have the release's bytes. So commit an adoption as one commit
-    (`git add -A`, then `git commit`), as `adopt` says.
+  so anyone's pull request could change it. So, to decide what to remove, rollback trusts the
+  release source and the install record and plan as they were committed with the adoption. Before
+  you commit, it trusts the sealed record on disk and the plan at `HEAD`.
+  - It removes only files the pinned release ships, that the plan adopted, and that still have the
+    release's bytes and mode. Once the adoption is committed, that commit must have added every one
+    of them, and the record must claim exactly them; otherwise rollback refuses and changes nothing.
+    So commit an adoption as one commit (`git add -A`, then `git commit`), as `adopt` says.
   - It removes the people map only if git shows it arrived with the adoption and hasn't changed
     since.
   - It refuses, changing nothing, if the record on disk differs from the copy committed with the
-    adoption, or the plan does.
+    adoption, or if the plan committed with the adoption isn't the one the adoption was made with.
+    A plan you change later is never read by rollback, so it can't widen what rollback removes.
   - A rollback killed partway needs `--repo` again to finish.
 - A file you've changed since is left in place, and the message says so.
 - The install record (`.aios/install.json`) is what says which files the adoption made, so it is
@@ -256,21 +264,25 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 **What adoption and its rollback trust:**
 - Rollback trusts the release source, and what your repository has committed: the install record
   and plan exactly as committed with the adoption.
-- It never trusts a file that anyone's pull request could change after that. A changed record, plan
-  or committed journal makes rollback refuse, changing nothing.
+- To decide what to remove, it never trusts a file that anyone's pull request could change after
+  that. Who may run rollback still comes from the current role policy and people map. A changed
+  record or a committed journal makes rollback refuse, changing nothing. A plan changed later isn't read at all:
+  rollback uses the plan as committed with the adoption (before the adoption is committed, the one
+  at `HEAD`, which must still be the plan the adoption was made with).
 - The same holds for rolling back an upgrade. The upgrade keeps a copy of the record it wrote in its
   own snapshot under `.aios/backups/`, which is local. Rollback refuses unless the committed record is
   still exactly that copy. An adopted instance's upgrade always keeps one.
 - Each adoption, upgrade and rollback also notes, locally (`.aios/backups/state/head.json`), which
-  record it wrote. Rollback refuses unless the committed record is still that one. So a changed
-  record, or an older one restored to replay an earlier rollback, is refused.
+  record it wrote. When this machine has that note, rollback refuses unless the record is still that
+  one. So a changed record, or an older one restored to replay an earlier rollback, is refused.
 - An upgrade trusts the record the same way. It must be the one the note names, when there is a
   note. Every workspace's record must also match the release it's pinned to, checked against the
   release source: the source's own record of that release names the same commit and version, and
   each file the record calls managed is one that release ships as managed, with its bytes and
   executable bit. The record must also list every file that release manages (for an adopted
-  workspace, each its committed plan adopts that is in the workspace), so an upgrade never leaves
-  behind a file the new release stops shipping. The folder layout is the pinned release's, as the
+  workspace, each its committed plan adopts that is in the workspace), so an upgrade removes every
+  managed file the new release stops shipping. On an adopted workspace it removes only the ones the
+  plan still adopts; the rest stay, as yours. The folder layout is the pinned release's, as the
   release source records it; a record that names another layout is refused.
 - A seed line the record says a release appended must be one that release (yours or an earlier one)
   declared, with exactly the bytes the installer appends. Rolling back an upgrade takes back only the
@@ -292,11 +304,13 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   copy), not as the adoption to undo; and a committed record that has one, after the adoption,
   makes undoing the adoption on a fresh clone refuse. `upgrade` shows the one it just wrote.
   `record_sha256` (an adoption's seal)
-  is read only while the adopted record isn't committed yet, as your own local state. `rendered`
-  is only checked for presence by `verify`. `credentials` is only shown, by `verify`, as
-  references. `status`, `adopted`, `installed_at`, `upgraded_at` and `source` are never read.
-  `aios start` checks founder review on
-  every workspace, as `aios instance check` does, whatever the record says about its layout.
+  is trusted only while the adopted record isn't committed yet, as your own local state; when an
+  adoption is undone, a record whose seal no longer matches is left in place. `rendered` is only
+  checked for presence by `verify`. `credentials` is only shown, by `verify`, as references.
+  `status`, `adopted` and `upgraded_at` only have their type checked; `installed_at` and `source`
+  are never read. `aios start` checks founder review from the files in every pinned workspace (the
+  local check `aios instance check` also makes), whatever the record says about its layout; with no
+  usable install record it says UNPINNED instead.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace
@@ -331,11 +345,13 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 
 **Upgrades** write only what the plan adopts:
 - A new path the release ships must be added to the plan first, or the upgrade refuses.
-- A file you move from `adopt` to `instance_owned` stays where it is and becomes yours.
+- A file you move from `adopt` to `instance_owned` stays where it is, and becomes yours when the
+  next upgrade applies the plan. Until then it's still checked as a release file, so editing it
+  first makes that upgrade refuse.
 - Your role policy must still let someone in the people map both upgrade and roll back, or the
   upgrade refuses.
-- `aios verify --repo` takes the adopted files from your committed plan, not from the install
-  record, and reports a plan that isn't committed or has uncommitted changes. A plan you've changed since the last adoption or upgrade is reported until an upgrade
+- `aios verify --repo` takes the adopted files from your plan file, not from the install record,
+  and reports a plan that isn't committed or has uncommitted changes. A plan you've changed since the last adoption or upgrade is reported until an upgrade
   applies it.
 
 ## What upgrade actually does
@@ -424,7 +440,8 @@ role policy, Claude's safety settings and hooks, and the install tool itself (th
 1. **In the session.** Claude will not edit them for an operator, or for anyone it cannot
    identify. It says why and offers to hand the change to a founder.
 2. **At the pull request.** The `boundary` check fails a pull request that changes them, unless
-   the author is a founder or a founder has approved that exact commit. It reads the rules from
+   the author is a founder or a founder has approved that exact commit (when your role policy names
+   founder-lane reviewers, one of them instead; never the author). It reads the rules from
    the base branch, so a pull request cannot loosen its own check.
 
 What neither stops, honestly: somebody editing files by hand in their own terminal and pushing
@@ -442,7 +459,8 @@ no one - and neither does a perfectly filled one if branch protection is off.
 **Who may approve the founder lane is not who is a founder.** By default, `aios instance check`
 expects every owner on a founder-lane CODEOWNERS rule to be a founder or co-founder in your people
 map, because GitHub accepts any one listed owner's approval. If other accounts are trusted to
-approve those paths without being founders, list them in your role policy:
+approve those paths without being founders, list every account that may approve them in your role
+policy, founders included. Once set, the list replaces the founder default:
 
 ```json
 "founder_lane_reviewers": ["@founder-account", "@co-owner-account"]
@@ -450,7 +468,8 @@ approve those paths without being founders, list them in your role policy:
 
 They must be single accounts in your people map (a team can't be checked).
 
-- **The check then accepts their approval** and calls them approved founder-lane reviewers.
+- **The checks then accept only those accounts** (`aios instance check` and the pull request's
+  boundary check), and call them approved founder-lane reviewers.
 - **It's review permission only.** Founder status, and the founder-only actions (upgrade,
   rollback, governance), still come from each person's `role` in the people map.
 
@@ -475,12 +494,13 @@ Without `--repo` it asks *"does this workspace still match what was installed?"*
 in `.aios/install.json`. That record lives in your own repo, so a determined local editor could
 change a managed file **and** its recorded hash, and the check would agree with itself.
 
-With `--repo` it also checks the record against the source repository, with the same checks an
-upgrade makes. Every file the record calls managed must be one the release ships as managed, with
+With `--repo` it also checks the record against the source repository, as an upgrade does before
+it writes (an upgrade also checks this machine's note of its last operation). Every file the record calls managed must be one the release ships as managed, with
 the release's hash and executable bit, which catches exactly that. It takes the list of release
-files from the source's own record of the release (its tag, then the checked-out `releases/`
-folder), so a file dropped from the record and the disk together is caught. That record must name
-the same commit and version as yours, and verify says when the source has no such record. The
+files from the source's own record of the release (its tag, then `releases/` as committed at the
+source's `HEAD`), so a file dropped from the record and the disk together is caught. That record
+must name the same commit and version as yours, and verify fails, as drifted, when the source has
+no such record. The
 output always says which of the two it ran. Use `--repo` when the answer matters to somebody other
 than you.
 

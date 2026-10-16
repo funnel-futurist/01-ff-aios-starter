@@ -7,7 +7,7 @@
 ## Decision
 **Approve AIOS Starter 3.1.0 at `@@PIN7@@`.**
 - It adds the one thing FF's own adoption needs (your G81 and G98 rulings): a way to bring the Starter into a repository that already exists, without overwriting anything. It also keeps who may approve founder-gated paths separate from who is a founder.
-- For existing clients it's an ordinary upgrade: nothing moves. Review hardened three things every workspace will notice, listed below: the committed install record is no longer trusted, a shallow clone can't upgrade, and an upgrade made before 3.1 is rolled back with its own installer.
+- For clients on 3.0.0 it's an ordinary upgrade: nothing moves. A 2.x client still gets the 3.0 folder move, as before. Review hardened three things that apply to every workspace, listed below: the committed install record is no longer trusted, a shallow clone can't upgrade, and an upgrade made before 3.1 is rolled back with its own installer.
 
 ## Principle
 - **Only ever create.** Adopting into an existing repository never overwrites, merges or deletes a file of that repository's.
@@ -24,8 +24,8 @@
 | **Upgrading an adopted repository** | It writes only what the plan adopts, and the plan must still be committed. A new release path must be classified first, or the upgrade refuses. A file the plan stops adopting stays as the repository's own. |
 | **`founder_lane_reviewers`** (new, optional) | It names who may approve founder-gated paths. `instance check` and the pull-request boundary check both honour it, and when it's set it's the whole permission. Unset, nothing changes for clients. |
 | **Safer state files, for every workspace** | The installer's own records are written through unique temporary files, never a fixed name that something else could be. A release may never ship the installer's state paths, compared the way a Mac or Windows disk compares names. |
-| **The committed install record isn't trusted, for every workspace** | Anyone's pull request can edit `.aios/install.json`. So upgrade, rollback and `verify --repo` check what they act on against the release source and git history: the pinned release, its managed files, its folder layout, the seed lines and seeds already handled, and whether the workspace was adopted. An edited record is refused, with nothing changed. |
-| **A shallow clone can't upgrade** | A `git clone --depth 1` can't show that history, so an upgrade, or undoing an adoption, refuses until `git fetch --unshallow`. The workflows the Starter ships don't run the installer, so CI is unaffected. |
+| **The committed install record isn't trusted, for every workspace** | Anyone's pull request can edit `.aios/install.json`. So upgrade and `verify --repo` check the record against the release source and git history: the pinned release, its managed files, its folder layout, the seed lines (and, for an upgrade, the seeds already handled), and whether the workspace was adopted. Rollback acts only on the record its last operation here wrote or, to undo an adoption, the one committed with it. An edit that fails these checks is refused by upgrade and rollback, with nothing changed, and reported by verify. |
+| **A shallow clone can't upgrade** | A `git clone --depth 1` can't show that history, so an upgrade, or undoing an adoption, refuses until `git fetch --unshallow`. In a client's repository, the workflows the Starter ships never upgrade or undo an adoption against their own checkout (the job that runs the installer's tests runs only in the Starter's own repository, on temporary repositories it makes), so CI is unaffected. |
 | **Undoing a finished adoption** | It needs the release's source, `aios rollback --repo <your ff-aios-starter clone>`, so only that release's files are removed. On a fresh clone it refuses if an upgrade or rollback came after the adoption: undo that where it ran, or with git. |
 | **Rolling back an upgrade made before 3.1** | Refused, changing nothing: those installers kept no copy of the record they wrote. Roll it back with that release's own installer (`python3 scripts/aios/aios.py rollback --target .`, run in the workspace) or with git. |
 
@@ -33,14 +33,14 @@
 @@PROOF@@
 
 ## Recommendation
-**Approve.** It's the implementation route your G81 approval set and your G98 approval shaped. It was reviewed until both model families approved the exact pin, every finding was fixed with a test shown to fail without its fix, and it changes nothing for existing clients but safer internals.
+**Approve.** It's the implementation route your G81 approval set and your G98 approval shaped. It is carded only once both model families approve the exact pin with no findings. Every code finding was fixed with a test shown to fail without its fix; findings in the documentation and this brief were corrected and checked by the next review round. For existing clients it changes nothing but safer internals and the hardening listed above.
 
 ## Consequence
 - **If approved:**
   - Clients upgrade from 3.0.0 as usual, or from 2.x with the 3.0 folder move as before.
-  - FF can then open its own adoption pull request into ai-os: the 18 files you approved (G98), FF's own role policy, and the plan. That's one reviewed pull request, after a rehearsal on a copy.
+  - FF can then open its own adoption pull request into ai-os: the 18 files you approved (G98), FF's own role policy and plan (committed first), and the people map and install record the adoption writes, all in one commit. That's one reviewed pull request, after a rehearsal on a copy.
 - **Downsides:**
-  - The adopt mode needs a disk with hard links, which every Mac, Linux and Windows (NTFS) disk has.
+  - The adopt mode needs a disk with hard links. A Mac's APFS, Linux's usual file systems and Windows NTFS have them; FAT and exFAT drives don't, and adoption refuses there and takes back anything it made.
   - A repository's plan must be kept current: each release that ships a new path needs it classified before upgrading.
   - A shallow clone must fetch its full history before an upgrade.
   - An upgrade an older installer made is rolled back with that installer, not this one.
@@ -57,6 +57,6 @@
 4. Chat Zero merges as the FF Agents App. **Success:** `main` equals the tag.
 
 ## What is not claimed
-- **No run on Windows.** Its file lock is tested with a stand-in only.
+- **No run on Windows.** Its file lock, byte-for-byte record writes and permission check are tested with stand-ins only, and hard links on NTFS aren't tested.
 - **FF's adoption hasn't happened.** It was rehearsed on a throwaway copy of ai-os, and nothing was written to ai-os.
 - **The protected-text scan is a copy-and-paste tripwire,** as before.
