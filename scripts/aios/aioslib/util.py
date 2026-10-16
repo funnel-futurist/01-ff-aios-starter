@@ -116,13 +116,8 @@ def write_local_cache(root, rel, data):
     not written costs only a repeated check."""
     rel = rel.replace(os.sep, "/")
     try:
-        if is_tracked(root, rel) or in_head(root, rel):
+        if not _local_cache_path_ok(root, rel):
             return False
-        here = root
-        for part in rel.split("/"):
-            here = os.path.join(here, part)
-            if os.path.islink(here):
-                return False
         full = os.path.join(root, rel)
         if os.path.lexists(full) and not os.path.isfile(full):
             return False
@@ -130,6 +125,36 @@ def write_local_cache(root, rel, data):
         return True
     except (OSError, Refusal):
         return False
+
+
+def read_local_cache(root, rel):
+    """One of TOOL_LOCAL_FILES as a JSON object, or None. Under the same rule as write_local_cache: never a
+    file git tracks or has committed, or one reached through a link at any folder on the way (a committed
+    link there points the read at a file of the repository's), and never anything but an object. The
+    tools that read a cache then never break on it or take its word for anything a pull request wrote
+    (independent review, 3.1 round 56)."""
+    rel = rel.replace(os.sep, "/")
+    try:
+        full = os.path.join(root, rel)
+        if not _local_cache_path_ok(root, rel) or not os.path.isfile(full):
+            return None
+        data = read_json(full)
+    except (OSError, ValueError, Refusal):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _local_cache_path_ok(root, rel):
+    """Whether `rel` can be this machine's own cache: git neither tracks nor has committed it, and no part
+    of the path, folders included, is a link."""
+    if is_tracked(root, rel) or in_head(root, rel):
+        return False
+    here = root
+    for part in rel.split("/"):
+        here = os.path.join(here, part)
+        if os.path.islink(here):
+            return False
+    return True
 
 
 # A Windows short (8.3) name, such as AIOS~1 or INSTAL~1.JSO: it can stand for a long name.

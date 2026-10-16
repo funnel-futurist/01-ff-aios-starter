@@ -461,7 +461,10 @@ def cmd_start(args):
     for warning in _hook_runtime_warnings(target):
         _say("")
         _say("warning:   %s" % warning)
-    newer = notice.check(target)
+    try:
+        newer = notice.check(target)
+    except Exception:  # noqa: BLE001 - a notice must never break a session start (3.1 round 56)
+        newer = None
     if newer:
         _say("")
         _say("update:    %s" % newer)

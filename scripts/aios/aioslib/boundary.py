@@ -92,16 +92,16 @@ def _gh_hosts_file():
 
 def _cached_identity(root):
     """gh costs about a second, and an edit should not. Cache the login briefly, gitignored."""
-    path = os.path.join(root, IDENTITY_CACHE)
-    rel = IDENTITY_CACHE.replace(os.sep, "/")
-    # A copy the repository tracks is the repository's file, never this machine's cache (independent
-    # review, 3.1 round 55).
-    ours = os.path.isfile(path) and not os.path.islink(path) and not (util.is_tracked(root, rel)
-                                                                      or util.in_head(root, rel))
-    cached = util.read_json_safe(path) if ours else None
+    # A copy the repository tracks, or one reached through a committed link, is the repository's file,
+    # never this machine's cache; and nothing in it can raise here, since a hook that raises lets the
+    # edit through (independent review, 3.1 rounds 55 and 56).
+    cached = util.read_local_cache(root, IDENTITY_CACHE)
     fingerprint = _gh_fingerprint()
-    if cached and cached.get("login") and cached.get("gh") == fingerprint and \
-            time.time() - float(cached.get("at") or 0) < IDENTITY_TTL_SECONDS:
+    try:
+        fresh = time.time() - float(cached.get("at") or 0) < IDENTITY_TTL_SECONDS if cached else False
+    except (TypeError, ValueError):
+        fresh = False
+    if fresh and isinstance(cached.get("login"), str) and cached["login"] and cached.get("gh") == fingerprint:
         return cached["login"]
     login, _source = roles.identity(timeout=5)
     if login:

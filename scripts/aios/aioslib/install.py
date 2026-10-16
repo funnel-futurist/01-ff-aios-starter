@@ -3062,10 +3062,19 @@ def _committed_plan(target, rel, rev="HEAD"):
 
 
 def _added_in(target, commit):
-    """The paths `commit` added (relative to its first parent; every path for a root commit)."""
-    out = util.git(target, ["diff-tree", "--no-commit-id", "-r", "--root", "--diff-filter=A", "--name-only",
-                            "-z", commit], binary=True, check=False)
-    return {p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p}
+    """The paths `commit` added: each one in it that none of its parents has (every path, for a root commit).
+    The same rule as _additions, so a merge commit that adds the adoption is read too: `git diff-tree` on a
+    merge alone shows nothing, and the undo then took none of its files for the adoption's (independent
+    review, 3.1 round 56)."""
+    parents = util.git(target, ["rev-list", "--parents", "-n", "1", commit], check=False).split()[1:]
+    added = None
+    for parent in parents or [None]:
+        args = ["diff-tree", "--no-commit-id", "-r", "--no-renames", "--diff-filter=A", "--name-only", "-z"]
+        args += [parent, commit] if parent else ["--root", commit]
+        out = util.git(target, args, binary=True, check=False)
+        paths = {p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p}
+        added = paths if added is None else added & paths
+    return added
 
 
 def _require_whole_history(target):

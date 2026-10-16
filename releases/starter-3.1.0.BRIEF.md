@@ -39,7 +39,7 @@
 - **`aios start`:** the release line and any drift it shows. The founder-review check doesn't use it.
 - **The new-release notice:** the installed version, which only changes the notice's text.
 - **Clearing a dead lock:** only whether a record exists.
-- **The notice and identity caches:** written only where the repository has no file of its own, and never read from a copy it tracks.
+- **The notice and identity caches:** written only where the repository has no file of its own. Never read from a copy it tracks or reaches through a link; a malformed one is ignored, so it can't switch off the edit check or break `aios start`.
 
 **What was proven** (detail in `evidence/dispatch/p22-starter/release-3.1.0/`):
 @@PROOF@@

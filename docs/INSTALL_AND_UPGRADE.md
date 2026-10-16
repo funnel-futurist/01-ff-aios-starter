@@ -337,7 +337,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
     newer approved release exists. Only the notice's text depends on it.
   - Clearing a dead lock: only whether a record exists.
   - The release notice's cache and the session's identity cache are written only where your
-    repository has no file of its own, and a copy your repository tracks is never read as a cache.
+    repository has no file of its own. A copy your repository tracks, or one reached through a link
+    in any folder on its path, is never read as a cache, and a cache that isn't a JSON object is
+    ignored, never an error.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace
@@ -360,7 +362,8 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   have been added only once in that history: if it was added again (an adoption undone and made
   again, or a pull request that removed the record and added one back), git can't say which
   addition was the adoption. In either case it refuses, changing nothing: undo the adoption where
-  it ran, or with git.
+  it ran, or with git. The adoption may be committed in a merge commit; what it added is then what
+  that commit has and none of its parents had.
 - An adoption plan must be committed under exactly its own name.
 - It trusts your own local, uncommitted state: the ignored journal of an operation that was
   interrupted, and a record not yet committed. Whoever can edit those can already change any file

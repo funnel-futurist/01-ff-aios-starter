@@ -4044,6 +4044,9 @@ class ReviewRoundFiftyFive(Existing):
 
     def test_the_tools_never_write_over_a_tracked_cache(self):
         from aioslib import boundary, notice
+        # The sandbox turns the notice off, and check() then returns before it reaches the cache (3.1 round 56).
+        os.environ.pop("AIOS_NO_RELEASE_NOTICE", None)
+        self.addCleanup(os.environ.__setitem__, "AIOS_NO_RELEASE_NOTICE", "1")
         self.adopt()
         self.commit("adopted")
         for rel in self.CACHES:
@@ -4080,3 +4083,122 @@ class ReviewRoundFiftyFive(Existing):
         problems, _ = install_mod.verify(t, source_repo=self.source)
         self.assertTrue(any(p.startswith(self.TEMPLATE + ": the install record calls it") for p in problems), problems)
         self.assertEqual(install_mod._adopted_ownership_problems(t, install_mod.load_record(t)), [])  # upgrade's view
+
+
+class ReviewRoundFiftySix(Existing):
+    """Codex and the second reviewer, 3.1 round 56: an untouched adoption committed inside a merge commit rolls
+    back from a fresh clone; and the tools never read a local cache the repository tracks or reaches through
+    a committed link, nor break on one that isn't an object."""
+
+    CACHES = (".aios/release_notice.json", ".aios/usage/identity.json")  # the tools' local caches
+
+    def notice_on(self):
+        # The sandbox turns the notice off, and check() then returns before it reaches the cache.
+        os.environ.pop("AIOS_NO_RELEASE_NOTICE", None)
+        self.addCleanup(os.environ.__setitem__, "AIOS_NO_RELEASE_NOTICE", "1")
+
+    def adopted_inside_a_merge(self):
+        t = self.target
+        before = util.git(t, ["rev-parse", "HEAD"])
+        run_git(t, "checkout", "-q", "-b", "side")
+        write(t, "06_Clients/acme/side.md", "# side\n")
+        run_git(t, "add", "--", "06_Clients/acme/side.md")
+        run_git(t, "commit", "-qm", "side work")
+        side = util.git(t, ["rev-parse", "HEAD"])
+        run_git(t, "checkout", "-q", "main")
+        self.adopt()
+        run_git(t, "checkout", "side", "--", "06_Clients/acme/side.md")  # the merge brings the side's work too
+        run_git(t, "add", "-A")
+        tree = util.git(t, ["write-tree"])
+        merge = util.git(t, ["commit-tree", tree, "-p", before, "-p", side, "-m", "a merge that brings the adoption"])
+        run_git(t, "update-ref", "refs/heads/main", merge)
+        self.assertEqual(util.git(t, ["status", "--porcelain"]), "")
+        return merge, side
+
+    def test_an_untouched_adoption_committed_inside_a_merge_rolls_back(self):
+        t = self.target
+        merge, _ = self.adopted_inside_a_merge()
+        added = install_mod._added_in(t, merge)
+        self.assertTrue(set(ADOPTED + [".aios/install.json"]) <= added, sorted(added))
+        self.assertNotIn("06_Clients/acme/side.md", added)  # the side already had it
+        self.forget_state()  # as a fresh clone would be
+        self.be("acme-founder")
+        code, out, err = self.cli("rollback", "--target", t, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        for p in ADOPTED:
+            self.assertFalse(os.path.lexists(os.path.join(t, p)), p)
+        with open(os.path.join(t, "CLAUDE.md")) as fh:
+            self.assertIn("OUR OWN brain", fh.read())
+        self.assertTrue(os.path.isfile(os.path.join(t, "06_Clients/acme/side.md")))
+
+    def test_a_merge_adds_only_what_no_parent_had(self):
+        t = self.target
+        merge, side = self.adopted_inside_a_merge()
+        self.assertEqual(install_mod._added_in(t, side), {"06_Clients/acme/side.md"})  # one parent: what it added
+        self.assertNotIn("06_Clients/acme/side.md", install_mod._added_in(t, merge))  # a parent had it
+        self.assertIn(".aios/install.json", install_mod._added_in(t, merge))  # no parent had it
+        root = util.git(t, ["rev-list", "--max-parents=0", "HEAD"]).split()[0]
+        self.assertIn("CLAUDE.md", install_mod._added_in(t, root))  # a root commit adds every path
+
+    def commit_link_to(self, link_rel, folder_rel, name, content):
+        t = self.target
+        write(t, os.path.join(folder_rel, name), content)
+        os.makedirs(os.path.dirname(os.path.join(t, link_rel)), exist_ok=True)
+        os.symlink(os.path.relpath(os.path.join(t, folder_rel), os.path.dirname(os.path.join(t, link_rel))),
+                   os.path.join(t, link_rel))
+        run_git(t, "add", "-f", "--", folder_rel, link_rel)
+        run_git(t, "commit", "-qm", "a pull request links the cache folder to a folder of its own")
+
+    def test_a_committed_link_to_a_malformed_identity_cache_never_lets_an_edit_through(self):
+        from aioslib import boundary
+        self.adopt()
+        self.commit("adopted")
+        self.commit_link_to(".aios/usage", "planted", "identity.json", "[1]\n")
+        self.be("acme-va")
+        allowed, reason = boundary.check_edit(self.target, "Edit", {"file_path": os.path.join(self.target, "CLAUDE.md")})
+        self.assertFalse(allowed, reason)
+        self.assertIn("acme-va (operator)", reason)
+        code, out = boundary.hook_pre_edit(json.dumps({"tool_name": "Edit", "tool_input": {
+            "file_path": os.path.join(self.target, "CLAUDE.md")}}), root=self.target)
+        self.assertIn('"permissionDecision": "deny"', out or "")
+        with open(os.path.join(self.target, "planted/identity.json")) as fh:
+            self.assertEqual(fh.read(), "[1]\n")  # and nothing was written through the link
+
+    def test_a_committed_link_to_an_identity_cache_is_never_read(self):
+        import time
+        from aioslib import boundary
+        self.adopt()
+        self.commit("adopted")
+        self.be("acme-va")
+        planted = json.dumps({"login": "acme-founder", "at": time.time(), "gh": boundary._gh_fingerprint()})
+        self.commit_link_to(".aios/usage", "planted", "identity.json", planted)
+        self.assertEqual(boundary._cached_identity(self.target), "acme-va")
+        allowed, reason = boundary.check_edit(self.target, "Edit", {"file_path": os.path.join(self.target, "CLAUDE.md")})
+        self.assertFalse(allowed, reason)
+
+    def test_a_tracked_release_notice_cache_is_never_read(self):
+        from aioslib import notice
+        self.notice_on()
+        self.adopt()
+        self.commit("adopted")
+        installed = install_mod.load_record(self.target)["release"]["version"]
+        write(self.target, ".aios/release_notice.json", json.dumps(
+            {"installed": installed, "checked_at": 2e9, "complete": True, "line": "a line a pull request wrote"}))
+        run_git(self.target, "add", "-f", "--", ".aios/release_notice.json")
+        run_git(self.target, "commit", "-qm", "a pull request commits the notice cache")
+        self.assertIsNone(notice.check(self.target, now=1e9, tags_fn=lambda: [], fetch_fn=lambda ref, v: None))
+
+    def test_a_cache_that_isnt_an_object_breaks_nothing(self):
+        from aioslib import boundary, notice
+        self.notice_on()
+        self.adopt()
+        self.commit("adopted")
+        for rel in self.CACHES:
+            write(self.target, rel, "[1]\n")  # untracked: this machine's own, but not an object
+        self.assertIsNone(notice.check(self.target, now=1e9, tags_fn=lambda: [], fetch_fn=lambda ref, v: None))
+        self.be("acme-va")
+        self.assertEqual(boundary._cached_identity(self.target), "acme-va")
+        allowed, _ = boundary.check_edit(self.target, "Edit", {"file_path": os.path.join(self.target, "CLAUDE.md")})
+        self.assertFalse(allowed)
+        for rel in self.CACHES:
+            self.assertIsInstance(util.read_local_cache(self.target, rel), dict, rel)  # rewritten, as its own
