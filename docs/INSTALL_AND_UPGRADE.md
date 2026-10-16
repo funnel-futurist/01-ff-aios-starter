@@ -360,7 +360,7 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   anywhere: a folder with its own `.git`, or one your repository records as a submodule,
   initialized or not. That covers every path each one touches: the files it writes or removes, a
   2.x to 3.0 folder move's paths at both ends, the file a seed line goes into, and the installer's
-  own temporary and state folders under `.aios/backups/`. Each refuses before its first write, and so
+  own lock, temporary and state folders under `.aios/`. Each refuses before its first write, and so
   does a rollback that finishes or undoes an interrupted operation: it checks again, since a submodule
   could have appeared while the operation was stopped.
 - Undoing a committed adoption on a machine with no note of the last operation (a fresh clone)

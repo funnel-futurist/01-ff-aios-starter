@@ -2077,6 +2077,16 @@ class _RecoveryGuard(object):
         for part in (os.path.dirname(backups), backups):
             if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
                 raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
+        # Nor another repository (a submodule, initialized or not): the workspace lock, and outside git this
+        # guard, would be written inside it before any operation's own checks ran (independent review, 3.1
+        # round 60).
+        links = util.gitlinks(self.target)
+        for rel in (AIOS_DIR, BACKUP_DIR):
+            rel = rel.replace(os.sep, "/")
+            if util.another_repository(self.target, rel, links):
+                raise Refusal(EXIT_STATE, "%s is another repository (a submodule), not the installer's own folder; "
+                              "nothing was changed" % rel, ["make it a plain folder of this repository again, then "
+                                                            "run this again"])
         if self.in_backups:
             os.makedirs(backups, exist_ok=True)
         nofollow = getattr(os, "O_NOFOLLOW", 0)

@@ -4519,13 +4519,18 @@ def _sweep(test, base, run):
             make(copy, folder)
             tree, view = _tree(copy), _git_view(copy)
             with test.subTest(folder=folder, kind=kind):
-                try:
-                    run(copy)
-                except Refusal as exc:
-                    said = exc.message + "\n" + "\n".join(str(d) for d in exc.details or [])
-                    test.assertIn(folder, said, "the refusal doesn't name the folder")
-                else:
-                    test.fail("%s made %s: the operation went ahead" % (folder, kind))
+                # Recorded here too: a write made and taken back before the refusal still went into the other
+                # repository, and a kill at that moment would leave it there (independent review, 3.1 round 60).
+                with _Writes(copy) as attempted:
+                    try:
+                        run(copy)
+                    except Refusal as exc:
+                        said = exc.message + "\n" + "\n".join(str(d) for d in exc.details or [])
+                        test.assertIn(folder, said, "the refusal doesn't name the folder")
+                    else:
+                        test.fail("%s made %s: the operation went ahead" % (folder, kind))
+                inside = sorted(p for p in attempted.files | attempted.dirs if p == folder or p.startswith(folder + "/"))
+                test.assertEqual(inside, [], "a write was attempted inside the other repository")
                 after, now = _tree(copy), _git_view(copy)
                 changed = diff(tree, after)
                 if ".aios/lock" in changed and ".aios/lock" in tree and ".aios/lock" not in after:
