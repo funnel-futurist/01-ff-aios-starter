@@ -216,6 +216,8 @@ python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.j
 - the plan or the role policy isn't committed, or this isn't a git repository;
 - one of the installer's own paths (`.aios/lock`, `.aios/txn.json`, or a name it gives its
   temporary files) is taken, `.aios` itself is a link, or `.aios/backups/` already holds files;
+- your repository tracks a file at a path the Starter's tools write and keep local
+  (`.aios/release_notice.json`, `.aios/usage/identity.json`);
 - a file it would create is ignored by your git rules (it would never reach your commit);
 - an adopted path already exists, or the way to it runs through a link;
 - a path you called yours is missing;
@@ -297,9 +299,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   you deleted it, nor takes it over, whatever the record now lists.
 - On a machine with no note of the last operation, an adopted workspace's record may call a file
   managed (the release's to update, and to remove once a release retires it) only if git history
-  shows the installer made it: the adoption's own commit added it and listed it, or the first commit
-  ever to add it, on any side of any merge, listed it (an upgrade's). Otherwise upgrade refuses,
-  changing nothing, and `verify --repo` reports it. So commit each upgrade as one commit (`git add -A`, then
+  shows the installer made it: every commit that ever added it, on any side of any merge (the
+  adoption's, or an upgrade's), listed it in the record it committed. Otherwise upgrade refuses,
+  changing nothing, and `verify --repo` reports it, on every machine. So commit each upgrade as one commit (`git add -A`, then
   `git commit`), as for the adoption. If you once had a file of your own at a path a later upgrade
   created, a fresh clone can't tell the two apart and refuses: run the next upgrade where the last
   operation ran.
@@ -334,6 +336,8 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   - The new-release notice (also run by the session hook): the installed version, to say whether a
     newer approved release exists. Only the notice's text depends on it.
   - Clearing a dead lock: only whether a record exists.
+  - The release notice's cache and the session's identity cache are written only where your
+    repository has no file of its own, and a copy your repository tracks is never read as a cache.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace

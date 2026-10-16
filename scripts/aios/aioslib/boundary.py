@@ -93,17 +93,20 @@ def _gh_hosts_file():
 def _cached_identity(root):
     """gh costs about a second, and an edit should not. Cache the login briefly, gitignored."""
     path = os.path.join(root, IDENTITY_CACHE)
-    cached = util.read_json_safe(path) if os.path.isfile(path) else None
+    rel = IDENTITY_CACHE.replace(os.sep, "/")
+    # A copy the repository tracks is the repository's file, never this machine's cache (independent
+    # review, 3.1 round 55).
+    ours = os.path.isfile(path) and not os.path.islink(path) and not (util.is_tracked(root, rel)
+                                                                      or util.in_head(root, rel))
+    cached = util.read_json_safe(path) if ours else None
     fingerprint = _gh_fingerprint()
     if cached and cached.get("login") and cached.get("gh") == fingerprint and \
             time.time() - float(cached.get("at") or 0) < IDENTITY_TTL_SECONDS:
         return cached["login"]
     login, _source = roles.identity(timeout=5)
     if login:
-        try:
-            util.write_json(path, {"login": login, "at": time.time(), "gh": fingerprint})
-        except OSError:
-            pass  # a read-only disk must not turn into a refusal
+        # Never over a file of the repository's; a read-only disk must not turn into a refusal either.
+        util.write_local_cache(root, IDENTITY_CACHE, {"login": login, "at": time.time(), "gh": fingerprint})
     return login
 
 

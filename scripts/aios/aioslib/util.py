@@ -105,6 +105,33 @@ TOOL_RESERVED = (".aios/install.json/**", ".aios/config.json/**", ".aios/txn.jso
                  ".aios/.install.json.*.tmp", ".aios/.config.json.*.tmp", ".aios/.txn.json.*.tmp")
 
 
+# Files the Starter's own tools write and keep local, git-ignored by the shipped `.aios/.gitignore`: the
+# daily release notice's cache and the boundary check's identity cache (independent review, 3.1 round 55).
+TOOL_LOCAL_FILES = (".aios/release_notice.json", ".aios/usage/identity.json")
+
+
+def write_local_cache(root, rel, data):
+    """Write one of TOOL_LOCAL_FILES, unless that would touch a file of the repository's: one git tracks or has
+    committed, or one reached through a link or that isn't a plain file. Returns whether it wrote. A cache
+    not written costs only a repeated check."""
+    rel = rel.replace(os.sep, "/")
+    try:
+        if is_tracked(root, rel) or in_head(root, rel):
+            return False
+        here = root
+        for part in rel.split("/"):
+            here = os.path.join(here, part)
+            if os.path.islink(here):
+                return False
+        full = os.path.join(root, rel)
+        if os.path.lexists(full) and not os.path.isfile(full):
+            return False
+        write_json(full, data)
+        return True
+    except (OSError, Refusal):
+        return False
+
+
 # A Windows short (8.3) name, such as AIOS~1 or INSTAL~1.JSO: it can stand for a long name.
 _SHORT_NAME = re.compile(r"^[^.~]{1,6}~[0-9]{1,6}(\.[^.]{0,3})?$")
 

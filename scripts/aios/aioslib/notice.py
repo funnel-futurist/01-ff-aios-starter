@@ -137,9 +137,7 @@ def check(target, now=None, tags_fn=None, fetch_fn=None, clock=time.monotonic):
     else:
         newest, complete = newest_approved(installed, tags, fetch)
     line = line_for(installed_text, newest) if newest else None
-    try:
-        util.write_json(cache_path, {"checked_at": now, "installed": installed_text, "line": line,
-                                     "complete": bool(newest or complete)})
-    except OSError:
-        pass
+    # Never over a file of the repository's (independent review, 3.1 round 55).
+    util.write_local_cache(target, CACHE, {"checked_at": now, "installed": installed_text, "line": line,
+                                           "complete": bool(newest or complete)})
     return line

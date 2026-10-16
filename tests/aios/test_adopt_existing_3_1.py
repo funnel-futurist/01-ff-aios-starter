@@ -3942,3 +3942,141 @@ class ReviewRoundFiftyFour(Existing):
         install_mod.upgrade(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.2.0")),
                             self.source)
         self.assertEqual(install_mod.load_record(self.target)["release"]["version"], "3.2.0")
+
+    def test_a_backdated_claim_on_a_merged_branch_is_refused(self):
+        """Gemini, 3.1 round 55: the repository adds a file of its own after the adoption; a pull request,
+        branched from the adoption, adds the same bytes with a record listing it, backdated to look first, and
+        is merged. Every commit that added the file must have listed it, so the repository's own one refuses."""
+        t = self.target
+        self.adopt()
+        self.commit("adopted")
+        adopted_at = util.git(t, ["rev-parse", "HEAD"])
+        write(t, self.TEMPLATE, self.release_bytes(self.TEMPLATE))
+        run_git(t, "add", "--", self.TEMPLATE)
+        run_git(t, "commit", "-qm", "we add a template of our own")
+        run_git(t, "checkout", "-q", "-b", "claim", adopted_at)
+        write(t, self.TEMPLATE, self.release_bytes(self.TEMPLATE))
+        import hashlib
+        plan = json.loads(json.dumps(PLAN))
+        self.to_adopt(self.TEMPLATE, "exclude")(plan)
+        self.write_plan(plan)
+        path = install_mod.install_record_path(t)
+        record = util.read_json(path)
+        record["managed"] = sorted(record["managed"] + [{"path": self.TEMPLATE, "exec": False, "sha256":
+                                   hashlib.sha256(self.release_bytes(self.TEMPLATE)).hexdigest()}],
+                                   key=lambda e: e["path"])
+        util.write_json(path, record)
+        run_git(t, "add", "--", self.TEMPLATE, ".aios/adoption.json", ".aios/install.json")
+        env = dict(os.environ, GIT_AUTHOR_DATE="2001-01-01T00:00:00", GIT_COMMITTER_DATE="2001-01-01T00:00:00")
+        subprocess.run(["git", "-C", t, "commit", "-qm", "claim it, backdated"], check=True, env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        run_git(t, "checkout", "-q", "main")
+        run_git(t, "merge", "-q", "--no-ff", "-m", "merge the pull request", "claim")
+        self.assertEqual(len(install_mod._additions(t, self.TEMPLATE)), 2)
+        self.forget_state()
+        self.refused(self.TEMPLATE)
+
+
+class ReviewRoundFiftyFive(Existing):
+    """Codex, 3.1 round 55: an adoption committed inside a merge commit is anchored too (never read as local
+    state); the tools' local caches never overwrite a file the repository tracks, and adoption refuses one;
+    and `verify --repo` answers the same on every machine."""
+
+    REL = ".claude/settings.json"  # instance_owned in PLAN, managed in the release
+    TEMPLATE = "templates/governance/CODEOWNERS.template"  # managed in the release, excluded in PLAN
+    CACHES = (".aios/release_notice.json", ".aios/usage/identity.json")  # the tools' local caches
+
+    def release_bytes(self, rel):
+        with open(os.path.join(self.source, rel), "rb") as fh:
+            return fh.read()
+
+    def test_an_adoption_committed_inside_a_merge_is_anchored(self):
+        import hashlib
+        import stat as stat_mod
+        t = self.target
+        write(t, self.REL, self.release_bytes(self.REL))
+        self.commit("ours, the same bytes as the release's")
+        before = util.git(t, ["rev-parse", "HEAD"])
+        run_git(t, "checkout", "-q", "-b", "side")
+        write(t, "06_Clients/acme/side.md", "# side\n")
+        run_git(t, "add", "--", "06_Clients/acme/side.md")
+        run_git(t, "commit", "-qm", "side work")
+        side = util.git(t, ["rev-parse", "HEAD"])
+        run_git(t, "checkout", "-q", "main")
+        self.adopt()
+        run_git(t, "add", "-A")
+        tree = util.git(t, ["write-tree"])
+        merge = util.git(t, ["commit-tree", tree, "-p", before, "-p", side, "-m", "a merge that brings the adoption"])
+        run_git(t, "update-ref", "refs/heads/main", merge)
+        self.assertEqual(install_mod._additions(t, ".aios/install.json"), [merge])
+        # A pull request widens the plan and reseals the record so it claims the repository's own file.
+        plan = json.loads(json.dumps(PLAN))
+        plan["instance_owned"].remove(self.REL)
+        plan["adopt"].append(self.REL)
+        self.write_plan(plan)
+        path = install_mod.install_record_path(t)
+        record = util.read_json(path)
+        with open(os.path.join(t, ".aios/adoption.json"), "rb") as fh:
+            plan_bytes = fh.read()
+        mode = stat_mod.S_IMODE(os.lstat(os.path.join(t, self.REL)).st_mode)
+        record["adoption"] = dict(record["adoption"], adopt=plan["adopt"], instance_owned=plan["instance_owned"],
+                                  plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
+                                  created=record["adoption"]["created"] + [
+                                      {"path": self.REL, "mode": mode,
+                                       "sha256": hashlib.sha256(self.release_bytes(self.REL)).hexdigest()}])
+        with open(path, "wb") as fh:
+            fh.write(install_mod._record_bytes(install_mod._sealed(record)))
+        run_git(t, "add", "--", ".aios/adoption.json", ".aios/install.json")
+        run_git(t, "commit", "-qm", "a pull request claims our file for the adoption")
+        self.forget_state()
+        self.refuses_unchanged(install_mod.rollback, t, self.source)
+        self.assertTrue(os.path.isfile(os.path.join(t, self.REL)))
+
+    def test_adoption_refuses_a_tracked_tool_cache(self):
+        for rel in self.CACHES:
+            write(self.target, rel, '{"ours": true}\n')
+        run_git(self.target, "add", "-f", "--", *self.CACHES)
+        run_git(self.target, "commit", "-qm", "files of ours at the tools' local paths")
+        exc = self.refuses_unchanged(self.adopt)
+        said = exc.message + "\n" + "\n".join(exc.details or [])
+        for rel in self.CACHES:
+            self.assertIn("%s is a file this repository tracks" % rel, said)
+
+    def test_the_tools_never_write_over_a_tracked_cache(self):
+        from aioslib import boundary, notice
+        self.adopt()
+        self.commit("adopted")
+        for rel in self.CACHES:
+            write(self.target, rel, '{"ours": true}\n')
+        run_git(self.target, "add", "-f", "--", *self.CACHES)
+        run_git(self.target, "commit", "-qm", "a pull request commits files at the tools' local paths")
+        notice.check(self.target, now=1e9, tags_fn=lambda: [], fetch_fn=lambda ref, v: None)
+        self.be("acme-founder")
+        boundary._cached_identity(self.target)
+        for rel in self.CACHES:
+            with open(os.path.join(self.target, rel)) as fh:
+                self.assertEqual(fh.read(), '{"ours": true}\n', rel)
+        self.assertEqual(util.git(self.target, ["status", "--porcelain"]), "")
+
+    def test_verify_repo_answers_the_same_with_the_note(self):
+        """The documented boundary: a path the repository once had and a later upgrade created. Upgrade trusts
+        it where the last operation ran; verify --repo reports it on every machine."""
+        t = self.target
+        write(t, self.TEMPLATE, "# our own template, long ago\n")
+        self.commit("a template of ours")
+        os.remove(os.path.join(t, self.TEMPLATE))
+        self.commit("removed")
+        self.adopt()
+        self.commit("adopted")
+        plan = json.loads(json.dumps(PLAN))
+        plan["exclude"].remove("templates/**")
+        plan["adopt"].append("templates/**")
+        self.write_plan(plan)
+        self.commit("adopt the templates too")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
+        install_mod.upgrade(t, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")), self.source)
+        self.commit("upgraded")
+        self.assertTrue(install_mod._vouched_by_note(t))
+        problems, _ = install_mod.verify(t, source_repo=self.source)
+        self.assertTrue(any(p.startswith(self.TEMPLATE + ": the install record calls it") for p in problems), problems)
+        self.assertEqual(install_mod._adopted_ownership_problems(t, install_mod.load_record(t)), [])  # upgrade's view
