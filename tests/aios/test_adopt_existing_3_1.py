@@ -4381,6 +4381,9 @@ class ReviewRoundFiftyEight(Existing):
         self.assertEqual(install_mod._seed_line_target(t, "ours.md"), os.path.join(t, "ours.md"))
 
 
+# ─── the standing check: nothing written into another repository (3.1 rounds 58 and 59) ──────────────────────
+
+
 def _make_submodule(root, folder):
     """Make `folder` an uninitialized submodule of the repository at `root`, as a pull request could: its
     tracked files untracked (left on disk), a gitlink in their place, committed."""
@@ -4392,63 +4395,175 @@ def _make_submodule(root, folder):
     run_git(root, "commit", "-qm", "%s is a submodule now" % folder)
 
 
-def _touched_folders(before, after):
-    """The folder of every path an operation added, changed or removed. Under the installer's backups folder,
-    whose snapshot names are new each run, the backups folder itself and its state folder stand for them."""
-    out = set()
-    for key in diff(before, after):
-        rel = key[2:] if key.startswith("./") else key
-        is_dir = rel.endswith("/")
-        rel = rel.rstrip("/")
-        if rel.startswith(".aios/backups/"):
-            out.add(".aios/backups/state" if rel.startswith(".aios/backups/state") else ".aios/backups")
-            continue
-        folder = rel if is_dir else os.path.dirname(rel)
-        if folder and folder != ".":
-            out.add(folder)
-    return sorted(out)
+def _make_nested_repository(root, folder):
+    """Make `folder` a repository inside this one, as a vendored checkout is: a `.git` of its own, and, when this
+    repository tracks nothing there, hidden from its status by .git/info/exclude."""
+    full = os.path.join(root, folder)
+    os.makedirs(full, exist_ok=True)
+    run_git(full, "init", "-q")
+    if not util.git(root, ["ls-files", "--", folder]):
+        with open(os.path.join(root, ".git", "info", "exclude"), "a") as fh:
+            fh.write("/%s/\n" % folder)
+
+
+_REPOSITORY_KINDS = (("a submodule", _make_submodule), ("a nested repository", _make_nested_repository))
+
+
+class _Writes(object):
+    """Every path under `root` the code run inside this context writes, creates, removes, renames, links or
+    changes the mode of: what it attempted, not only what differs at the end, so a temporary file, a rewrite of
+    the same bytes and a mode change all count (independent review, 3.1 round 59)."""
+
+    _ONE = ("remove", "unlink", "chmod")
+
+    def __init__(self, root):
+        self.root = os.path.realpath(root)
+        self.files, self.dirs = set(), set()
+
+    def note(self, path, is_dir=False, dir_fd=None):
+        if dir_fd is not None or not isinstance(path, (str, bytes, os.PathLike)):
+            return
+        path = os.fsdecode(os.fspath(path))
+        full = os.path.realpath(path if os.path.isabs(path) else os.path.join(os.getcwd(), path))
+        if full.startswith(self.root + os.sep):
+            (self.dirs if is_dir else self.files).add(os.path.relpath(full, self.root).replace(os.sep, "/"))
+
+    def __enter__(self):
+        import builtins
+        from unittest import mock
+        real = {n: getattr(os, n) for n in ("open", "replace", "rename", "link", "symlink", "mkdir", "rmdir")
+                + self._ONE}
+        real_open, real_rmtree = builtins.open, shutil.rmtree
+        writing = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+
+        def os_open(path, flags, *a, **k):
+            if flags & writing:
+                self.note(path, dir_fd=k.get("dir_fd"))
+            return real["open"](path, flags, *a, **k)
+
+        def b_open(file, mode="r", *a, **k):
+            if any(c in mode for c in "wax+"):
+                self.note(file)
+            return real_open(file, mode, *a, **k)
+
+        def both(name):
+            def f(src, dst, *a, **k):
+                self.note(src, dir_fd=k.get("src_dir_fd"))
+                self.note(dst, dir_fd=k.get("dst_dir_fd"))
+                return real[name](src, dst, *a, **k)
+            return f
+
+        def symlink(src, dst, *a, **k):
+            self.note(dst, dir_fd=k.get("dir_fd"))
+            return real["symlink"](src, dst, *a, **k)
+
+        def one(name, is_dir=False):
+            def f(path, *a, **k):
+                self.note(path, is_dir, k.get("dir_fd"))
+                return real[name](path, *a, **k)
+            return f
+
+        def rmtree(path, *a, **k):
+            self.note(path, True)
+            return real_rmtree(path, *a, **k)
+
+        self._patches = [mock.patch.object(os, "open", os_open), mock.patch.object(builtins, "open", b_open),
+                         mock.patch.object(os, "symlink", symlink), mock.patch.object(shutil, "rmtree", rmtree),
+                         mock.patch.object(os, "mkdir", one("mkdir", True)),
+                         mock.patch.object(os, "rmdir", one("rmdir", True))]
+        self._patches += [mock.patch.object(os, n, both(n)) for n in ("replace", "rename", "link")]
+        self._patches += [mock.patch.object(os, n, one(n)) for n in self._ONE]
+        for patch in self._patches:
+            patch.start()
+        return self
+
+    def __exit__(self, *exc):
+        for patch in reversed(self._patches):
+            patch.stop()
+        return False
+
+    def folders(self):
+        """The folder of every path attempted, and every folder made or removed. Under the installer's backups
+        folder, whose snapshot and probe names are new each run, the backups folder and its state folder stand
+        for them."""
+        out = set()
+        for rel, is_dir in [(f, False) for f in self.files] + [(d, True) for d in self.dirs]:
+            if rel == ".git" or rel.startswith(".git/"):
+                continue
+            if rel.startswith(".aios/backups/") or rel == ".aios/backups":
+                out.add(".aios/backups/state" if rel.startswith(".aios/backups/state") else ".aios/backups")
+                continue
+            for folder in ([rel] if is_dir else []) + [os.path.dirname(rel)]:
+                if folder and folder != ".":
+                    out.add(folder)
+        return sorted(out)
 
 
 def _sweep(test, base, run):
-    """Run the operation once on a copy of `base` to learn every folder it touches; then, for each, on a fresh
-    copy with that folder made a submodule, the operation must refuse, name the folder, and leave every file,
-    folder and git's view as they were."""
+    """Run the operation once on a copy of `base`, recording every folder it writes, creates or removes in; then,
+    for each folder and each kind of other repository, on a fresh copy with that folder made one, the operation
+    must refuse, name the folder, and leave every file, folder and git's view as they were."""
     probe = os.path.join(test.tmp, "sweep-probe")
     shutil.copytree(base, probe, symlinks=True)
-    before = _tree(probe)
-    run(probe)
-    folders = _touched_folders(before, _tree(probe))
+    with _Writes(probe) as writes:
+        run(probe)
+    folders = writes.folders()
     shutil.rmtree(probe)
-    test.assertTrue(folders, "the operation touched nothing")
-    for i, folder in enumerate(folders):
-        copy = os.path.join(test.tmp, "sweep-%d" % i)
-        shutil.copytree(base, copy, symlinks=True)
-        _make_submodule(copy, folder)
-        tree, view = _tree(copy), _git_view(copy)
-        with test.subTest(folder=folder):
-            try:
-                run(copy)
-            except Refusal as exc:
-                said = exc.message + "\n" + "\n".join(str(d) for d in exc.details or [])
-                test.assertIn(folder, said, "the refusal doesn't name the submodule")
-            else:
-                test.fail("%s made a submodule: the operation went ahead" % folder)
-            test.assertEqual(diff(tree, _tree(copy)), [], "a refusal changed the workspace")
-            test.assertEqual(view, _git_view(copy), "a refusal changed what git sees")
-        shutil.rmtree(copy)
+    test.assertTrue(folders, "the operation wrote nothing")
+    n = 0
+    for folder in folders:
+        for kind, make in _REPOSITORY_KINDS:
+            n += 1
+            copy = os.path.join(test.tmp, "sweep-%d" % n)
+            shutil.copytree(base, copy, symlinks=True)
+            make(copy, folder)
+            tree, view = _tree(copy), _git_view(copy)
+            with test.subTest(folder=folder, kind=kind):
+                try:
+                    run(copy)
+                except Refusal as exc:
+                    said = exc.message + "\n" + "\n".join(str(d) for d in exc.details or [])
+                    test.assertIn(folder, said, "the refusal doesn't name the folder")
+                else:
+                    test.fail("%s made %s: the operation went ahead" % (folder, kind))
+                after, now = _tree(copy), _git_view(copy)
+                changed = diff(tree, after)
+                if ".aios/lock" in changed and ".aios/lock" in tree and ".aios/lock" not in after:
+                    # A killed run's dead lock, which recovery reclaims by design: the one change allowed.
+                    changed.remove(".aios/lock")
+                    view, now = _without_lock(view), _without_lock(now)
+                test.assertEqual(changed, [], "a refusal changed the workspace")
+                test.assertEqual(view, now, "a refusal changed what git sees")
+            shutil.rmtree(copy)
     return folders
 
 
+def _without_lock(view):
+    head, index, status = view
+    return head, index, "\n".join(l for l in status.split("\n") if l[3:] != ".aios/lock")
+
+
+def _crashed(test, base, name, args, point):
+    """A copy of `base` with the real CLI killed at `point` (`@T@` in `args` stands for the copy)."""
+    crashed = os.path.join(test.tmp, name)
+    shutil.copytree(base, crashed, symlinks=True)
+    test.be("acme-founder")
+    code, out, err = test.cli(*[crashed if a == "@T@" else a for a in args], env={"AIOS_FAULT": "crash:" + point})
+    test.assertEqual(code, 137, out + err)
+    return crashed
+
+
 class SubmoduleSweep(Existing):
-    """Chat Zero, 3.1 round 58: by operation, not by path. Each operation that writes runs once to learn every
-    folder it touches; then each of those folders, made a submodule in a fresh copy, must make it refuse with
-    nothing changed. A new public function in install fails the first test until it is swept here (or in
-    SubmoduleSweepMoves) or listed as one that only reads."""
+    """Chat Zero, 3.1 round 58, and Codex, round 59: by operation, not by path. Each operation that writes runs
+    once, recorded, to learn every folder it writes in; then each of those folders, made a submodule and then a
+    nested repository in fresh copies, must make it refuse with nothing changed. Each operation with a journal
+    is also killed partway and its recovery swept the same way. A new public function in install fails the
+    first test until it is swept here (or in SubmoduleSweepMoves) or listed as one that only reads."""
 
     READ_ONLY = {"install_record_path", "load_record", "journal_path", "load_journal", "verify", "require_verified",
-                 "state_fingerprint", "founder_review_notice", "upgrade_plan", "drift_recipe", "load_adoption_plan",
+                 "state_fingerprint", "founder_review_notice", "drift_recipe", "load_adoption_plan",
                  "classify_adoption", "adopted_view"}
-    SWEPT = {"install", "adopt", "adopt_existing", "upgrade", "rollback", "clear_dead_lock"}
+    SWEPT = {"install", "adopt", "adopt_existing", "upgrade", "upgrade_plan", "rollback", "clear_dead_lock"}
 
     def test_every_public_operation_is_swept_or_only_reads(self):
         import inspect
@@ -4468,17 +4583,29 @@ class SubmoduleSweep(Existing):
         run_git(root, "commit", "-qm", "ours")
         return root
 
-    def adopted_base(self):
-        base = os.path.join(self.tmp, "adopted-base")
+    def adopted_base(self, name="adopted-base"):
+        base = os.path.join(self.tmp, name)
         shutil.copytree(self.target, base, symlinks=True)
         install_mod.adopt_existing(base, self.v, self.source, harness.config())
         run_git(base, "add", "-A")
         run_git(base, "commit", "-qm", "adopted")
         return base
 
+    def release31(self, extra=None):
+        files = {"START_HERE.md": "# start here\nnew.\n"}
+        files.update(extra or {})
+        rev = harness.bump_source(self.source, files, "3.1")
+        return harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+
+    def upgraded_base(self):
+        base = self.adopted_base("upgraded-base")
+        install_mod.upgrade(base, self.release31(), self.source)
+        run_git(base, "add", "-A")
+        run_git(base, "commit", "-qm", "upgraded")
+        return base
+
     def test_install(self):
-        base = self.repo("install-base")
-        _sweep(self, base, lambda r: install_mod.install(r, self.v, self.source, harness.config()))
+        _sweep(self, self.repo("install-base"), lambda r: install_mod.install(r, self.v, self.source, harness.config()))
 
     def test_plain_adopt(self):
         base = self.repo("adopt-base")
@@ -4492,24 +4619,19 @@ class SubmoduleSweep(Existing):
     def test_adopt_existing(self):
         _sweep(self, self.target, lambda r: install_mod.adopt_existing(r, self.v, self.source, harness.config()))
 
-    def test_upgrade_of_an_adoption(self):
+    def test_upgrade_of_an_adoption_and_its_dry_run(self):
         base = self.adopted_base()
-        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n",
-                                                ".claude/skills/new-skill/SKILL.md": "# a new skill\n"}, "3.1")
-        v31 = harness.approve(harness.build_manifest(self.source, rev, "3.1.0"))
+        v31 = self.release31({".claude/skills/new-skill/SKILL.md": "# a new skill\n"})
         _sweep(self, base, lambda r: install_mod.upgrade(r, v31, self.source))
+        with _Writes(base) as writes:  # its dry run writes nothing at all (it has no folder move to probe for)
+            install_mod.upgrade_plan(base, v31, self.source)
+        self.assertEqual((writes.files, writes.dirs), (set(), set()))
 
     def test_rollback_undoing_an_adoption(self):
-        base = self.adopted_base()
-        _sweep(self, base, lambda r: install_mod.rollback(r, self.source))
+        _sweep(self, self.adopted_base(), lambda r: install_mod.rollback(r, self.source))
 
     def test_rollback_of_an_upgrade(self):
-        base = self.adopted_base()
-        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\nnew.\n"}, "3.1")
-        install_mod.upgrade(base, harness.approve(harness.build_manifest(self.source, rev, "3.1.0")), self.source)
-        run_git(base, "add", "-A")
-        run_git(base, "commit", "-qm", "upgraded")
-        _sweep(self, base, lambda r: install_mod.rollback(r, self.source))
+        _sweep(self, self.upgraded_base(), lambda r: install_mod.rollback(r, self.source))
 
     def test_clearing_a_dead_lock(self):
         base = self.repo("lock-base")
@@ -4522,10 +4644,57 @@ class SubmoduleSweep(Existing):
             self.assertTrue(install_mod.clear_dead_lock(r))
         _sweep(self, base, clear)
 
+    # Recovery: each operation with a journal, killed partway, then its recovery (rollback) swept.
+
+    def recovery(self, crashed):
+        _sweep(self, crashed, lambda r: install_mod.rollback(r, self.source))
+
+    def test_recovering_a_killed_adoption(self):
+        cfg, rel = self.write_json("org.json", harness.config()), self.write_json("release.json", self.v)
+        self.recovery(_crashed(self, self.target, "killed-adoption", ["adopt", "--existing", "--release", rel,
+                                                                       "--target", "@T@", "--config", cfg,
+                                                                       "--repo", self.source], "adopt.mid_write"))
+
+    def test_recovering_a_killed_upgrade(self):
+        base = self.adopted_base()
+        rel = self.write_json("release-3.1.json", self.release31({".claude/skills/new-skill/SKILL.md": "# new\n"}))
+        self.recovery(_crashed(self, base, "killed-upgrade", ["upgrade", "--release", rel, "--target", "@T@",
+                                                              "--repo", self.source], "upgrade.mid_write"))
+
+    def test_finishing_a_killed_rollback_of_an_upgrade(self):
+        self.recovery(_crashed(self, self.upgraded_base(), "killed-rollback",
+                               ["rollback", "--target", "@T@", "--repo", self.source], "rollback.before_restore"))
+
+    def test_finishing_a_killed_undo_of_an_adoption(self):
+        self.recovery(_crashed(self, self.adopted_base(), "killed-undo",
+                               ["rollback", "--target", "@T@", "--repo", self.source], "adopt.undo_mid"))
+
 
 class SubmoduleSweepMoves(Layout3):
-    """The same sweep for an upgrade with the 2.x to 3.0 folder move: every folder it moves from or to."""
+    """The same sweep for an upgrade with the 2.x to 3.0 folder move, its dry run, its rollback, and each killed
+    partway: every folder it moves from or to."""
 
-    def test_upgrade_with_the_folder_move(self):
+    def test_upgrade_with_the_folder_move_and_its_dry_run(self):
         folders = _sweep(self, self.target, lambda r: install_mod.upgrade(r, self.v3, self.source, no_vercel=True))
         self.assertIn("01_Creation/outputs", folders)
+        _sweep(self, self.target, lambda r: install_mod.upgrade_plan(r, self.v3, self.source, no_vercel=True))
+
+    def moved_base(self):
+        base = os.path.join(self.tmp, "moved-base")
+        shutil.copytree(self.target, base, symlinks=True)
+        install_mod.upgrade(base, self.v3, self.source, no_vercel=True)
+        run_git(base, "add", "-A")
+        run_git(base, "commit", "-qm", "on 3.0")
+        return base
+
+    def test_rollback_of_the_folder_move(self):
+        _sweep(self, self.moved_base(), lambda r: install_mod.rollback(r))
+
+    def test_recovering_a_killed_folder_move_and_a_killed_rollback_of_one(self):
+        rel = self.write_json("v3.json", self.v3)
+        crashed = _crashed(self, self.target, "killed-move", ["upgrade", "--release", rel, "--target", "@T@",
+                                                              "--repo", self.source, "--no-vercel"], "layout.mid_moves")
+        _sweep(self, crashed, lambda r: install_mod.rollback(r))
+        crashed = _crashed(self, self.moved_base(), "killed-move-rollback", ["rollback", "--target", "@T@"],
+                           "rollback.before_restore")
+        _sweep(self, crashed, lambda r: install_mod.rollback(r))

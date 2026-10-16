@@ -926,6 +926,26 @@ def _restore(target, backup_root, record_to_restore, remove_paths, expected=None
     return notes
 
 
+def _refuse_other_repositories(target, rels, what):
+    """Refuse, with nothing changed, when any of `rels` (or the installer's own folders) lies inside another
+    repository: a submodule, initialized or not, or a repository inside this one. Every resumed operation runs
+    this before its first write, since one could appear while the operation was interrupted (independent
+    review, 3.1 round 59). Links keep each step's own rule."""
+    links = util.gitlinks(target)
+    rels = [r.replace(os.sep, "/") for r in rels if isinstance(r, str) and r] + _INSTALLER_PATHS
+    inside = sorted({util.inside_another_repository(target, r, links) for r in rels} - {None})
+    if inside:
+        raise Refusal(EXIT_STATE, "%s would write or remove files inside another repository (a submodule); "
+                      "nothing was changed" % what,
+                      inside[:20] + ["make each a plain folder of this repository again, then run rollback again"])
+
+
+def _own_paths(target):
+    """The install record and the org config, relative to the workspace."""
+    return [os.path.relpath(install_record_path(target), target), os.path.relpath(
+        orgconfig.default_config_path(target), target)]
+
+
 def _plan_paths(the_plan, backup_rel=None):
     """Every path a folder move touches: each file it moves, at both ends; each it sets aside (where it was,
     and, given the backup, where it goes); and each folder it empties."""
@@ -2206,6 +2226,11 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
             result = (record, summary, "an interrupted operation had either not changed anything yet or "
                                        "had finished; cleared its lock, rolled nothing back")
         elif journal and journal.get("op") == "adopt-existing":
+            info, pending = journal.get("adoption") or {}, journal.get("pending")
+            pending = pending if isinstance(pending, dict) else {}
+            _refuse_other_repositories(target, [c.get("path") for c in info.get("created") or [] if isinstance(c, dict)]
+                                       + [pending.get(k) for k in ("path", "temp")] + _own_paths(target),
+                                       "undoing the interrupted adoption")
             notes = _undo_adoption(target, journal.get("adoption") or {}, journal.get("pending"))
             os.remove(journal_path(target))
             result = (None, dict(NO_RELEASE_SUMMARY, record_left=os.path.lexists(install_record_path(target))),
@@ -2292,22 +2317,14 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                 # Resuming an undo that already removed an uncommitted record, its last step: what it
                 # made is gone; only its temporaries and folders are left to tidy.
                 anchor, trusted, info = None, {}, {}
-            if not journal:
+            if not journal or journal.get("phase") != "complete":
                 # Nothing it removes may be inside another repository: a submodule a pull request made of an
-                # adopted folder holds that repository's files. Checked before the first write, as every
-                # operation does (independent review, 3.1 round 58). A file reached through a link is left
-                # and reported instead, as since round 20: the link is this repository's own file.
-                links = util.gitlinks(target)
-                undo_rels = sorted(trusted) + [os.path.relpath(install_record_path(target), target),
-                                               os.path.relpath(orgconfig.default_config_path(target), target)]
-                inside = sorted({util.inside_another_repository(target, p.replace(os.sep, "/"), links)
-                                 for p in undo_rels} - {None})
-                inside += [p for p in _linked_paths(target, _INSTALLER_PATHS, links) if p not in inside]
-                if inside:
-                    raise Refusal(EXIT_STATE, "undoing the adoption would remove files inside another repository (a "
-                                  "submodule) or use one for its own folder; nothing was changed",
-                                  inside[:20] + ["make each a plain folder of this repository again, or undo the "
-                                                 "adoption with git"])
+                # adopted folder holds that repository's files. Checked before the first write, on the first
+                # pass and on a resumed one, as every operation does (independent review, 3.1 rounds 58 and
+                # 59). A file reached through a link is left and reported instead, as since round 20: the link
+                # is this repository's own file.
+                _refuse_other_repositories(target, sorted(trusted) + _own_paths(target), "undoing the adoption")
+            if not journal:
                 # Journaled before the first removal, so a kill partway through is finished by the
                 # next rollback, not left half-undone (independent review, 3.1).
                 journal = {"op": "adopt-undo", "phase": "undoing", "started_at": util.now_iso(),
@@ -2475,6 +2492,11 @@ def _rollback_locked(target, journal):
             if linked:
                 raise Refusal(EXIT_STATE, "putting the folders back would go through %d link(s)"
                               % len(linked), linked[:20] + ["replace them with real folders, then run rollback again"])
+        # Every path this recovery puts back, removes or edits, before its first write (independent review, 3.1
+        # round 59): a submodule could have appeared while the upgrade was interrupted.
+        _refuse_other_repositories(target, sorted(current_paths | prior_paths | journal_adds)
+                                   + [e.get("path") for e in journal.get("seed_lines") or [] if isinstance(e, dict)]
+                                   + _own_paths(target), "recovering the interrupted upgrade")
         notes = _restore(target, backup_root, prior, remove, expected=current_paths | journal_adds,
                          write_record=False, keep_dirs=journal.get("pre_dirs"),
                          provenance=journal.get("add_provenance"))
@@ -2585,13 +2607,6 @@ def _finish_rollback(target, journal, resumed=False):
     prior_paths = {e["path"] for e in prior.get("managed") or []}
     created = journal.get("created") or []
     remove = sorted(current_paths - prior_paths) + [e["path"] for e in created]
-    util.fault("rollback.before_restore")
-    # A starter file the upgrade created comes out only if it is still exactly what it wrote; one
-    # the client has changed (bytes or permissions) or replaced is theirs now (independent review).
-    notes = _restore(target, backup_root, prior, remove, expected=current_paths | {e["path"] for e in created},
-                     write_record=False, keep_dirs=current.get("pre_existing_dirs"),
-                     provenance={e["path"]: [e["sha256"], e.get("mode")] for e in created})
-    util.fault("rollback.after_restore")
     version = (current.get("release") or {}).get("version")
     if "seed_lines_added" in current:
         # Exactly what that upgrade appended, recorded by it alone: an entry carried in the record from
@@ -2603,6 +2618,18 @@ def _finish_rollback(target, journal, resumed=False):
         # Only a rollback an earlier installer started, killed, and now finished from its own local journal:
         # finished by the rule it began with.
         undo = [e for e in current.get("seed_lines") or [] if e.get("state") == "added" and e.get("release") == version]
+    # On every run, a resumed one too, before the first write (independent review, 3.1 round 59).
+    _refuse_other_repositories(target, sorted(current_paths | prior_paths) + [e["path"] for e in created]
+                               + [e.get("path") for e in undo if isinstance(e, dict)]
+                               + (_plan_paths(the_plan, journal["backup"]) if the_plan else []) + _own_paths(target),
+                               "the rollback")
+    util.fault("rollback.before_restore")
+    # A starter file the upgrade created comes out only if it is still exactly what it wrote; one
+    # the client has changed (bytes or permissions) or replaced is theirs now (independent review).
+    notes = _restore(target, backup_root, prior, remove, expected=current_paths | {e["path"] for e in created},
+                     write_record=False, keep_dirs=current.get("pre_existing_dirs"),
+                     provenance={e["path"]: [e["sha256"], e.get("mode")] for e in created})
+    util.fault("rollback.after_restore")
     notes += _undo_seed_lines(target, undo)
     if the_plan:
         layout_mod.reverse(target, the_plan, journal["backup"])

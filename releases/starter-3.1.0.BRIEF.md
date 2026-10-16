@@ -3,6 +3,8 @@
 **Written for:** the founder, before approving. About four minutes.
 
 > **Candidate, not approved.** `releases/starter-3.1.0.json` is a draft pinned to `@@PIN@@`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
+>
+> **Draft until the release step.** The `@@...@@` fields (the pin and the proof) are filled by the release step, from one uninterrupted evidence run on the pin both reviewers approved with no findings. Both reviewers then confirm the filled brief before it reaches you. Until then this brief isn't for approval, and this folder holds no evidence outputs, so none can be mistaken for the candidate's.
 
 ## Decision
 **Approve AIOS Starter 3.1.0 at `@@PIN7@@`.**
