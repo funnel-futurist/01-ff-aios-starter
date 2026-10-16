@@ -657,6 +657,9 @@ def _pinned_release(record, source_repo):
                             % (path, str(entry.get("sha256"))[:12], str(info[2])[:12]))
         elif "exec" in entry and bool(entry["exec"]) != (info[1] == "100755"):
             problems.append("executable permission of %s does not match the pinned release" % path)
+    if "layout" in record and isinstance(source, dict) and record["layout"] != _installed_layout(record, source_repo):
+        problems.append("the install record says folder layout %r, but %s is on layout %s"
+                        % (record["layout"], release_id, _installed_layout(record, source_repo)))
     return problems, shipped
 
 
@@ -1132,7 +1135,17 @@ def upgrade(target, manifest, source_repo, aios_lookup=None, no_vercel=False):
 DRIFT_DIFF_LINES = 40
 
 
-def _layout_preflight(target, record, manifest, files, old_managed, no_vercel=False):
+def _installed_layout(record, source_repo):
+    """The folder layout this workspace is on: its pinned release's, from the release source's own record
+    of that release, never the install record's `layout` field, which a pull request can edit and which a
+    2.x-style `adopt` of a 3.0 copy never wrote (independent review, 3.1 round 49). A release without a
+    layout is on 2.x's."""
+    source = _source_release(source_repo, (record.get("release") or {}).get("release_id"))
+    layout = source.get("layout") if isinstance(source, dict) else None
+    return layout_mod.version_of(layout) if isinstance(layout, dict) else "2"
+
+
+def _layout_preflight(target, record, manifest, files, old_managed, no_vercel=False, installed="2"):
     """The folder move this upgrade makes, if its release changes the layout: (plan, site rows,
     blocking problems). A plan that can't run safely refuses here, with nothing changed.
 
@@ -1140,7 +1153,7 @@ def _layout_preflight(target, record, manifest, files, old_managed, no_vercel=Fa
     any problem in the third value blocks the upgrade.
     """
     new_layout = manifest.get("layout") or {}
-    if not new_layout.get("moves") or layout_mod.version_of(new_layout) == (record.get("layout") or "2"):
+    if not new_layout.get("moves") or layout_mod.version_of(new_layout) == installed:
         return None, [], []
     the_plan = layout_mod.plan(target, new_layout, set(old_managed),
                                {p: e["class"] for p, e in files.items()})
@@ -1170,9 +1183,9 @@ def founder_review_notice(target, retired_roots):
             % (rel or "CODEOWNERS", ("still guards %s" % ", ".join(stale)) if stale else "is missing")]
 
 
-def _founder_review_after_move(target, record, manifest):
+def _founder_review_after_move(target, record, manifest, installed="2"):
     new_layout = manifest.get("layout") or {}
-    if not new_layout.get("moves") or layout_mod.version_of(new_layout) == (record.get("layout") or "2"):
+    if not new_layout.get("moves") or layout_mod.version_of(new_layout) == installed:
         return []
     return founder_review_notice(target, new_layout.get("retired_roots") or [])
 
@@ -1182,10 +1195,11 @@ def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=Fals
     record, _version, _min_from, _creds, files, old_managed, old_seeded, manifest = _upgrade_preflight(
         target, manifest, source_repo, aios_lookup)
     managed = {p: e for p, e in files.items() if e["class"] == "managed"}
+    installed = _installed_layout(record, source_repo)
     the_plan, site_rows, blocked = _layout_preflight(target, record, manifest, files, old_managed,
-                                                     no_vercel)
+                                                     no_vercel, installed)
     move_keys = layout_mod.destinations(the_plan)
-    seed_keys = _seed_keys(record, manifest, source_repo)
+    seed_keys = _seed_keys(record, manifest, source_repo, target)
     return {
         "layout": None if not the_plan else {
             "from": the_plan["from"], "to": the_plan["to"],
@@ -1194,7 +1208,7 @@ def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=Fals
             "empty_folders": [(e["from"], e["to"]) for e in the_plan["empty_dirs"]],
             "sites": site_rows,
             "blocked": blocked,
-            "founder_review": _founder_review_after_move(target, record, manifest),
+            "founder_review": _founder_review_after_move(target, record, manifest, installed),
         },
         "from": (record.get("release") or {}).get("version"),
         "to": manifest["version"],
@@ -1208,7 +1222,8 @@ def upgrade_plan(target, manifest, source_repo, aios_lookup=None, no_vercel=Fals
                             and layout_mod.key(p) not in seed_keys and layout_mod.key(p) not in move_keys
                             and not os.path.lexists(os.path.join(target, p))),
         "seed_lines": [{"path": e["path"], "line": e["line"]}
-                       for e in _seed_line_plan(target, record, manifest, _moved_from(the_plan))[1]],
+                       for e in _seed_line_plan(target, record, manifest, _moved_from(the_plan),
+                                                _handled_seed_lines(target, record, source_repo))[1]],
     }
 
 
@@ -1267,7 +1282,7 @@ def _seed_line_target(target, rel):
     return full if real.startswith(real_root + os.sep) else None
 
 
-def _seed_line_plan(target, record, manifest, moved_from=None):
+def _seed_line_plan(target, record, manifest, moved_from=None, handled=()):
     """The declared seed lines this release adds, and the state of the ones it doesn't.
 
     A seed line is added once: never twice, never to a seed file the client deleted, never into a
@@ -1278,10 +1293,13 @@ def _seed_line_plan(target, record, manifest, moved_from=None):
 
     `moved_from` ({new path: old path}): a file the 3.0 move relocates is read where it is now,
     before the move; the line goes into it at its new path, after the move (independent review).
+
+    `handled` ({(path, line)}): lines a release this workspace already had declared, which were due,
+    and so handled, when it got that release, whatever the record lists (_handled_seed_lines).
     """
     moved_from = moved_from or {}
     recorded = list(record.get("seed_lines") or [])
-    done = {(e["path"], e["line"]) for e in recorded}
+    done = {(e["path"], e["line"]) for e in recorded} | set(handled)
     add, settled = [], []
     pending = {}  # path -> bytes as they will be once the earlier lines in this upgrade are added
     for sl in manifest.get("seed_lines") or []:
@@ -1398,21 +1416,94 @@ def _installed_release_seeds(record, source_repo):
     return _PINNED_SEEDS[cache_key]
 
 
-def _seed_history(record, manifest, source_repo=None):
-    """Every path a release has seeded into this workspace, under its old and its new name."""
+def _lifetime_records(target, record):
+    """The install record as each commit of its current lifetime committed it, on every side of every
+    merge, for a release at or below this workspace's own: [(commit, record)], oldest lifetime commit
+    first. Git history, which a pull request can only add to. A newer release's record is left out: a
+    rollback, or a merge that set the record back, leaves that release's lines and seeds to be had again.
+    [] while the record isn't committed. Refuses in a shallow clone (_latest_added)."""
+    if not target:
+        return []
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    if not util.in_head(target, record_rel):
+        return []
+    anchor = _latest_added(target, record_rel)
+    if not anchor:
+        return []
+    current = util.parse_semver((record.get("release") or {}).get("version") or "")
+    commits = [anchor] + util.git(target, ["log", "--full-history", "--reverse", "--format=%H", "%s..HEAD" % anchor,
+                                           "--", ":(literal)" + record_rel], check=False).split()
+    found = []
+    for commit in commits:
+        raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)
+        try:
+            then = json.loads(raw.decode("utf-8"))
+        except ValueError:
+            continue
+        rel = then.get("release") if isinstance(then, dict) else None
+        version = rel.get("version") if isinstance(rel, dict) else None
+        at = util.parse_semver(version) if isinstance(version, str) else None
+        if at and current and at <= current:
+            found.append((commit, then))
+    return found
+
+
+def _release_seeds(source_repo, release_id):
+    """The seeds a release shipped, as the release source's own record of it says; empty when the source
+    has no record of it."""
+    source = _source_release(source_repo, release_id) if source_repo else None
+    pin = (source.get("created_from") or {}).get("git_rev") if isinstance(source, dict) and isinstance(
+        source.get("created_from"), dict) else None
+    if not pin or not util.rev_exists(source_repo, pin):
+        return set()
+    try:
+        return {p for p, info in _shipped_by(source_repo, pin, source).items() if info[0] == "seed"}
+    except Refusal:
+        return set()
+
+
+def _handled_seed_lines(target, record, source_repo):
+    """(path, line) of every seed line a release this workspace has had declared: its pinned release, and
+    each release at or below it that its committed record named in its current lifetime. Each line was
+    due when the workspace got that release, so it was handled then (appended, found, or left out where
+    the seed was gone), whatever the record lists now: a 2.x-style `adopt` of a 3.0 copy records none,
+    and a pull request can take entries out. Read from the release source and git history (independent
+    review, 3.1 round 49)."""
+    if not source_repo:
+        return set()
+    releases = {(record.get("release") or {}).get("release_id")}
+    releases |= {(then.get("release") or {}).get("release_id") for _c, then in _lifetime_records(target, record)}
+    handled = set()
+    for release_id in releases:
+        source = _source_release(source_repo, release_id) if isinstance(release_id, str) else None
+        handled |= {(sl.get("path"), sl.get("line")) for sl in (source or {}).get("seed_lines") or []
+                    if isinstance(sl, dict)}
+    return handled
+
+
+def _seed_history(record, manifest, source_repo=None, target=None):
+    """Every path a release has seeded into this workspace, under its old and its new name. Not only what
+    the record says: also every seed a release it has had shipped, and every seed path its committed
+    record listed, in its current lifetime, from the release source and git history, which a pull request
+    can't take back (independent review, 3.1 round 49)."""
     paths = ({e["path"] for e in record.get("seeded") or []} | set(record.get("seed_history") or [])
              | _installed_release_seeds(record, source_repo))
+    for _commit, then in _lifetime_records(target, record):
+        paths |= {e.get("path") for e in then.get("seeded") or [] if isinstance(e, dict)
+                  and isinstance(e.get("path"), str)}
+        paths |= {p for p in then.get("seed_history") or [] if isinstance(p, str)}
+        paths |= _release_seeds(source_repo, (then.get("release") or {}).get("release_id"))
     rules = (manifest.get("layout") or {}).get("moves") or []
     if rules:
         paths |= {layout_mod.destination(p, rules) or p for p in paths}
     return paths
 
 
-def _seed_keys(record, manifest, source_repo=None):
+def _seed_keys(record, manifest, source_repo=None, target=None):
     """Every name a release has seeded into this workspace, as a Mac or Windows disk compares names.
     A seed the client deleted, under its old name or its new one, in this release or an earlier one,
     must not come back (independent review)."""
-    return {layout_mod.key(p) for p in _seed_history(record, manifest, source_repo)}
+    return {layout_mod.key(p) for p in _seed_history(record, manifest, source_repo, target)}
 
 
 def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
@@ -1495,7 +1586,7 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     # it, and only release files are backed up. "Ever": a seed an older release stopped shipping
     # and the client then deleted is still theirs to recreate (independent review).
     # Compared as a Mac or Windows disk sees names: `Notes/Plan.md` and `notes/plan.md` are one file.
-    seed_keys = _seed_keys(record, manifest, source_repo)
+    seed_keys = _seed_keys(record, manifest, source_repo, target)
     reclassified = sorted(p for p, e in files.items()
                           if e["class"] == "managed" and layout_mod.key(p) in seed_keys)
     if reclassified:
@@ -1585,14 +1676,14 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
     record, current_version, min_from, creds, files, old_managed, old_seeded, manifest = _upgrade_preflight(
         target, manifest, source_repo, aios_lookup)
     the_plan, site_rows, blocked = _layout_preflight(target, record, manifest, files, old_managed,
-                                                     no_vercel)
+                                                     no_vercel, _installed_layout(record, source_repo))
     if blocked:
         raise Refusal(EXIT_STATE, "the folder move needs Vercel checked first (R-A); nothing was "
                                   "changed", blocked)
     move_keys = layout_mod.destinations(the_plan)
-    seed_keys = _seed_keys(record, manifest, source_repo)
+    seed_keys = _seed_keys(record, manifest, source_repo, target)
     seed_lines_kept, seed_lines_add, seed_lines_settled = _seed_line_plan(
-        target, record, manifest, _moved_from(the_plan))
+        target, record, manifest, _moved_from(the_plan), _handled_seed_lines(target, record, source_repo))
 
     # Folders that already exist on the way to anything this release writes. A rollback prunes
     # only the folders the upgrade made: an empty folder of the client's survives (independent review).
@@ -1728,7 +1819,7 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
         if manifest.get("_adoption"):  # the plan as it stands now; set only by the preflight, in-process
             new_record["adoption"] = dict(record.get("adoption") or {},
                                           **{k: v for k, v in manifest["_adoption"].items() if k != "shipped"})
-        new_record["seed_history"] = sorted(_seed_history(record, manifest, source_repo)
+        new_record["seed_history"] = sorted(_seed_history(record, manifest, source_repo, target)
                                             | {p for p, e in files.items() if e["class"] == "seed"})
         if seed_lines_kept or seed_lines_add or seed_lines_settled:
             new_record["seed_lines"] = seed_lines_kept + seed_lines_settled + seed_lines_add

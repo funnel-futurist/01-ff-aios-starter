@@ -270,11 +270,21 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   each file the record calls managed is one that release ships as managed, with its bytes and
   executable bit. The record must also list every file that release manages (for an adopted
   workspace, each its committed plan adopts that is in the workspace), so an upgrade never leaves
-  behind a file the new release stops shipping.
+  behind a file the new release stops shipping. The folder layout is the pinned release's, as the
+  release source records it; a record that names another layout is refused.
 - A seed line the record says a release appended must be one that release (yours or an earlier one)
   declared, with exactly the bytes the installer appends. Rolling back an upgrade takes back only the
   lines that upgrade itself appended, never one carried in the record from before. An entry the
-  record's git history had can't be taken out, so a line you removed isn't appended again.
+  record's git history had can't be taken out. And a line declared by a release this workspace has
+  had (its own, or one at or below it that the record's git history names) is never appended again,
+  whatever the record lists, so a line you removed stays out. After a rollback, or a merge that sets
+  the record back to an older release, a newer release's line counts as not had yet: the next
+  upgrade may append it again, as that release did.
+- Every seed a release this workspace has had shipped, and every seed path the record's git history
+  listed (for its release or an older one), stays yours: a later release never recreates it where
+  you deleted it, nor takes it over, whatever the record now lists.
+- Every other field of the record is checked as above, or is read only by rolling back an upgrade
+  (which needs the record to equal the copy that upgrade kept on this machine), or is only shown.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace

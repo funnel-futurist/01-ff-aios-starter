@@ -3547,3 +3547,93 @@ class ReviewRoundFortyEightPlain(Layout3):
         exc = self.refuses_unchanged(self.up, v301)
         said = exc.message + "\n" + "\n".join(exc.details or [])
         self.assertIn("the pinned release manages %s, but the install record doesn't list it" % rel, said)
+
+
+class ReviewRoundFortyNine(Layout3):
+    """Codex, 3.1 round 49: the folder layout, the seed lines already handled and the seeds a workspace has
+    had come from its pinned release, the releases its git history names and the release source, never
+    only from fields of the committed record."""
+
+    def edit_record(self, change, msg):
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        change(record)
+        util.write_json(path, record)
+        note = os.path.join(self.target, ".aios", "backups", "state", "head.json")
+        if os.path.isfile(note):
+            os.remove(note)  # a fresh clone: no local note to catch the edit
+        self.git_commit(msg)
+
+    def v301(self, extra=None):
+        rev = bump_to_v3(self.source, extra=dict({"START_HERE.md": "# start here\n3.0.1\n"}, **(extra or {})))
+        return harness.approve(harness.build_manifest(self.source, rev, "3.0.1"))
+
+    def test_a_2x_record_claiming_the_3_0_layout_is_refused(self):
+        self.edit_record(lambda r: r.update(layout="3"), "a pull request says the move is done")
+        exc = self.refuses_unchanged(self.up)
+        self.assertTrue(any("folder layout" in d for d in exc.details), exc.details)
+        problems, _ = install_mod.verify(self.target, source_repo=self.source)
+        self.assertTrue(any("folder layout" in p for p in problems), problems)
+
+    def test_a_3_0_record_claiming_the_2x_layout_is_refused(self):
+        self.up()
+        self.git_commit("3.0.0")
+        self.edit_record(lambda r: r.update(layout="2"), "a pull request asks for the move again")
+        v301 = self.v301()
+        exc = self.refuses_unchanged(self.up, v301)
+        self.assertTrue(any("folder layout" in d for d in exc.details), exc.details)
+
+    def pinned_copy(self, without_line=False):
+        """A 3.0 copy pinned with `adopt`, which records neither a layout nor seed lines."""
+        copy = os.path.join(self.tmp, "copy")
+        install_mod.install(copy, self.v3, self.source, harness.config())
+        os.remove(install_mod.install_record_path(copy))
+        record = install_mod.adopt(copy, self.v3, self.source, harness.config())
+        self.assertNotIn("layout", record)
+        self.assertNotIn("seed_lines", record)
+        claude = os.path.join(copy, "CLAUDE.md")
+        with open(claude) as fh:
+            text = fh.read()
+        self.assertIn(MAP_LINE, text)
+        if without_line:
+            with open(claude, "w") as fh:
+                fh.write(text.replace("\n%s\n" % MAP_LINE, "\n"))
+        run_git(copy, "init", "-q", "-b", "main")
+        run_git(copy, "config", "user.email", "client@example.com")
+        run_git(copy, "config", "user.name", "client")
+        run_git(copy, "add", "-A")
+        run_git(copy, "commit", "-qm", "a pinned copy of 3.0.0")
+        return copy
+
+    def test_a_pinned_3_0_copy_is_on_the_3_0_layout(self):
+        copy = self.pinned_copy()
+        self.assertIsNone(install_mod.upgrade_plan(copy, self.v301(), self.source)["layout"])
+
+    def test_a_line_its_release_declared_and_the_client_removed_stays_out(self):
+        copy = self.pinned_copy(without_line=True)
+        v301 = self.v301()
+        self.assertEqual(install_mod.upgrade_plan(copy, v301, self.source, no_vercel=True)["seed_lines"], [])
+        install_mod.upgrade(copy, v301, self.source, no_vercel=True)
+        with open(os.path.join(copy, "CLAUDE.md")) as fh:
+            self.assertNotIn(MAP_LINE, fh.read())
+
+    def test_a_seed_taken_out_of_the_history_never_comes_back(self):
+        """3.0.0 seeds a file, the client deletes it, 3.0.1 retires it, a pull request takes it out of the
+        record's seed history, and 3.0.2 ships it again: it stays deleted."""
+        rel = "02_Team_Ops/projects/README.md"
+        self.up()
+        os.remove(os.path.join(self.target, rel))
+        self.git_commit("3.0.0, without the projects readme")
+        os.remove(os.path.join(self.source, rel))
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\n3.0.1\n"}, "3.0.1 retires it")
+        self.up(harness.approve(harness.build_manifest(self.source, rev, "3.0.1")))
+        self.git_commit("3.0.1")
+
+        def forget(record):
+            record["seeded"] = [e for e in record.get("seeded") or [] if e["path"] != rel]
+            record["seed_history"] = [p for p in record.get("seed_history") or [] if p != rel]
+        self.edit_record(forget, "a pull request takes it out of the seed history")
+        rev = harness.bump_source(self.source, {rel: "# projects\n", "START_HERE.md": "# start here\n3.0.2\n"},
+                                  "3.0.2 ships it again")
+        self.up(harness.approve(harness.build_manifest(self.source, rev, "3.0.2")))
+        self.assertFalse(os.path.lexists(os.path.join(self.target, rel)))
