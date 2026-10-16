@@ -4691,3 +4691,29 @@ class SubmoduleSweepMoves(Layout3):
         crashed = _crashed(self, self.moved_base(), "killed-move-rollback", ["rollback", "--target", "@T@"],
                            "rollback.before_restore")
         _sweep(self, crashed, lambda r: install_mod.rollback(r))
+
+
+class ReviewRoundSixtyThree(Existing):
+    """Codex, 3.1 round 63: a release pin that is a git option never reaches git. `aios install` and `aios adopt`
+    read the release's files before checking the release, so a manifest pinned to `--output=<path>` made
+    `git archive` write that file before anything refused."""
+
+    def test_an_option_shaped_pin_never_reaches_git(self):
+        outside = os.path.join(self.tmp, "elsewhere", "written-by-git")
+        os.makedirs(os.path.dirname(outside))
+        manifest = json.loads(json.dumps(self.v))
+        manifest["created_from"]["git_rev"] = "--output=" + outside
+        rel = self.write_json("release-option.json", manifest)
+        cfg = self.write_json("org.json", harness.config())
+        self.be("acme-founder")
+        for args in (("install", "--release", rel, "--target", os.path.join(self.tmp, "fresh"), "--config", cfg,
+                      "--repo", self.source),
+                     ("adopt", "--release", rel, "--target", self.target, "--config", cfg, "--repo", self.source)):
+            with self.subTest(command=args[0]):
+                code, out, err = self.cli(*args)
+                self.assertNotEqual(code, 0, out + err)
+                self.assertFalse(os.path.lexists(outside), "git wrote %s before the refusal" % outside)
+        with self.assertRaises(Refusal):
+            list(util.read_tree(self.source, "--output=" + outside))
+        self.assertFalse(util.rev_exists(self.source, "--output=" + outside))
+        self.assertFalse(os.path.lexists(outside))

@@ -75,7 +75,8 @@ def parse(event, args):
         path, mode, flags = (list(args) + [None, None, None])[:3]
         writes = (isinstance(mode, str) and any(c in mode for c in "wax+")) or \
             (isinstance(flags, int) and flags & _WRITE_FLAGS)
-        return [("open", _path(path), False)] if writes and not isinstance(path, int) else []
+        # An open of a file descriptor too (os.fdopen): by the path it names, where the system can say (round 63).
+        return [("open", _path(path), False)] if writes else []
     if event == "subprocess.Popen":
         executable, argv, cwd = (list(args) + [None, None, None])[:3]
         argv = [argv] if isinstance(argv, (str, bytes)) else list(argv or [])

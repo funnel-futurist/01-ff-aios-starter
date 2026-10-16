@@ -256,7 +256,16 @@ def git(repo, args, binary=False, check=True):
     return proc.stdout if binary else proc.stdout.decode("utf-8", "replace").strip()
 
 
+def _is_option(rev):
+    """Whether `rev` would reach git as an option rather than a revision: a release record or manifest names its pin,
+    and `--output=<path>` there would make `git archive` write a file before anything refused (independent review,
+    3.1 round 63)."""
+    return not isinstance(rev, str) or not rev or rev.startswith("-")
+
+
 def rev_exists(repo, rev):
+    if _is_option(rev):
+        return False
     proc = subprocess.run(
         ["git", "-C", repo, "cat-file", "-e", rev + "^{commit}"],
         stdout=subprocess.DEVNULL,
@@ -304,6 +313,8 @@ def read_tree(repo, rev, include_links=False):
     tracked symlink anywhere in a repo blocks every push (reproduced 2026-09-21). A link
     under `evidence/` must not be able to veto a release that does not ship it.
     """
+    if _is_option(rev):
+        raise Refusal(EXIT_PACKAGE, "%r isn't a revision; nothing was read or written" % (rev,))
     proc = subprocess.Popen(
         ["git", "-C", repo, "archive", "--format=tar", rev],
         stdout=subprocess.PIPE,

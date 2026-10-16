@@ -32,6 +32,7 @@ SH_W = {"rmtree", "copy", "copy2", "copyfile", "copytree", "move", "copymode", "
 TMP_W = {"mkstemp", "mkdtemp", "NamedTemporaryFile", "TemporaryDirectory"}
 PATH_W = {"write_text", "write_bytes", "touch", "mkdir", "unlink", "rmdir", "symlink_to", "hardlink_to", "chmod",
           "lchmod", "link_to"}
+_MODE = re.compile(r"^[rwxabtU+]{1,4}$")
 _READ_FLAGS = {"O_RDONLY", "O_NOFOLLOW", "O_CLOEXEC", "O_NONBLOCK", "O_DIRECTORY", "O_NOCTTY", "O_BINARY"}
 
 
@@ -148,15 +149,19 @@ def write_kind(node, alias, mod=None):
         if fn.attr == "open":
             # Path.open(mode), io.open(file, mode), tarfile.open(..., mode=...): by the mode; when the mode can't be
             # read, or what's opened isn't a file the scanner can tell, it counts (independent review, round 62).
+            # The mode is a mode-shaped string among the first two arguments (Path.open("w"), io.open(f, "w")),
+            # never a file name read as one (independent review, round 63).
             given = [k.value for k in node.keywords if k.arg == "mode"]
+            modes = [a.value for a in node.args[:2] if isinstance(a, ast.Constant) and isinstance(a.value, str)
+                     and _MODE.match(a.value)]
             if given:
                 mode = given[0].value if isinstance(given[0], ast.Constant) else "?"
-            elif node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
-                mode = node.args[0].value
-            elif len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
-                mode = node.args[1].value
+            elif modes:
+                mode = "".join(modes)
+            elif any(not isinstance(a, ast.Constant) for a in node.args[:2]):
+                mode = "?"
             else:
-                mode = "?" if node.args else "r"
+                mode = "r"
             if mode == "?" or any(c in str(mode) for c in "wax+"):
                 return "open:" + str(mode)
     # A git wrapper (util.git, workspace._git): the subcommand comes in its arguments (independent review, round 61).
@@ -197,8 +202,10 @@ def git_kind(words):
     not written out as "git ?" (independent review, rounds 61 and 62)."""
     i, globals_ = 0, []
     while i < len(words) and words[i] not in (None, MORE) and words[i].startswith("-"):
+        if words[i] not in ("-C", "--no-optional-locks"):
+            return "git ?"  # any other global option, -c among them, can make a reading command write (round 63)
         globals_.append(words[i])
-        i += 2 if words[i] in ("-C", "-c") else 1
+        i += 2 if words[i] == "-C" else 1
     if i >= len(words) or words[i] in (None, MORE):
         return "git ?"
     sub, rest = words[i], words[i + 1:]
@@ -517,12 +524,14 @@ class WriteSiteInventory(unittest.TestCase):
                      "    pathlib.Path(path).rename(target=path + \"1\")\n"
                      "    pathlib.Path(path).replace(target=path + \"2\")\n"
                      "    pathlib.Path(path).open().close()\n"  # read: not counted
+                     "    import io\n    io.open(path, \"w\").close()\n"  # a file name first, the mode second
+                     "    io.open(\"rw.txt\").close()\n"  # a file name alone: read
                      "    os.close(os.open(path, flags))\n"  # flags in a variable: counted
                      "    os.close(os.open(path, os.O_RDONLY))\n"  # plainly read-only: not
                      "    return \"a\".replace(\"a\", \"b\")\n")  # str.replace: not
         found = problems(dst)
         self.assertIn("layout:_new_writer: not classified", found)
-        self.assertIn("layout:_new_writer: writes {'open:w': 2, 'path.unlink': 1, 'path.replace': 2, 'open:a': 1, "
+        self.assertIn("layout:_new_writer: writes {'open:w': 3, 'path.unlink': 1, 'path.replace': 2, 'open:a': 1, "
                       "'path.rename': 1, 'os.open': 1}", "\n".join(found))
 
     def test_control_a_git_write_through_a_wrapper_fails_closed(self):
@@ -542,15 +551,33 @@ class WriteSiteInventory(unittest.TestCase):
                      "    _git(path, \"diff\", \"--output=d.patch\")\n"
                      "    _git(path, \"symbolic-ref\", \"--delete\", \"HEAD\")\n"
                      "    _git(path, \"status\", \"--porcelain\")\n"  # may refresh, and write, the index
-                     "    _run([\"git\", \"-C\", path, \"log\"] + args)\n")  # words added it can't read
+                     "    _run([\"git\", \"-C\", path, \"log\"] + args)\n"  # words added it can't read
+                     "    _run([\"git\", \"-c\", \"diff.external=w\", \"diff\"])\n")  # a global option: counted
         found = "\n".join(problems(dst))
         self.assertIn("workspace:_new_git_writer: writes {'git commit': 1, 'git update-index': 1, 'git tag': 1, "
-                      "'git ?': 1, 'git archive': 1, 'git diff': 1, 'git symbolic-ref': 1, 'git status': 1, "
+                      "'git ?': 2, 'git archive': 1, 'git diff': 1, 'git symbolic-ref': 1, 'git status': 1, "
                       "'git log': 1}", found)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RuntimeAuditHook(unittest.TestCase):
+    """audit_writes.parse reads a write on a file descriptor too (independent review, round 63)."""
+
+    def test_an_open_on_a_descriptor_counts(self):
+        import audit_writes
+        tmp = tempfile.mkdtemp(prefix="aios-auditfd-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        path = os.path.join(tmp, "f")
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT)
+        try:
+            with audit_writes.Recording() as rec:
+                os.fdopen(os.dup(fd), "w").close()
+        finally:
+            os.close(fd)
+        self.assertIn(("f", False), rec.under(tmp))
 
 
 class RuntimeAuditCheck(unittest.TestCase):
