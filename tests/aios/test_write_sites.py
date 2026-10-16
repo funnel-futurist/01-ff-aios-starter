@@ -32,7 +32,7 @@ SH_W = {"rmtree", "copy", "copy2", "copyfile", "copytree", "move", "copymode", "
 TMP_W = {"mkstemp", "mkdtemp", "NamedTemporaryFile", "TemporaryDirectory"}
 PATH_W = {"write_text", "write_bytes", "touch", "mkdir", "unlink", "rmdir", "symlink_to", "hardlink_to", "chmod",
           "lchmod", "link_to"}
-_MODE = re.compile(r"^[rwxabtU+]{1,4}$")
+_MODE = re.compile(r"^[rwxabtU+]{1,4}([:|][a-z0-9]*)?$")  # with tarfile's suffixes: "w:gz", "r|" (round 64)
 _READ_FLAGS = {"O_RDONLY", "O_NOFOLLOW", "O_CLOEXEC", "O_NONBLOCK", "O_DIRECTORY", "O_NOCTTY", "O_BINARY"}
 
 
@@ -526,13 +526,15 @@ class WriteSiteInventory(unittest.TestCase):
                      "    pathlib.Path(path).open().close()\n"  # read: not counted
                      "    import io\n    io.open(path, \"w\").close()\n"  # a file name first, the mode second
                      "    io.open(\"rw.txt\").close()\n"  # a file name alone: read
+                     "    import tarfile\n    tarfile.open(\"a.tar.gz\", \"w:gz\").close()\n"  # a mode with a suffix
+                     "    tarfile.open(\"b.tar\", \"r|\").close()\n"  # read
                      "    os.close(os.open(path, flags))\n"  # flags in a variable: counted
                      "    os.close(os.open(path, os.O_RDONLY))\n"  # plainly read-only: not
                      "    return \"a\".replace(\"a\", \"b\")\n")  # str.replace: not
         found = problems(dst)
         self.assertIn("layout:_new_writer: not classified", found)
         self.assertIn("layout:_new_writer: writes {'open:w': 3, 'path.unlink': 1, 'path.replace': 2, 'open:a': 1, "
-                      "'path.rename': 1, 'os.open': 1}", "\n".join(found))
+                      "'path.rename': 1, 'open:w:gz': 1, 'os.open': 1}", "\n".join(found))
 
     def test_control_a_git_write_through_a_wrapper_fails_closed(self):
         dst = self.copy()
