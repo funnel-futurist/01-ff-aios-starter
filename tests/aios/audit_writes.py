@@ -73,7 +73,8 @@ def parse(event, args):
     """[(kind, path, is_folder)] for a write, [("git", argv, cwd)] for a git subprocess, else []."""
     if event == "open":
         path, mode, flags = (list(args) + [None, None, None])[:3]
-        writes = (isinstance(mode, str) and any(c in mode for c in "wax+")) or \
+        # By the mode's access part only: "r:xz" reads (independent review, round 65).
+        writes = (isinstance(mode, str) and any(c in mode.split(":")[0].split("|")[0] for c in "wax+")) or \
             (isinstance(flags, int) and flags & _WRITE_FLAGS)
         # An open of a file descriptor too (os.fdopen): by the path it names, where the system can say (round 63).
         return [("open", _path(path), False)] if writes else []

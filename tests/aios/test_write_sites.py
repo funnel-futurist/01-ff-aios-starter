@@ -134,7 +134,9 @@ def write_kind(node, alias, mod=None):
         for k in node.keywords:
             if k.arg == "mode":
                 mode = k.value.value if isinstance(k.value, ast.Constant) else "?"
-        if mode == "?" or any(c in str(mode) for c in "wax+"):
+        if _unpacked(node):
+            mode = "?"  # open(*args), open(f, **kwargs): the mode could be anything (independent review, round 65)
+        if mode == "?" or _writes(mode):
             return "open:" + str(mode)
     # pathlib: every method that writes. rename and replace take one argument there, two on str, so a one-argument
     # call counts (independent review, round 61).
@@ -154,15 +156,17 @@ def write_kind(node, alias, mod=None):
             given = [k.value for k in node.keywords if k.arg == "mode"]
             modes = [a.value for a in node.args[:2] if isinstance(a, ast.Constant) and isinstance(a.value, str)
                      and _MODE.match(a.value)]
+            # A writing mode wins; then an argument the scanner can't read, which could hold one ("r" beside a
+            # variable could be a file named r); then a reading mode (independent review, round 65).
             if given:
                 mode = given[0].value if isinstance(given[0], ast.Constant) else "?"
-            elif modes:
-                mode = "".join(modes)
-            elif any(not isinstance(a, ast.Constant) for a in node.args[:2]):
+            elif any(_writes(m) for m in modes):
+                mode = "".join(m for m in modes if _writes(m))
+            elif _unpacked(node) or any(not isinstance(a, ast.Constant) for a in node.args[:2]):
                 mode = "?"
             else:
-                mode = "r"
-            if mode == "?" or any(c in str(mode) for c in "wax+"):
+                mode = "".join(modes) or "r"
+            if mode == "?" or _writes(mode):
                 return "open:" + str(mode)
     # A git wrapper (util.git, workspace._git): the subcommand comes in its arguments (independent review, round 61).
     called = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else None
@@ -177,6 +181,17 @@ def write_kind(node, alias, mod=None):
             words = [MORE]
         return git_kind(words)
     return None
+
+
+def _writes(mode):
+    """Whether an open mode writes, judged by its access part only: "r:xz" reads, its "x" naming the compression
+    (independent review, round 65)."""
+    return any(c in re.split(r"[:|]", str(mode), 1)[0] for c in "wax+")
+
+
+def _unpacked(call):
+    """Whether a call passes *args or **kwargs, whose contents the scanner can't read."""
+    return any(isinstance(a, ast.Starred) for a in call.args) or any(k.arg is None for k in call.keywords)
 
 
 def _word(node):
@@ -528,13 +543,17 @@ class WriteSiteInventory(unittest.TestCase):
                      "    io.open(\"rw.txt\").close()\n"  # a file name alone: read
                      "    import tarfile\n    tarfile.open(\"a.tar.gz\", \"w:gz\").close()\n"  # a mode with a suffix
                      "    tarfile.open(\"b.tar\", \"r|\").close()\n"  # read
+                     "    tarfile.open(\"c.tar.xz\", \"r:xz\").close()\n"  # read: its x is the compression
+                     "    io.open(\"r\", flags).close()\n"  # a constant beside a variable: counted
+                     "    open(*[path, \"w\"]).close()\n"  # unpacked arguments: counted
+                     "    open(path, **{\"mode\": \"w\"}).close()\n"
                      "    os.close(os.open(path, flags))\n"  # flags in a variable: counted
                      "    os.close(os.open(path, os.O_RDONLY))\n"  # plainly read-only: not
                      "    return \"a\".replace(\"a\", \"b\")\n")  # str.replace: not
         found = problems(dst)
         self.assertIn("layout:_new_writer: not classified", found)
         self.assertIn("layout:_new_writer: writes {'open:w': 3, 'path.unlink': 1, 'path.replace': 2, 'open:a': 1, "
-                      "'path.rename': 1, 'open:w:gz': 1, 'os.open': 1}", "\n".join(found))
+                      "'path.rename': 1, 'open:w:gz': 1, 'open:?': 3, 'os.open': 1}", "\n".join(found))
 
     def test_control_a_git_write_through_a_wrapper_fails_closed(self):
         dst = self.copy()
@@ -566,7 +585,13 @@ if __name__ == "__main__":
 
 
 class RuntimeAuditHook(unittest.TestCase):
-    """audit_writes.parse reads a write on a file descriptor too (independent review, round 63)."""
+    """audit_writes.parse reads a write on a file descriptor too (independent review, round 63), and judges a mode by
+    its access part (round 65)."""
+
+    def test_a_mode_is_judged_by_its_access_part(self):
+        import audit_writes
+        self.assertEqual(audit_writes.parse("open", ("f.tar.xz", "r:xz", 0)), [])
+        self.assertEqual(len(audit_writes.parse("open", ("f.tar.gz", "w:gz", 0))), 1)
 
     def test_an_open_on_a_descriptor_counts(self):
         import audit_writes
