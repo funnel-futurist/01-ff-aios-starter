@@ -2189,6 +2189,20 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                     # behind (independent review, 3.1 round 47). An edit that kept the release, then undone,
                     # changes nothing this undo decides: that comes from the anchor commit.
                     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+                    # And the anchor must be the only commit that ever added the record, on any side of any
+                    # merge. A pull request could delete the record with the adoption's files and add them
+                    # back with a forged record and a wider plan: the newest addition would then pass for the
+                    # adoption, and the undo would remove a file the repository owned (independent review,
+                    # 3.1 round 53).
+                    added_by = util.git(target, ["log", "--full-history", "--no-renames", "--diff-filter=A",
+                                                 "--format=%H", "--", ":(literal)" + record_rel], check=False).split()
+                    if len(added_by) > 1:
+                        raise Refusal(EXIT_STATE, "the install record was added more than once in this history "
+                                      "(commits %s), so which addition was the adoption can't be read from it, "
+                                      "and this machine has no note of the operation that wrote the record here; "
+                                      "nothing was changed" % ", ".join(c[:12] for c in reversed(added_by[:5])),
+                                      ["undo it where the adoption ran, or with git: revert the commits from the "
+                                       "first adoption on"])
                     since = []
                     # Every side of every merge: git's default walk follows only a parent the merge
                     # took this path from, so a branch that upgraded, merged with the record set back,
@@ -3057,7 +3071,10 @@ def _latest_added(target, rel):
     """The commit that most recently added `rel` (the path taken literally): the start of its current
     lifetime in this history. None if it was never committed. Refuses in a shallow clone."""
     _require_whole_history(target)
-    out = util.git(target, ["log", "--diff-filter=A", "--format=%H", "-1", "--", ":(literal)" + rel], check=False)
+    # --no-renames: a file moved onto this path is an addition here, whatever the user's diff.renames
+    # says (independent review, 3.1 round 53).
+    out = util.git(target, ["log", "--no-renames", "--diff-filter=A", "--format=%H", "-1", "--", ":(literal)" + rel],
+                   check=False)
     return out.strip() or None
 
 
@@ -3174,7 +3191,7 @@ def _adopted_lineage(target):
     _require_whole_history(target)
     # Every side of a merge, not only the one git would follow for this path: "ever" includes a branch
     # whose record a merge then set aside (independent review, 3.1 round 48).
-    out = util.git(target, ["log", "--full-history", "--diff-filter=A", "--format=%H", "--",
+    out = util.git(target, ["log", "--full-history", "--no-renames", "--diff-filter=A", "--format=%H", "--",
                             ":(literal)" + record_rel], check=False)
     for commit in out.split():
         raw = util.git(target, ["show", "%s:%s" % (commit, record_rel)], binary=True, check=False)

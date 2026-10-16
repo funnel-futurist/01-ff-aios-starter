@@ -329,8 +329,11 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   can't see.
 - Undoing a committed adoption on a machine with no note of the last operation (a fresh clone)
   needs no upgrade or rollback since the adoption, as the record's git history shows, on every
-  branch a merge brought in (even when the merge set the record back). If one happened, undo the
-  adoption where it ran, or with git.
+  branch a merge brought in (even when the merge set the record back). It also needs the record to
+  have been added only once in that history: if it was added again (an adoption undone and made
+  again, or a pull request that removed the record and added one back), git can't say which
+  addition was the adoption. In either case it refuses, changing nothing: undo the adoption where
+  it ran, or with git.
 - An adoption plan must be committed under exactly its own name.
 - It trusts your own local, uncommitted state: the ignored journal of an operation that was
   interrupted, and a record not yet committed. Whoever can edit those can already change any file

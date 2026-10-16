@@ -2269,7 +2269,9 @@ class ReviewRoundTwentyNine(ReviewRoundTwentyFour):
         self.be("acme-founder")
         code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
-        self.assertIn("doesn't match the adoption that commit made", out + err)
+        # Refused first, since round 53, because the record was added twice; the claim check behind it is
+        # still covered by a record edited inside the adoption's own commit (ReviewRoundThirtyCodex).
+        self.assertIn("added more than once", out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
 
     def test_an_adoption_committed_in_one_commit_still_rolls_back_exactly(self):
@@ -2313,13 +2315,30 @@ class ReviewRoundThirtyCodex(ReviewRoundTwentyFour):
         self.commit("another re-adds it, claiming less")
         self.forget_state()
 
-    def refused_unchanged(self):
+    def refused_unchanged(self, why="added more than once"):
+        # A re-added record is refused first, since round 53, because it was added twice.
         before = _tree(self.target)
         self.be("acme-founder")
         code, out, err = self.cli("rollback", "--target", self.target, "--repo", self.source)
         self.assertNotEqual(code, 0, out + err)
-        self.assertIn("doesn't match the adoption that commit made", out + err)
+        self.assertIn(why, out + err)
         self.assertEqual(diff(before, _tree(self.target)), [])
+
+    def test_an_adoption_committed_with_an_edited_record_is_refused(self):
+        """The claim check itself, with the record added once: edited before the adoption was committed,
+        so it claims fewer files than that commit added."""
+        self.adopt()
+        path = install_mod.install_record_path(self.target)
+        record = util.read_json(path)
+        dropped = "START_HERE.md"  # one of the release's adopted files (the people map keeps its own rule)
+        self.assertIn(dropped, [e["path"] for e in record["adoption"]["created"]])
+        record["adoption"]["created"] = [e for e in record["adoption"]["created"] if e["path"] != dropped]
+        with open(path, "wb") as fh:
+            fh.write(install_mod._record_bytes(install_mod._sealed(record)))
+        os.chmod(path, 0o644)
+        self.commit("adopted, with the record edited first")
+        self.forget_state()
+        self.refused_unchanged("doesn't match the adoption that commit made")
 
     def test_an_empty_created_list_is_refused(self):
         self.re_add(lambda r: r["adoption"].__setitem__("created", []))
@@ -3679,3 +3698,143 @@ class ReviewRoundFifty(Layout3):
             fh.write(original)
         del record["schema"]
         self.assertTrue(install_mod._record_shape_problems(record))
+
+
+class ReviewRoundFiftyThree(Existing):
+    """Codex, 3.1 round 53: undoing a committed adoption on a fresh clone anchors to the only commit that
+    ever added the install record. A pull request that deletes the record with the adoption's files, then
+    adds them back with a forged record and a wider plan, is refused: the newest addition never passes for
+    the adoption, so the undo can't remove a file the repository owned. Round 54 sweeps the other history
+    shapes that could move the anchor: a rename onto the record's path, a forged addition on a branch
+    merged in, and an adoption reverted and then restored."""
+
+    REL = ".claude/settings.json"  # instance_owned in PLAN, managed in the release
+
+    def adopted_with_own_copy(self):
+        """The repository's own copy of REL has the release's bytes; then the adoption, committed."""
+        with open(os.path.join(self.source, self.REL), "rb") as fh:
+            self.release_bytes = fh.read()
+        write(self.target, self.REL, self.release_bytes)
+        self.commit("ours, the same bytes as the release's")
+        self.adopt()
+        self.commit("adopted")
+        self.record = util.read_json(install_mod.install_record_path(self.target))
+        self.keep = {}
+        for e in self.record["adoption"]["created"]:
+            with open(os.path.join(self.target, e["path"]), "rb") as fh:
+                self.keep[e["path"]] = fh.read()
+        # Exact paths, never `add -A`: without `.aios/.gitignore` the installer's local folder would be swept
+        # into a commit.
+        self.paths = sorted(self.keep) + [self.REL, ".aios/install.json"]
+
+    def take_out(self):
+        run_git(self.target, "rm", "-q", "--", *self.paths)
+        run_git(self.target, "commit", "-qm", "a pull request takes the adoption out")
+
+    def put_back(self, rename=False):
+        """The files back, a plan that adopts REL, and a sealed record that claims it."""
+        import hashlib
+        import stat as stat_mod
+        t = self.target
+        plan = json.loads(json.dumps(PLAN))
+        plan["instance_owned"].remove(self.REL)
+        plan["adopt"].append(self.REL)
+        self.write_plan(plan)
+        for p, data in self.keep.items():
+            write(t, p, data)
+        write(t, self.REL, self.release_bytes)
+        with open(os.path.join(t, ".aios/adoption.json"), "rb") as fh:
+            plan_bytes = fh.read()
+        mode = stat_mod.S_IMODE(os.lstat(os.path.join(t, self.REL)).st_mode)
+        info = dict(self.record["adoption"], adopt=plan["adopt"], instance_owned=plan["instance_owned"],
+                    plan_sha256=hashlib.sha256(plan_bytes).hexdigest(),
+                    created=self.record["adoption"]["created"] + [
+                        {"path": self.REL, "sha256": hashlib.sha256(self.release_bytes).hexdigest(), "mode": mode}])
+        forged = install_mod._record_bytes(install_mod._sealed(dict(self.record, adoption=info)))
+        if rename:
+            # Staged elsewhere first, then moved onto the record's path, so git can read it as a rename.
+            write(t, "notes/staged.json", forged)
+            run_git(t, "add", "--", "notes/staged.json")
+            run_git(t, "commit", "-qm", "a note")
+            run_git(t, "config", "diff.renames", "true")
+            run_git(t, "mv", "notes/staged.json", ".aios/install.json")
+        else:
+            with open(install_mod.install_record_path(t), "wb") as fh:
+                fh.write(forged)
+        run_git(t, "add", "--", *(self.paths + [".aios/adoption.json"]))
+        run_git(t, "commit", "-qm", "and adds it all back, with a wider plan")
+
+    def forge_readd(self, rename=False):
+        self.adopted_with_own_copy()
+        self.take_out()
+        self.put_back(rename)
+        self.forget_state()  # a fresh clone
+
+    def refused_and_kept(self):
+        exc = self.refuses_unchanged(install_mod.rollback, self.target, self.source)
+        self.assertIn("added more than once", exc.message)
+        self.assertTrue(os.path.isfile(os.path.join(self.target, self.REL)))
+        return exc
+
+    def test_a_forged_second_addition_is_refused_on_a_fresh_clone(self):
+        self.forge_readd()
+        self.refused_and_kept()
+
+    def test_a_forged_record_moved_onto_its_path_is_refused(self):
+        """A rename onto the record's path counts as adding it, whatever diff.renames says."""
+        self.forge_readd(rename=True)
+        log = util.git(self.target, ["log", "--format=%s", "--name-status", "-1"])
+        self.assertIn("notes/staged.json", log)
+        self.refused_and_kept()
+
+    def test_a_forged_addition_on_a_merged_branch_is_refused(self):
+        t = self.target
+        self.adopted_with_own_copy()
+        run_git(t, "checkout", "-q", "-b", "forge")
+        self.take_out()
+        self.put_back()
+        run_git(t, "checkout", "-q", "main")
+        write(t, "06_Clients/acme/more.md", "# more client work\n")
+        run_git(t, "add", "--", "06_Clients/acme/more.md")
+        run_git(t, "commit", "-qm", "other work")
+        run_git(t, "merge", "-q", "--no-ff", "-m", "merge the pull request", "forge")
+        self.assertEqual(len(util.git(t, ["rev-list", "--parents", "-1", "HEAD"]).split()), 3)  # a true merge
+        self.forget_state()
+        self.refused_and_kept()
+
+    def reverted_and_restored(self):
+        t = self.target
+        self.adopt()
+        self.commit("adopted")
+        run_git(t, "revert", "--no-edit", "HEAD")
+        run_git(t, "revert", "--no-edit", "HEAD")
+
+    def test_an_adoption_reverted_and_restored_is_refused_on_a_fresh_clone(self):
+        self.reverted_and_restored()
+        self.forget_state()
+        exc = self.refuses_unchanged(install_mod.rollback, self.target, self.source)
+        self.assertIn("added more than once", exc.message)
+
+    def test_an_adoption_reverted_and_restored_undoes_where_it_ran(self):
+        self.reverted_and_restored()
+        _r, _s, how = install_mod.rollback(self.target, self.source)
+        self.assertIn("the adoption was undone", how)
+
+    def adopt_twice(self):
+        self.adopt()
+        self.commit("adopted")
+        install_mod.rollback(self.target, self.source)
+        self.commit("adoption undone")
+        self.adopt()
+        self.commit("adopted again")
+
+    def test_a_second_adoption_undoes_where_it_ran(self):
+        self.adopt_twice()
+        _r, _s, how = install_mod.rollback(self.target, self.source)
+        self.assertIn("the adoption was undone", how)
+
+    def test_a_second_adoption_on_a_fresh_clone_is_refused(self):
+        self.adopt_twice()
+        self.forget_state()
+        exc = self.refuses_unchanged(install_mod.rollback, self.target, self.source)
+        self.assertIn("added more than once", exc.message)
