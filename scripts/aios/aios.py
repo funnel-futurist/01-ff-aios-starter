@@ -430,15 +430,16 @@ def cmd_start(args):
              % (summary["release_id"], summary["version"], "" if not problems else "  DRIFTED"))
         for p in problems[:5]:
             _say("  - %s" % p)
-        if record.get("layout") == "3":
-            fails = [d for st, d in governance.founder_review_local(
-                target, policy, config, layout_mod.OLD_FOLDERS) if st == "FAIL"]
-            _say("founder review: %s" % ("CODEOWNERS covers the founder lane (run `aios instance check` "
-                                         "to confirm GitHub enforces it)" if not fails else
-                                         "NOT RESTORED at the 3.0 paths - `aios instance check` fails "
-                                         "until it is (docs/human_steps/restore_founder_review.md)"))
-            for d in fails[:5]:
-                _say("  - %s" % d)
+        # Every workspace, as `aios instance check` does: the record's layout field is the workspace's
+        # to edit, and a 3.0 copy pinned with `adopt` has none (independent review, 3.1 round 50).
+        fails = [d for st, d in governance.founder_review_local(
+            target, policy, config, layout_mod.OLD_FOLDERS) if st == "FAIL"]
+        _say("founder review: %s" % ("CODEOWNERS covers the founder lane (run `aios instance check` "
+                                     "to confirm GitHub enforces it)" if not fails else
+                                     "NOT RESTORED at the founder-lane paths - `aios instance check` "
+                                     "fails until it is (docs/human_steps/restore_founder_review.md)"))
+        for d in fails[:5]:
+            _say("  - %s" % d)
     except Refusal:
         _say("release:   UNPINNED - this workspace was not installed from an approved release")
         _say("           (a workspace made with \"Use this template\" copies mutable main;")

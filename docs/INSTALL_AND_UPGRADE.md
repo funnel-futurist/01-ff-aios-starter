@@ -283,8 +283,16 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - Every seed a release this workspace has had shipped, and every seed path the record's git history
   listed (for its release or an older one), stays yours: a later release never recreates it where
   you deleted it, nor takes it over, whatever the record now lists.
-- Every other field of the record is checked as above, or is read only by rolling back an upgrade
-  (which needs the record to equal the copy that upgrade kept on this machine), or is only shown.
+- Every field of the record is accounted for. `release`, `managed`, `layout`, `seeded`,
+  `seed_history`, `seed_lines`, `seed_lines_added` and `adoption` are checked as above. `schema`
+  and `package` must be the installer's own. `created_seeds`, `pre_existing_dirs`,
+  `layout_migration` and `previous` are read only by rolling back an upgrade, which needs the
+  record to equal the copy that upgrade kept on this machine. `record_sha256` (an adoption's seal)
+  is read only while the adopted record isn't committed yet, as your own local state. `rendered`
+  is only checked for presence by `verify`. `credentials` is only shown, by `verify`, as
+  references. `status`, `adopted`, `installed_at`, `upgraded_at` and `source` are never read.
+  `aios start` checks founder review on
+  every workspace, as `aios instance check` does, whatever the record says about its layout.
 - An upgrade made before 3.1 kept no copy of the record it wrote, so this installer won't roll it
   back: only the committed record could say what that upgrade changed. It refuses, changing nothing.
   Roll it back with that release's own installer, the one in the workspace

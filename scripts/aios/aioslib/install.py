@@ -102,6 +102,15 @@ def _record_shape_problems(record):
     opt_bool = lambda v, has: not has or isinstance(v, bool)  # noqa: E731
     opt_number = lambda v, has: not has or number(v)  # noqa: E731
 
+    # Every installer since 2.6.0 wrote these two exactly (independent review, 3.1 round 50).
+    if record.get("schema") != INSTALL_SCHEMA:
+        problems.append("'schema' isn't %s" % INSTALL_SCHEMA)
+    if record.get("package") != release_mod.PACKAGE:
+        problems.append("'package' isn't %s" % release_mod.PACKAGE)
+    if "adopted" in record and not isinstance(record["adopted"], bool):
+        problems.append("'adopted' isn't true or false")
+    if not text(record.get(RECORD_SEAL)):
+        problems.append("'%s' isn't text" % RECORD_SEAL)
     rel = record.get("release")
     if not isinstance(rel, dict):
         problems.append("'release' isn't an object")

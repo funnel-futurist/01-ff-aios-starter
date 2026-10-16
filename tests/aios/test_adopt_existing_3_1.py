@@ -3637,3 +3637,43 @@ class ReviewRoundFortyNine(Layout3):
                                   "3.0.2 ships it again")
         self.up(harness.approve(harness.build_manifest(self.source, rev, "3.0.2")))
         self.assertFalse(os.path.lexists(os.path.join(self.target, rel)))
+
+
+class ReviewRoundFifty(Layout3):
+    """Codex, 3.1 round 50: `aios start` checks founder review on every workspace, whatever the record's
+    layout field says; and a record's schema, package, legacy adopt marker and seal have the installer's
+    own shape."""
+
+    def start(self, target):
+        self.be("acme-founder")
+        code, out, err = self.cli("start", "--target", target)
+        self.assertEqual(code, 0, err)
+        return out
+
+    def test_start_checks_founder_review_on_a_pinned_3_0_copy(self):
+        copy = ReviewRoundFortyNine.pinned_copy(self)
+        self.assertIn("founder review:", self.start(copy))
+
+    def test_start_checks_founder_review_whatever_the_layout_field_says(self):
+        self.up()
+        self.git_commit("3.0.0")
+        ReviewRoundFortyNine.edit_record(self, lambda r: r.update(layout="2"), "a pull request says 2.x")
+        self.assertIn("founder review:", self.start(self.target))
+
+    def test_a_record_not_in_the_installers_shape_is_refused(self):
+        path = install_mod.install_record_path(self.target)
+        with open(path, "rb") as fh:
+            original = fh.read()
+        for field, value in (("schema", "ff-aios-starter/install@9"), ("package", "someone-else"),
+                             ("adopted", "yes"), ("record_sha256", 7)):
+            record = json.loads(original.decode("utf-8"))
+            record[field] = value
+            util.write_json(path, record)
+            with self.assertRaises(Refusal) as ctx:
+                install_mod.load_record(self.target)
+            self.assertIn("isn't in the shape the installer writes", ctx.exception.message, field)
+            self.assertTrue(any(field in d for d in ctx.exception.details), (field, ctx.exception.details))
+        with open(path, "wb") as fh:
+            fh.write(original)
+        del record["schema"]
+        self.assertTrue(install_mod._record_shape_problems(record))
