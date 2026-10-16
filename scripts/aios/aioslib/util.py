@@ -286,7 +286,8 @@ def worktree_dirty(path):
     """True when a git worktree has uncommitted changes. False for a non-repo."""
     if not is_git_repo(path):
         return False
-    out = git(path, ["status", "--porcelain", "--untracked-files=all"])
+    # Without optional locks: a plain status may refresh, and so write, the index (independent review, 3.1 round 62).
+    out = git(path, ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all"])
     changes = [line[3:].strip().strip('"') for line in out.splitlines() if line.strip()]
     return any(p not in TOOL_OWNED_PATHS for p in changes)
 

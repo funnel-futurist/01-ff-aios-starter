@@ -23,6 +23,9 @@ SRC="$WORK/source"
 TARGET="$WORK/workspace"
 BIN="$WORK/bin"
 HOMEDIR="$WORK/home"
+# Every CLI process records each write and git run it makes (Python's audit hooks), checked at the end: the
+# runtime backstop to the static write-site inventory (review round 63).
+AUDITLOG="$WORK/audit.jsonl"
 mkdir -p "$BIN" "$HOMEDIR"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -48,6 +51,7 @@ EOF
 # Every CLI call runs with a scrubbed environment.
 aios() {
   env -i PATH="$BIN:/usr/bin:/bin:/usr/sbin:/sbin" HOME="$HOMEDIR" AIOS_NO_RELEASE_NOTICE=1 \
+    PYTHONPATH="$SRC/tests/aios/audit_site" AIOS_AUDIT_LOG="$AUDITLOG" \
     ${AIOS_FAULT:+AIOS_FAULT="$AIOS_FAULT"} \
     python3 "$SRC/scripts/aios/aios.py" "$@"
 }
@@ -169,6 +173,7 @@ step "the installed workspace runs its OWN copy of the tool (self-contained)"
 # their workspace, so prove that one works, from inside the workspace, with nothing else on
 # PATH. If the package did not ship its own tooling, this is where it shows.
 ( cd "$TARGET" && env -i PATH="$BIN:/usr/bin:/bin" HOME="$HOMEDIR" AIOS_NO_RELEASE_NOTICE=1 \
+    PYTHONPATH="$SRC/tests/aios/audit_site" AIOS_AUDIT_LOG="$AUDITLOG" \
     python3 scripts/aios/aios.py verify --target . ) > "$WORK/selfcheck.txt" 2>&1
 expect_code 0 $? "the workspace verifies itself with its own installed CLI"
 grep -q "matches the installed release" "$WORK/selfcheck.txt" \
@@ -196,6 +201,7 @@ hook_event() {
 }
 run_hook() {
   ( cd "$TARGET" && env -i PATH="$BIN:/usr/bin:/bin" HOME="$HOMEDIR" AIOS_NO_RELEASE_NOTICE=1 CLAUDE_PROJECT_DIR="$TARGET" \
+      PYTHONPATH="$SRC/tests/aios/audit_site" AIOS_AUDIT_LOG="$AUDITLOG" \
       python3 scripts/aios/aios.py hook pre-edit )
 }
 grep -q 'hook pre-edit' "$TARGET/.claude/settings.json" \
@@ -412,6 +418,21 @@ git -C "$SRC" revert --no-edit -q HEAD >/dev/null 2>&1
 step "N7: CODEOWNERS with an unresolved placeholder fails the repo's own check"
 aios governance check --root "$SRC" --repo-slug acme/acme-aios >/dev/null 2>&1
 expect_code 8 $? "placeholder CODEOWNERS refused"
+
+step "runtime audit: every write and git run the CLI made, as Python's audit hooks reported them"
+audit_out="$(python3 "$SRC/tests/aios/audit_check.py" "$AUDITLOG" "$WORK" "$SRC" 2>&1)"
+audit_rc=$?
+audit_lines=0
+while IFS= read -r l; do
+  case "$l" in
+    "PASS  "*) ok "${l#PASS  }"; audit_lines=$((audit_lines+1)) ;;
+    "FAIL  "*) bad "${l#FAIL  }"; audit_lines=$((audit_lines+1)) ;;
+    *) printf '%s\n' "$l" ;;
+  esac
+done <<EOF
+$audit_out
+EOF
+[ "$audit_rc" -eq 0 ] && [ "$audit_lines" -eq 5 ] || bad "the runtime audit check ran to the end (exit $audit_rc, $audit_lines checks)"
 
 printf '\n─────────────────────────────────────────\n'
 printf 'RESULT: %d passed, %d failed\n' "$pass" "$fail"

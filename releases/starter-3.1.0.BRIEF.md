@@ -44,7 +44,7 @@
 - **The notice and identity caches:** written only where the repository has no file of its own. Never read from a copy it tracks or reaches through a link or a submodule; a malformed one is ignored, so it can't switch off the edit check or break `aios start`.
 
 **Every write, accounted for (the write-site inventory)**
-`tests/aios/test_write_sites.py` reads the package's source and lists every call that writes to disk, git commands included (written out, through a wrapper, or built in a variable): 146 calls in 55 functions. Each function is classified, and the test fails on any write it doesn't list, or on a check taken out from before a write.
+`tests/aios/test_write_sites.py` reads the package's source and lists every call that writes to disk, git commands included (written out, through a wrapper, or built in a variable): 147 calls in 56 functions. A git command counts as reading only in a listed read-only form, flag by flag. Each function is classified, and the test fails on any write it doesn't list, or on a check taken out from before a write.
 
 | Where | Functions (calls) | Checked how, before the first write |
 |---|---|---|
@@ -53,10 +53,18 @@
 | The workspace lock and its guard | 5 (9) | the guard refuses a `.aios` or `.aios/backups` that is another repository; one removes only the guard file it made |
 | `util` and `layout` write helpers, and `util.git` | 14 (43) | every call to one is itself a classified write; the temporary-file and local-cache helpers also check for themselves |
 | Read-only git whose command is built in a variable | 2 (2) | allowlisted: `diff-tree`, `ls-files` and `ls-tree` only, which the scanner can't read from the variable |
+| An HTTP request through `urllib` | 1 (1) | allowlisted: the scanner counts it because it can't tell what an attribute's `open` opens |
 | Commands that write to an `--out` path, and release tooling | 6 (7) | allowlisted: not part of a workspace's install, adoption, upgrade or rollback |
 | The vault tool (`aios workspace`), its git clone, fetch and merge included | 7 (15) | allowlisted: writes only in the vault's own folder, which holds no install record |
 
 Its control tests remove one check (the rollback's), add an unlisted write, and add git writes through each wrapper; each makes it fail. At `75753b0` it finds the lock written before any check, the gap round 60 fixed. The submodule sweep then proves each check covers the paths that operation actually writes.
+
+**And at runtime (the audit backstop)**
+Python's audit hooks record every write the installer actually makes, whatever its source looks like, with every git command it runs. They run during the submodule sweep and in every command-line process of the integration test. In the integration run that was 5,114 writes and 1,430 git runs across 27 processes. The checks: every write stays in the test's own folder or the system's temporary folder; nothing goes into a `.git` folder but the installer's guard; nothing goes into the Starter's source repository; every git command only reads. In the sweep, no write lands inside the other repository, not even one made and taken back before the refusal. Its control plants a write the static scanner can't read (an `open` reached through `getattr`, removed again before the refusal), and the audit catches it.
+
+**How review findings are graded (from round 63, for both reviewers)**
+- **Medium or above:** a reachable write by the product, before its refusal or into another repository, that the runtime audit misses. Record-trust findings are graded as before.
+- **NIT:** a gap in the static scanner's reading of the source, with no such write behind it. It's fixed when cheap, and it doesn't hold the release.
 
 **What was proven** (detail in `evidence/dispatch/p22-starter/release-3.1.0/`):
 @@PROOF@@

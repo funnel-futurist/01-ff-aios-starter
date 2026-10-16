@@ -4410,80 +4410,34 @@ _REPOSITORY_KINDS = (("a submodule", _make_submodule), ("a nested repository", _
 
 
 class _Writes(object):
-    """Every path under `root` the code run inside this context writes, creates, removes, renames, links or
-    changes the mode of: what it attempted, not only what differs at the end, so a temporary file, a rewrite of
-    the same bytes and a mode change all count (independent review, 3.1 round 59)."""
-
-    _ONE = ("remove", "unlink", "chmod")
+    """Every write the code run inside this context makes under `root`, as Python's audit hooks report it
+    (audit_writes.py): what actually ran, whatever form its source takes, so a temporary file, a rewrite of the
+    same bytes, a mode change, a write through a folder handle and an open reached by getattr all count; and
+    each git run whose subcommand writes, by the folder it runs in (independent review, 3.1 rounds 59 and 63)."""
 
     def __init__(self, root):
-        self.root = os.path.realpath(root)
+        self.root = root
         self.files, self.dirs = set(), set()
 
-    def note(self, path, is_dir=False, dir_fd=None):
-        if dir_fd is not None or not isinstance(path, (str, bytes, os.PathLike)):
-            return
-        path = os.fsdecode(os.fspath(path))
-        full = os.path.realpath(path if os.path.isabs(path) else os.path.join(os.getcwd(), path))
-        if full.startswith(self.root + os.sep):
-            (self.dirs if is_dir else self.files).add(os.path.relpath(full, self.root).replace(os.sep, "/"))
-
     def __enter__(self):
-        import builtins
-        from unittest import mock
-        real = {n: getattr(os, n) for n in ("open", "replace", "rename", "link", "symlink", "mkdir", "rmdir")
-                + self._ONE}
-        real_open, real_rmtree = builtins.open, shutil.rmtree
-        writing = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
-
-        def os_open(path, flags, *a, **k):
-            if flags & writing:
-                self.note(path, dir_fd=k.get("dir_fd"))
-            return real["open"](path, flags, *a, **k)
-
-        def b_open(file, mode="r", *a, **k):
-            if any(c in mode for c in "wax+"):
-                self.note(file)
-            return real_open(file, mode, *a, **k)
-
-        def both(name):
-            def f(src, dst, *a, **k):
-                self.note(src, dir_fd=k.get("src_dir_fd"))
-                self.note(dst, dir_fd=k.get("dst_dir_fd"))
-                return real[name](src, dst, *a, **k)
-            return f
-
-        def symlink(src, dst, *a, **k):
-            self.note(dst, dir_fd=k.get("dir_fd"))
-            return real["symlink"](src, dst, *a, **k)
-
-        def one(name, is_dir=False):
-            def f(path, *a, **k):
-                self.note(path, is_dir, k.get("dir_fd"))
-                return real[name](path, *a, **k)
-            return f
-
-        def rmtree(path, *a, **k):
-            self.note(path, True)
-            return real_rmtree(path, *a, **k)
-
-        self._patches = [mock.patch.object(os, "open", os_open), mock.patch.object(builtins, "open", b_open),
-                         mock.patch.object(os, "symlink", symlink), mock.patch.object(shutil, "rmtree", rmtree),
-                         mock.patch.object(os, "mkdir", one("mkdir", True)),
-                         mock.patch.object(os, "rmdir", one("rmdir", True))]
-        self._patches += [mock.patch.object(os, n, both(n)) for n in ("replace", "rename", "link")]
-        self._patches += [mock.patch.object(os, n, one(n)) for n in self._ONE]
-        for patch in self._patches:
-            patch.start()
+        import audit_writes
+        self._recording = audit_writes.Recording().__enter__()
         return self
 
     def __exit__(self, *exc):
-        for patch in reversed(self._patches):
-            patch.stop()
+        from test_write_sites import git_kind
+        self._recording.__exit__(*exc)
+        for rel, is_folder in self._recording.under(self.root):
+            (self.dirs if is_folder else self.files).add(rel)
+        real_root = os.path.realpath(self.root)
+        for argv, where in self._recording.git_dirs():
+            real = os.path.realpath(where)
+            if git_kind(argv[1:]) and real.startswith(real_root + os.sep):
+                self.dirs.add(os.path.relpath(real, real_root).replace(os.sep, "/"))
         return False
 
     def folders(self):
-        """The folder of every path attempted, and every folder made or removed. Under the installer's backups
+        """The folder of every path written, and every folder made or removed. Under the installer's backups
         folder, whose snapshot and probe names are new each run, the backups folder and its state folder stand
         for them."""
         out = set()
@@ -4517,30 +4471,35 @@ def _sweep(test, base, run):
             copy = os.path.join(test.tmp, "sweep-%d" % n)
             shutil.copytree(base, copy, symlinks=True)
             make(copy, folder)
-            tree, view = _tree(copy), _git_view(copy)
             with test.subTest(folder=folder, kind=kind):
-                # Recorded here too: a write made and taken back before the refusal still went into the other
-                # repository, and a kill at that moment would leave it there (independent review, 3.1 round 60).
-                with _Writes(copy) as attempted:
-                    try:
-                        run(copy)
-                    except Refusal as exc:
-                        said = exc.message + "\n" + "\n".join(str(d) for d in exc.details or [])
-                        test.assertIn(folder, said, "the refusal doesn't name the folder")
-                    else:
-                        test.fail("%s made %s: the operation went ahead" % (folder, kind))
-                inside = sorted(p for p in attempted.files | attempted.dirs if p == folder or p.startswith(folder + "/"))
-                test.assertEqual(inside, [], "a write was attempted inside the other repository")
-                after, now = _tree(copy), _git_view(copy)
-                changed = diff(tree, after)
-                if ".aios/lock" in changed and ".aios/lock" in tree and ".aios/lock" not in after:
-                    # A killed run's dead lock, which recovery reclaims by design: the one change allowed.
-                    changed.remove(".aios/lock")
-                    view, now = _without_lock(view), _without_lock(now)
-                test.assertEqual(changed, [], "a refusal changed the workspace")
-                test.assertEqual(view, now, "a refusal changed what git sees")
+                _check_injected(test, copy, folder, kind, run)
             shutil.rmtree(copy)
     return folders
+
+
+def _check_injected(test, copy, folder, kind, run):
+    """With `folder` already made another repository in `copy`: the operation refuses and names it; the runtime
+    audit sees no write inside it, not even one made and taken back before the refusal (a kill at that moment would
+    leave it there; independent review, 3.1 rounds 60 and 63); and every file, folder and git's view stay as they
+    were, but for a killed run's dead lock, which recovery reclaims by design."""
+    tree, view = _tree(copy), _git_view(copy)
+    with _Writes(copy) as attempted:
+        try:
+            run(copy)
+        except Refusal as exc:
+            said = exc.message + "\n" + "\n".join(str(d) for d in exc.details or [])
+            test.assertIn(folder, said, "the refusal doesn't name the folder")
+        else:
+            test.fail("%s made %s: the operation went ahead" % (folder, kind))
+    inside = sorted(p for p in attempted.files | attempted.dirs if p == folder or p.startswith(folder + "/"))
+    test.assertEqual(inside, [], "a write was attempted inside the other repository")
+    after, now = _tree(copy), _git_view(copy)
+    changed = diff(tree, after)
+    if ".aios/lock" in changed and ".aios/lock" in tree and ".aios/lock" not in after:
+        changed.remove(".aios/lock")
+        view, now = _without_lock(view), _without_lock(now)
+    test.assertEqual(changed, [], "a refusal changed the workspace")
+    test.assertEqual(view, now, "a refusal changed what git sees")
 
 
 def _without_lock(view):
@@ -4669,6 +4628,35 @@ class SubmoduleSweep(Existing):
     def test_finishing_a_killed_rollback_of_an_upgrade(self):
         self.recovery(_crashed(self, self.upgraded_base(), "killed-rollback",
                                ["rollback", "--target", "@T@", "--repo", self.source], "rollback.before_restore"))
+
+    def test_control_a_write_the_scanner_cant_see_is_caught_at_runtime(self):
+        """Chat Zero, 3.1 round 63: the runtime audit is the backstop to the static inventory. A write the scanner
+        can't read (open and remove reached through getattr), made inside the other repository and taken back before
+        the refusal, so the tree ends unchanged, is still caught."""
+        import ast as ast_mod
+        import builtins
+        import inspect
+        import textwrap
+        from unittest import mock
+        import test_write_sites
+        copy = os.path.join(self.tmp, "control")
+        shutil.copytree(self.upgraded_base(), copy, symlinks=True)
+        _make_submodule(copy, "scripts/team")
+        real = install_mod._require_state_folder
+
+        def planted(target):
+            hidden = os.path.join(target, "scripts", "team", ".planted")
+            getattr(builtins, "op" + "en")(hidden, "w").close()
+            getattr(os, "re" + "move")(hidden)
+            return real(target)
+        calls = [n for n in ast_mod.walk(ast_mod.parse(textwrap.dedent(inspect.getsource(planted))))
+                 if isinstance(n, ast_mod.Call)]
+        self.assertEqual([k for k in (test_write_sites.write_kind(n, {}, "install") for n in calls) if k], [])
+        with mock.patch.object(install_mod, "_require_state_folder", planted):
+            with self.assertRaises(AssertionError) as ctx:
+                _check_injected(self, copy, "scripts/team", "a submodule", lambda r: install_mod.rollback(r, self.source))
+        self.assertIn("a write was attempted inside the other repository", str(ctx.exception))
+        _check_injected(self, copy, "scripts/team", "a submodule", lambda r: install_mod.rollback(r, self.source))
 
     def test_finishing_a_killed_undo_of_an_adoption(self):
         self.recovery(_crashed(self, self.adopted_base(), "killed-undo",

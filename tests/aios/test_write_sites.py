@@ -44,11 +44,33 @@ def _read_only_flags(node):
 
 
 GIT_WRAPPERS = {"git", "_git"}
-# Subcommands that only read; every other one counts as a write, as do the read-only forms' writing ones.
-GIT_READ = {"rev-parse", "ls-files", "ls-tree", "ls-remote", "cat-file", "show", "log", "diff", "diff-tree",
-            "diff-index", "diff-files", "status", "check-ignore", "check-attr", "rev-list", "merge-base",
-            "for-each-ref", "show-ref", "describe", "archive", "name-rev", "grep", "blame", "var", "version",
-            "count-objects", "verify-commit", "verify-tag", "shortlog", "whatchanged", "cherry", "get-tar-commit-id"}
+GIT_READ = {  # each subcommand that only reads, with the only flags it may carry and still only read
+    "rev-parse": {"--abbrev-ref", "--absolute-git-dir", "--is-inside-work-tree", "--is-shallow-repository", "--quiet",
+                  "-q", "--verify", "--git-dir", "--show-toplevel", "--short"},
+    "ls-files": {"--", "-z", "-s", "--stage", "--error-unmatch", "--cached", "-c"},
+    "ls-tree": {"--name-only", "-z", "-r", "-d", "--full-tree"},
+    "ls-remote": {"--heads", "--tags", "--refs", "-q", "--quiet"},
+    "cat-file": {"-e", "-t", "-p", "-s"},
+    "show": {"--format", "--pretty", "--name-only", "--no-patch", "-s"},
+    "log": {"--", "--branches", "--format", "--pretty", "--full-history", "--not", "--oneline", "--remotes", "--reverse",
+            "--topo-order", "-1", "-n", "--max-count", "--all", "--first-parent", "--diff-filter", "--name-only", "-z"},
+    "diff": {"--name-only", "--no-renames", "--name-status", "--stat", "--cached", "--quiet", "--exit-code", "-z"},
+    "diff-tree": {"--no-commit-id", "-r", "--root", "--no-renames", "--diff-filter", "--name-only", "-z"},
+    "rev-list": {"--count", "--left-right", "--parents", "-n", "--max-count", "--all", "--reverse", "--topo-order"},
+    "merge-base": {"--is-ancestor", "--all"},
+    "check-ignore": {"--no-index", "--stdin", "-q", "--quiet", "-v", "--verbose", "-z", "-n"},
+    "archive": {"--format", "--prefix"},
+    "status": {"--porcelain", "--untracked-files", "-z", "--short", "-s", "-b", "--branch"},
+    "symbolic-ref": {"--quiet", "-q", "--short"},
+    "config": {"--get", "--get-all", "--get-regexp", "--list", "-l", "--local", "--global", "--system", "--type",
+               "--bool", "--int", "--null", "-z", "--name-only", "--show-origin", "--default"},
+    "remote": {"-v", "--verbose"},
+    "stash": {"--stat", "--name-only"},
+    "worktree": {"--porcelain", "-z"},
+    "notes": set(),
+    "branch": {"--list", "-l", "--show-current", "--contains", "-a", "-r", "--all", "--remotes", "--format", "-v"},
+    "tag": {"--list", "-l", "--contains", "--points-at", "--format", "--sort"},
+}
 
 # The package's own write helpers: a call to one is a write at the call site.
 UTIL_W = {"write_file", "write_json", "write_bytes", "ensure_parent", "create_new", "private_temp"}
@@ -117,16 +139,37 @@ def write_kind(node, alias, mod=None):
     # call counts (independent review, round 61).
     if isinstance(fn, ast.Attribute) and not (isinstance(fn.value, ast.Name) and alias.get(fn.value.id, fn.value.id)
                                               in ("os", "util", "layout", "shutil", "tempfile")):
-        if fn.attr in PATH_W or (fn.attr in ("rename", "replace") and len(node.args) == 1 and not node.keywords):
+        if fn.attr in PATH_W:
             return "path." + fn.attr
+        if fn.attr in ("rename", "replace") and (
+                (len(node.args) == 1 and not node.keywords)
+                or (not node.args and [k.arg for k in node.keywords] == ["target"])):
+            return "path." + fn.attr
+        if fn.attr == "open":
+            # Path.open(mode), io.open(file, mode), tarfile.open(..., mode=...): by the mode; when the mode can't be
+            # read, or what's opened isn't a file the scanner can tell, it counts (independent review, round 62).
+            given = [k.value for k in node.keywords if k.arg == "mode"]
+            if given:
+                mode = given[0].value if isinstance(given[0], ast.Constant) else "?"
+            elif node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                mode = node.args[0].value
+            elif len(node.args) > 1 and isinstance(node.args[1], ast.Constant):
+                mode = node.args[1].value
+            else:
+                mode = "?" if node.args else "r"
+            if mode == "?" or any(c in str(mode) for c in "wax+"):
+                return "open:" + str(mode)
     # A git wrapper (util.git, workspace._git): the subcommand comes in its arguments (independent review, round 61).
     called = fn.id if isinstance(fn, ast.Name) else fn.attr if isinstance(fn, ast.Attribute) else None
     if called in GIT_WRAPPERS and len(node.args) > 1:
         rest = node.args[1:]
         if isinstance(rest[0], (ast.List, ast.BinOp)):
             words = _words(rest[0])
+        elif isinstance(rest[0], ast.Constant):
+            words = [_word(a) for a in rest if not isinstance(a, ast.Starred)] + (
+                [MORE] if any(isinstance(a, ast.Starred) for a in rest) else [])
         else:
-            words = [_word(a) for a in rest] + ([None] if any(isinstance(a, ast.Starred) for a in rest) else [])
+            words = [MORE]
         return git_kind(words)
     return None
 
@@ -135,36 +178,48 @@ def _word(node):
     return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
 
 
+MORE = "<more>"  # more words added that the scanner can't read: any of them could be a flag
+
+
 def _words(node):
-    """The words of a command written as a list, or a list with more added (`[...] + args`): None for any word
-    not written out, and a trailing None when more are added."""
+    """The words of a command written as a list, or a list with more added (`[...] + args`): None for a word that is
+    an expression (taken as an operand: a path or a revision), and MORE when more words are added."""
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return _words(node.left) + [None]
+        return _words(node.left) + [MORE]
     if isinstance(node, ast.List):
         return [_word(e) for e in node.elts]
-    return [None]
+    return [MORE]
 
 
 def git_kind(words):
-    """The write a git command makes, or None when it only reads. Fails closed: a subcommand not written out, or not
-    known to only read, counts as a write."""
-    i = 0
-    while i < len(words) and words[i] is not None and words[i].startswith("-"):
+    """The write a git command makes, or None when it only reads. Fails closed: only a form in GIT_READ is read-only,
+    with every flag in its list and no words added that the scanner can't read; anything else counts, a subcommand
+    not written out as "git ?" (independent review, rounds 61 and 62)."""
+    i, globals_ = 0, []
+    while i < len(words) and words[i] not in (None, MORE) and words[i].startswith("-"):
+        globals_.append(words[i])
         i += 2 if words[i] in ("-C", "-c") else 1
-    if i >= len(words) or words[i] is None:
+    if i >= len(words) or words[i] in (None, MORE):
         return "git ?"
     sub, rest = words[i], words[i + 1:]
-    args = [w for w in rest if w is None or not w.startswith("-")]
-    if sub in GIT_READ:
-        return None
-    if None not in rest and (
-            (sub == "symbolic-ref" and len(args) <= 1)
-            or (sub == "config" and set(rest) & {"--get", "--get-all", "--get-regexp", "--list", "-l"})
-            or (sub == "remote" and (not args or args[0] in ("get-url", "show")))
-            or (sub in ("stash", "worktree", "notes") and args and args[0] in ("list", "show"))
-            or (sub in ("branch", "tag") and (not args or set(rest) & {"--list", "-l", "--show-current", "--contains"}))):
-        return None
-    return "git " + sub
+    if sub not in GIT_READ or MORE in rest:
+        return "git " + sub
+    flags = {w.split("=")[0] for w in rest if w is not None and w.startswith("-")}
+    operands = [w for w in rest if w is None or not w.startswith("-")]
+    allowed, form_ok = GIT_READ[sub], True
+    if sub == "status":
+        form_ok = "--no-optional-locks" in globals_  # else it may refresh, and write, the index
+    elif sub == "symbolic-ref":
+        form_ok = len(operands) <= 1
+    elif sub == "config":
+        form_ok = bool(flags & {"--get", "--get-all", "--get-regexp", "--list", "-l"})
+    elif sub == "remote":
+        form_ok = not operands or operands[0] in ("get-url", "show")
+    elif sub in ("stash", "worktree", "notes"):
+        form_ok = bool(operands) and operands[0] in ("list", "show")
+    elif sub in ("branch", "tag"):
+        form_ok = not operands or bool(flags & {"--list", "-l"})
+    return None if form_ok and flags <= allowed else "git " + sub
 
 
 def _added_to(lst, parent):
@@ -217,7 +272,7 @@ def scan(root):
                 if isinstance(child, ast.List) and child.elts and _word(child.elts[0]) == "git":
                     # A git command written out anywhere (`args = ["git", "clone", ...]`, then run): counted where
                     # it's written, with whatever is added to it unknown (independent review, round 61).
-                    kinds.append(git_kind(_words(child)[1:] + ([None] if _added_to(child, node) else [])))
+                    kinds.append(git_kind(_words(child)[1:] + ([MORE] if _added_to(child, node) else [])))
                 for k in kinds:
                     if k:
                         rec["writes"][k] += 1
@@ -245,6 +300,7 @@ WRITES = {
     'aios:cmd_install': {'os.makedirs': 1},
     'aios:cmd_protected_fingerprint': {'util.write_json': 1},
     'aios:cmd_release_build': {'util.write_json': 1},
+    'hosting:_get': {'open:?': 1},
     'install:_Lock.__enter__': {'os.open': 1, 'os.write': 1, 'util.ensure_parent': 1},
     'install:_Lock.__exit__': {'os.remove': 1},
     'install:_RecoveryGuard.__enter__': {'os.makedirs': 1, 'os.open': 2},
@@ -308,6 +364,8 @@ TABLE = {
                                       "every path under it before its first write"),
     "aios:cmd_protected_fingerprint": ("allowlist", _RELEASE),
     "aios:cmd_release_build": ("allowlist", _RELEASE),
+    "hosting:_get": ("allowlist", "an HTTP request through urllib's opener (_OPENER.open(req)), not a file; counted "
+                                  "because the scanner can't tell what an attribute's open opens"),
     "install:_Lock.__enter__": ("own", "_RecoveryGuard"),
     "install:_Lock.__exit__": ("own", "_RecoveryGuard"),
     "install:_RecoveryGuard.__enter__": ("own", "another_repository"),
@@ -454,13 +512,18 @@ class WriteSiteInventory(unittest.TestCase):
             fh.write("\n\ndef _new_writer(path, flags):\n"
                      "    with open(path, \"w\") as fh:\n        fh.write(\"x\")\n"
                      "    import pathlib\n    pathlib.Path(path).unlink()\n    pathlib.Path(path).replace(path + \"~\")\n"
+                     "    pathlib.Path(path).open(\"w\").close()\n"
+                     "    pathlib.Path(path).open(mode=\"a\").close()\n"
+                     "    pathlib.Path(path).rename(target=path + \"1\")\n"
+                     "    pathlib.Path(path).replace(target=path + \"2\")\n"
+                     "    pathlib.Path(path).open().close()\n"  # read: not counted
                      "    os.close(os.open(path, flags))\n"  # flags in a variable: counted
                      "    os.close(os.open(path, os.O_RDONLY))\n"  # plainly read-only: not
                      "    return \"a\".replace(\"a\", \"b\")\n")  # str.replace: not
         found = problems(dst)
         self.assertIn("layout:_new_writer: not classified", found)
-        self.assertIn("layout:_new_writer: writes {'open:w': 1, 'path.unlink': 1, 'path.replace': 1, 'os.open': 1}",
-                      "\n".join(found))
+        self.assertIn("layout:_new_writer: writes {'open:w': 2, 'path.unlink': 1, 'path.replace': 2, 'open:a': 1, "
+                      "'path.rename': 1, 'os.open': 1}", "\n".join(found))
 
     def test_control_a_git_write_through_a_wrapper_fails_closed(self):
         dst = self.copy()
@@ -472,11 +535,49 @@ class WriteSiteInventory(unittest.TestCase):
                      "    _run(cmd)\n"
                      "    util.git(path, args)\n"                         # a subcommand not written out: counted
                      "    _git(path, \"rev-parse\", \"HEAD\")\n"            # read-only: not
-                     "    _git(path, \"config\", \"--get\", \"user.name\")\n")  # read-only form: not
+                     "    _git(path, \"config\", \"--get\", \"user.name\")\n"  # read-only form: not
+                     "    _git(path, \"--no-optional-locks\", \"status\", \"--porcelain\")\n"  # read: not
+                     "    _git(path, \"symbolic-ref\", \"--short\", \"HEAD\")\n"  # read: not
+                     "    _git(path, \"archive\", \"--output=a.tar\", \"HEAD\")\n"  # a read subcommand writing a file
+                     "    _git(path, \"diff\", \"--output=d.patch\")\n"
+                     "    _git(path, \"symbolic-ref\", \"--delete\", \"HEAD\")\n"
+                     "    _git(path, \"status\", \"--porcelain\")\n"  # may refresh, and write, the index
+                     "    _run([\"git\", \"-C\", path, \"log\"] + args)\n")  # words added it can't read
         found = "\n".join(problems(dst))
         self.assertIn("workspace:_new_git_writer: writes {'git commit': 1, 'git update-index': 1, 'git tag': 1, "
-                      "'git ?': 1}", found)
+                      "'git ?': 1, 'git archive': 1, 'git diff': 1, 'git symbolic-ref': 1, 'git status': 1, "
+                      "'git log': 1}", found)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RuntimeAuditCheck(unittest.TestCase):
+    """The integration test's runtime checks (audit_check.py, over the log audit_site/sitecustomize.py writes) each
+    fail on the violation they look for (Chat Zero, review round 63)."""
+
+    def test_control_each_check_fails_on_its_violation(self):
+        import json
+        import subprocess
+        import sys
+        tmp = tempfile.mkdtemp(prefix="aios-auditcheck-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        work, source = os.path.join(tmp, "work"), os.path.join(tmp, "work", "source")
+        os.makedirs(os.path.join(source, ".git"))
+        rows = [{"kind": "open", "path": os.path.join(work, "workspace", "f%d" % i), "folder": False, "pid": 1,
+                 "cmd": ["upgrade"]} for i in range(60)]
+        rows += [{"git": ["git", "-C", work, "rev-parse", "HEAD"], "cwd": work, "pid": 1, "cmd": ["upgrade"]}] * 11
+        rows += [{"kind": "open", "path": "/elsewhere/x", "folder": False, "pid": 1, "cmd": ["upgrade"]},
+                 {"kind": "os.remove", "path": os.path.join(work, "workspace", ".git", "index"), "folder": False,
+                  "pid": 1, "cmd": ["upgrade"]},
+                 {"kind": "open", "path": os.path.join(source, "x.md"), "folder": False, "pid": 1, "cmd": ["upgrade"]},
+                 {"git": ["git", "-C", work, "commit", "-m", "x"], "cwd": work, "pid": 1, "cmd": ["upgrade"]}]
+        log = os.path.join(tmp, "audit.jsonl")
+        with open(log, "w") as fh:
+            fh.write("".join(json.dumps(r) + "\n" for r in rows))
+        out = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "audit_check.py"),
+                              log, work, source], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             universal_newlines=True).stdout
+        verdicts = [l.split("  ", 1)[0] for l in out.splitlines() if l.startswith(("PASS", "FAIL"))]
+        self.assertEqual(verdicts, ["PASS", "FAIL", "FAIL", "FAIL", "FAIL"], out)
