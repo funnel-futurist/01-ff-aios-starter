@@ -358,7 +358,9 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   repository (a submodule, or a repository inside this one), whose files this repository's checks
   can't see. No file an install, adoption, upgrade or rollback writes goes under another repository
   anywhere: a folder with its own `.git`, or one your repository records as a submodule,
-  initialized or not. Each refuses before its first write.
+  initialized or not. That covers every path each one touches: the files it writes or removes, a
+  2.x to 3.0 folder move's paths at both ends, the file a seed line goes into, and the installer's
+  own temporary and state folders under `.aios/backups/`. Each refuses before its first write.
 - Undoing a committed adoption on a machine with no note of the last operation (a fresh clone)
   needs no upgrade or rollback since the adoption, as the record's git history shows, on every
   branch a merge brought in (even when the merge set the record back). It also needs the record to
@@ -409,7 +411,8 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
    the release notes. **One exception, declared in the release:** a *seed line*, one line a
    release adds once to a seed file that predates it. From 2.7.2 that is the operator core's
    import in `CLAUDE.md` (`@.aios/operator_core/OPERATOR_CORE.md`). It is added once, never
-   twice, never into a `CLAUDE.md` you deleted, and never again after you remove it; a rollback
+   twice, never into a `CLAUDE.md` you deleted, never through a link or into a submodule, and never
+   again after you remove it; a rollback
    takes it back; `--dry-run` shows it; `verify` reports whether it is still there.
 6. Re-hashes everything and compares it to the new manifest.
 

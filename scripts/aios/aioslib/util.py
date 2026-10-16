@@ -577,6 +577,12 @@ def private_temp(target_root):
     for part in (os.path.join(target_root, ".aios"), tmp_dir):
         if os.path.islink(part) or (os.path.lexists(part) and not os.path.isdir(part)):
             raise Refusal(EXIT_STATE, "%s is a link or a file, not a folder" % part)
+    # Nor another repository (a submodule, initialized or not): the copy would be that repository's file.
+    # Every operation checks this before its first write; this is the last guard (3.1 round 58).
+    links = gitlinks(target_root)
+    for rel in (".aios", ".aios/backups"):
+        if another_repository(target_root, rel, links):
+            raise Refusal(EXIT_STATE, "%s is another repository (a submodule), not the installer's folder" % rel)
     os.makedirs(tmp_dir, exist_ok=True)
     fd, path = tempfile.mkstemp(prefix=".write-", dir=tmp_dir)
     os.close(fd)

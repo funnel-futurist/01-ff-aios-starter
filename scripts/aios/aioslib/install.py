@@ -288,6 +288,9 @@ def load_journal(target):
 # In a folder of its own under the backups folder: like each upgrade's snapshot, the installer's own
 # git-ignored record, set apart from everything a person keeps.
 STATE_PATH = os.path.join(BACKUP_DIR, "state", "head.json")
+# Where every operation writes its temporary copies and its state note: checked with the paths it writes,
+# before the first write (independent review, 3.1 round 58).
+_INSTALLER_PATHS = [BACKUP_DIR.replace(os.sep, "/") + "/x", STATE_PATH.replace(os.sep, "/")]
 
 
 def _state_problems(target):
@@ -923,6 +926,16 @@ def _restore(target, backup_root, record_to_restore, remove_paths, expected=None
     return notes
 
 
+def _plan_paths(the_plan, backup_rel=None):
+    """Every path a folder move touches: each file it moves, at both ends; each it sets aside (where it was,
+    and, given the backup, where it goes); and each folder it empties."""
+    out = [m["from"] for m in the_plan["moves"]] + [m["to"] for m in the_plan["moves"]]
+    out += [q["from"] for q in the_plan["quarantine"]]
+    if backup_rel:
+        out += [layout_mod.quarantine_path(backup_rel, q["from"]) for q in the_plan["quarantine"]]
+    return out + [e[end] + "/x" for e in the_plan["empty_dirs"] for end in ("from", "to")]
+
+
 def _linked_paths(target, rels, links=None):
     """Paths rollback would write whose way there runs through a link or a file (a client folder
     turned into a link after the upgrade would send the restored file outside the workspace), or
@@ -1059,10 +1072,11 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
                or not os.path.lexists(os.path.join(target, p))]
     written += [".github/CODEOWNERS"] if owners_text is not None else []
     written += [os.path.relpath(config_path, target), os.path.relpath(install_record_path(target), target)]
-    linked = _linked_paths(target, written)
+    # And the installer's own folders, where its temporary copies and its state note go (3.1 round 58).
+    linked = _linked_paths(target, written + _INSTALLER_PATHS)
     if linked:
-        raise Refusal(EXIT_STATE, "install would write through a link or a file in a folder's place",
-                      linked[:20])
+        raise Refusal(EXIT_STATE, "install would write through a link, a file in a folder's place, or another "
+                      "repository (a submodule)", linked[:20])
     for path, mode, data in util.read_tree(source_repo,
                                            manifest["created_from"]["git_rev"]):
         entry = files.get(path)
@@ -1285,6 +1299,10 @@ def _seed_line_target(target, rel):
     """
     full = os.path.join(target, rel)
     if os.path.islink(full) or not os.path.isfile(full):
+        return None
+    # Nor inside another repository (a submodule): the line would go into that repository's file
+    # (independent review, 3.1 round 58).
+    if util.inside_another_repository(target, rel):
         return None
     real_root, real = os.path.realpath(target), os.path.realpath(full)
     return full if real.startswith(real_root + os.sep) else None
@@ -1626,7 +1644,11 @@ def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     writes = sorted(p for p, e in files.items() if e["class"] == "managed"
                     or not (os.path.lexists(os.path.join(target, p)) or layout_mod.key(p) in seed_keys))
     record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
-    linked = _linked_paths(target, writes + [record_rel])
+    # The files it removes or rewrites count too: the managed files of the release it replaces, and each seed
+    # file a declared line goes into (independent review, 3.1 round 58).
+    lines_into = sorted({sl["path"] for sl in manifest.get("seed_lines") or []
+                         if isinstance(sl, dict) and isinstance(sl.get("path"), str)})
+    linked = _linked_paths(target, writes + sorted(old_managed) + lines_into + [record_rel] + _INSTALLER_PATHS)
     if linked:
         raise Refusal(EXIT_STATE, "release %s would write under a link, a file in a folder's place, or another "
                       "repository (a submodule); nothing was changed" % manifest["version"],
@@ -1706,6 +1728,14 @@ def _upgrade_locked(target, manifest, source_repo, aios_lookup=None, no_vercel=F
     seed_keys = _seed_keys(record, manifest, source_repo, target)
     seed_lines_kept, seed_lines_add, seed_lines_settled = _seed_line_plan(
         target, record, manifest, _moved_from(the_plan), _handled_seed_lines(target, record, source_repo))
+    if the_plan:
+        # The folder move too, before the first write: every file it moves, from and to, each it sets aside,
+        # and each emptied folder (independent review, 3.1 round 58).
+        linked = _linked_paths(target, _plan_paths(the_plan))
+        if linked:
+            raise Refusal(EXIT_STATE, "the folder move would go through a link, a file in a folder's place, or "
+                          "another repository (a submodule); nothing was changed",
+                          linked[:20] + ["make each a plain folder of this repository, then upgrade again"])
 
     # Folders that already exist on the way to anything this release writes. A rollback prunes
     # only the folders the upgrade made: an empty folder of the client's survives (independent review).
@@ -2263,6 +2293,21 @@ def _rollback_after_reclaim(target, stale_lock, source_repo=None):
                 # made is gone; only its temporaries and folders are left to tidy.
                 anchor, trusted, info = None, {}, {}
             if not journal:
+                # Nothing it removes may be inside another repository: a submodule a pull request made of an
+                # adopted folder holds that repository's files. Checked before the first write, as every
+                # operation does (independent review, 3.1 round 58). A file reached through a link is left
+                # and reported instead, as since round 20: the link is this repository's own file.
+                links = util.gitlinks(target)
+                undo_rels = sorted(trusted) + [os.path.relpath(install_record_path(target), target),
+                                               os.path.relpath(orgconfig.default_config_path(target), target)]
+                inside = sorted({util.inside_another_repository(target, p.replace(os.sep, "/"), links)
+                                 for p in undo_rels} - {None})
+                inside += [p for p in _linked_paths(target, _INSTALLER_PATHS, links) if p not in inside]
+                if inside:
+                    raise Refusal(EXIT_STATE, "undoing the adoption would remove files inside another repository (a "
+                                  "submodule) or use one for its own folder; nothing was changed",
+                                  inside[:20] + ["make each a plain folder of this repository again, or undo the "
+                                                 "adoption with git"])
                 # Journaled before the first removal, so a kill partway through is finished by the
                 # next rollback, not left half-undone (independent review, 3.1).
                 journal = {"op": "adopt-undo", "phase": "undoing", "started_at": util.now_iso(),
@@ -2426,11 +2471,7 @@ def _rollback_locked(target, journal):
         remove = sorted(p for p in (current_paths | journal_adds) - prior_paths
                         if layout_mod.key(p) not in move_keys)
         if the_plan:
-            linked = _linked_paths(target, [m["from"] for m in the_plan["moves"]]
-                                   + [m["to"] for m in the_plan["moves"]]
-                                   + [layout_mod.quarantine_path(journal["backup"], q["from"])
-                                      for q in the_plan["quarantine"]]
-                                   + [e["from"] + "/x" for e in the_plan["empty_dirs"]])
+            linked = _linked_paths(target, _plan_paths(the_plan, journal["backup"]))
             if linked:
                 raise Refusal(EXIT_STATE, "putting the folders back would go through %d link(s)"
                               % len(linked), linked[:20] + ["replace them with real folders, then run rollback again"])
@@ -2512,11 +2553,7 @@ def _rollback_locked(target, journal):
                        expected=current_paths | {e["path"] for e in created})
     if migration:
         moved = util.read_json(os.path.join(target, migration["plan"]))
-        linked = _linked_paths(target, [m["from"] for m in moved["moves"]]
-                               + [m["to"] for m in moved["moves"]]
-                               + [layout_mod.quarantine_path(previous["backup"], q["from"])
-                                  for q in moved["quarantine"]]
-                               + [e["from"] + "/x" for e in moved["empty_dirs"]])
+        linked = _linked_paths(target, _plan_paths(moved, previous["backup"]))
         if linked:
             raise Refusal(EXIT_STATE, "putting the folders back would go through %d link(s) or file(s)"
                           % len(linked), linked[:20] + ["replace them with real folders, then run rollback again"])
@@ -2788,6 +2825,12 @@ def _reserved_before_adoption(target):
             # files with the installer's records (independent review, 3.1 round 7).
             out.append("%s already holds files of this repository's own; the installer needs that folder "
                        "empty" % rel)
+    # Nor another repository there (a submodule, initialized or not): the temporary copies and the state note
+    # would be its files (independent review, 3.1 round 58).
+    for rel in _linked_paths(target, _INSTALLER_PATHS):
+        if not any(o.startswith(rel + " ") for o in out):
+            out.append("%s is another repository (a submodule), a link or a file; the installer needs that "
+                       "folder as this repository's own" % rel)
     return out
 
 
@@ -3011,12 +3054,14 @@ def _adopt_existing_locked(target, manifest, source_repo, config, plan_rel, aios
         # whether it is still what was written.
         record = _sealed(record)
         create(record_rel, _record_bytes(record), "100644", provenance=False)
+        # Inside the undo: a state note that can't be written takes the adoption back, never leaves it half
+        # done (independent review, 3.1 round 58).
+        _write_state(target)
     except Refusal:
         _undo_adoption(target, info, journal.get("pending"))
         if os.path.isfile(journal_path(target)):
             os.remove(journal_path(target))
         raise
-    _write_state(target)
     os.remove(journal_path(target))
     require_verified(target, record, "adopted workspace")
     return record
@@ -3563,6 +3608,17 @@ def adopt(target, manifest, source_repo, config, aios_lookup=None):
     orgconfig.require_valid(config)
     if os.path.isfile(install_record_path(target)):
         raise Refusal(EXIT_STATE, "this workspace already has an install record")
+    # Before the first write, as every operation: no file it pins or writes, and none of the installer's own
+    # folders, may sit under a link, a file in a folder's place, or another repository (a submodule, whose
+    # files this repository can't commit); verify would refuse it only after the record was written
+    # (independent review, 3.1 round 58).
+    config_rel = os.path.relpath(orgconfig.default_config_path(target), target).replace(os.sep, "/")
+    record_rel = os.path.relpath(install_record_path(target), target).replace(os.sep, "/")
+    linked = _linked_paths(target, [e["path"] for e in manifest.get("files") or []]
+                           + [config_rel, record_rel] + _INSTALLER_PATHS)
+    if linked:
+        raise Refusal(EXIT_STATE, "adopt would pin or write files under a link, a file in a folder's place, or "
+                      "another repository (a submodule); nothing was changed", linked[:20])
 
     managed, seeded, mismatches = [], [], []
     for entry in manifest.get("files") or []:
