@@ -285,9 +285,13 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   you deleted it, nor takes it over, whatever the record now lists.
 - Every field of the record is accounted for. `release`, `managed`, `layout`, `seeded`,
   `seed_history`, `seed_lines`, `seed_lines_added` and `adoption` are checked as above. `schema`
-  and `package` must be the installer's own. `created_seeds`, `pre_existing_dirs`,
-  `layout_migration` and `previous` are read only by rolling back an upgrade, which needs the
-  record to equal the copy that upgrade kept on this machine. `record_sha256` (an adoption's seal)
+  and `package` must be the installer's own. `created_seeds`, `pre_existing_dirs` and
+  `layout_migration` are read only by rolling back an upgrade, which needs the record to equal the
+  copy that upgrade kept on this machine. `previous` is read there too, and in two more places:
+  rollback treats an adopted record that has one as an upgrade to roll back (which needs that
+  copy), not as the adoption to undo; and a committed record that has one, after the adoption,
+  makes undoing the adoption on a fresh clone refuse. `upgrade` shows the one it just wrote.
+  `record_sha256` (an adoption's seal)
   is read only while the adopted record isn't committed yet, as your own local state. `rendered`
   is only checked for presence by `verify`. `credentials` is only shown, by `verify`, as
   references. `status`, `adopted`, `installed_at`, `upgraded_at` and `source` are never read.

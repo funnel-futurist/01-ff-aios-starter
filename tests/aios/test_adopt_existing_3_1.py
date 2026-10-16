@@ -3664,8 +3664,10 @@ class ReviewRoundFifty(Layout3):
         path = install_mod.install_record_path(self.target)
         with open(path, "rb") as fh:
             original = fh.read()
+        self.assertNotIn("record_sha256", json.loads(original.decode("utf-8")))  # absent: as installed
+        install_mod.load_record(self.target)
         for field, value in (("schema", "ff-aios-starter/install@9"), ("package", "someone-else"),
-                             ("adopted", "yes"), ("record_sha256", 7)):
+                             ("adopted", "yes"), ("record_sha256", 7), ("record_sha256", None)):
             record = json.loads(original.decode("utf-8"))
             record[field] = value
             util.write_json(path, record)

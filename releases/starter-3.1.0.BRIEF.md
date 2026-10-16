@@ -7,7 +7,7 @@
 ## Decision
 **Approve AIOS Starter 3.1.0 at `@@PIN7@@`.**
 - It adds the one thing FF's own adoption needs (your G81 and G98 rulings): a way to bring the Starter into a repository that already exists, without overwriting anything. It also keeps who may approve founder-gated paths separate from who is a founder.
-- For existing clients it's an ordinary upgrade: nothing moves.
+- For existing clients it's an ordinary upgrade: nothing moves. Review hardened three things every workspace will notice, listed below: the committed install record is no longer trusted, a shallow clone can't upgrade, and an upgrade made before 3.1 is rolled back with its own installer.
 
 ## Principle
 - **Only ever create.** Adopting into an existing repository never overwrites, merges or deletes a file of that repository's.
@@ -24,6 +24,10 @@
 | **Upgrading an adopted repository** | It writes only what the plan adopts, and the plan must still be committed. A new release path must be classified first, or the upgrade refuses. A file the plan stops adopting stays as the repository's own. |
 | **`founder_lane_reviewers`** (new, optional) | It names who may approve founder-gated paths. `instance check` and the pull-request boundary check both honour it, and when it's set it's the whole permission. Unset, nothing changes for clients. |
 | **Safer state files, for every workspace** | The installer's own records are written through unique temporary files, never a fixed name that something else could be. A release may never ship the installer's state paths, compared the way a Mac or Windows disk compares names. |
+| **The committed install record isn't trusted, for every workspace** | Anyone's pull request can edit `.aios/install.json`. So upgrade, rollback and `verify --repo` check what they act on against the release source and git history: the pinned release, its managed files, its folder layout, the seed lines and seeds already handled, and whether the workspace was adopted. An edited record is refused, with nothing changed. |
+| **A shallow clone can't upgrade** | A `git clone --depth 1` can't show that history, so an upgrade, or undoing an adoption, refuses until `git fetch --unshallow`. The workflows the Starter ships don't run the installer, so CI is unaffected. |
+| **Undoing a finished adoption** | It needs the release's source, `aios rollback --repo <your ff-aios-starter clone>`, so only that release's files are removed. On a fresh clone it refuses if an upgrade or rollback came after the adoption: undo that where it ran, or with git. |
+| **Rolling back an upgrade made before 3.1** | Refused, changing nothing: those installers kept no copy of the record they wrote. Roll it back with that release's own installer (`python3 scripts/aios/aios.py rollback --target .`, run in the workspace) or with git. |
 
 **What was proven** (detail in `evidence/dispatch/p22-starter/release-3.1.0/`):
 @@PROOF@@
@@ -38,6 +42,8 @@
 - **Downsides:**
   - The adopt mode needs a disk with hard links, which every Mac, Linux and Windows (NTFS) disk has.
   - A repository's plan must be kept current: each release that ships a new path needs it classified before upgrading.
+  - A shallow clone must fetch its full history before an upgrade.
+  - An upgrade an older installer made is rolled back with that installer, not this one.
 - **Recovery:** `aios rollback` undoes an adoption or an upgrade. Setting 3.1.0 to `withdrawn` makes the installer refuse it.
 - **If not approved:** FF's adoption waits; clients stay on 3.0.0.
 

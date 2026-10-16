@@ -109,7 +109,8 @@ def _record_shape_problems(record):
         problems.append("'package' isn't %s" % release_mod.PACKAGE)
     if "adopted" in record and not isinstance(record["adopted"], bool):
         problems.append("'adopted' isn't true or false")
-    if not text(record.get(RECORD_SEAL)):
+    # Absent, or text: an explicit null is neither, and no installer writes one (3.1 round 51).
+    if RECORD_SEAL in record and not isinstance(record[RECORD_SEAL], str):
         problems.append("'%s' isn't text" % RECORD_SEAL)
     rel = record.get("release")
     if not isinstance(rel, dict):
