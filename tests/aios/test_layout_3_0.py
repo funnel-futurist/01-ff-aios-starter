@@ -102,10 +102,11 @@ def diff(a, b):
 
 def bump_to_v3(source, spec=None, roles_path="00_AIOS/company/offer_economics/**", extra=None):
     """The fixture's 3.0: the starter's own seeds at their 3.0 paths, a new seed or two, the
-    folder map in the spec, and the founder lane at its new path."""
+    folder map in the spec, and the founder lane at its new path, with the ownership list in it, as the
+    Starter's role policy has it from 3.1 (owner decision C3)."""
     run_git(source, "rm", "-q", "-r", "--ignore-unmatch", "01_Foundations", "06_Communication", "07_Setup")
     roles = json.loads(json.dumps(harness.ROLES))
-    roles["roles"]["operator"]["paths_denied"] = [roles_path, ".github/**"]
+    roles["roles"]["operator"]["paths_denied"] = [roles_path, ".github/**", ".aios/install.json", ".aios/adoption.json"]
     files = {
         "00_AIOS/company/market_analysis/_workspace.md": "# market\n",
         "00_AIOS/decisions_log.md": "# decisions\n",
@@ -749,7 +750,8 @@ class FounderReview(Layout3):
     enforces code-owner review."""
 
     OLD = "# aios-codeowners-for: acme/acme-aios\n/01_Foundations/offer_economics/ @acme-founder\n/.github/ @acme-founder\n"
-    NEW = "# aios-codeowners-for: acme/acme-aios\n/00_AIOS/company/offer_economics/ @acme-founder\n/.github/ @acme-founder\n"
+    NEW = ("# aios-codeowners-for: acme/acme-aios\n/00_AIOS/company/offer_economics/ @acme-founder\n/.github/ @acme-founder\n"
+           "/.aios/install.json @acme-founder\n/.aios/adoption.json @acme-founder\n")
 
     def setUp(self):
         super(FounderReview, self).setUp()

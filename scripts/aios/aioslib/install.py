@@ -1225,6 +1225,25 @@ def founder_review_notice(target, retired_roots):
             % (rel or "CODEOWNERS", ("still guards %s" % ", ".join(stale)) if stale else "is missing")]
 
 
+def ownership_review_notice(target, record):
+    """A line telling the client the ownership list isn't held to founder review here yet (3.1, owner decision
+    C3): the role policy leaves it open, or CODEOWNERS has no founder rule for it. [] when both hold it, or
+    when there's no policy or people map to judge by. Reads only."""
+    try:
+        policy, config = roles.load_policy(target), orgconfig.load(target)
+    except (Refusal, ValueError):
+        return []
+    paths = ownership_paths(record)
+    open_ = [d for st, d in governance.founder_review_local(target, policy, config, (), paths)
+             if st == "FAIL" and any(p in d for p in paths)]
+    if not open_:
+        return []
+    return ["founder review: the ownership list (%s) says which files are the installer's own, and it isn't held "
+            "to founder review here yet. Add each to the founder lane and give it a CODEOWNERS rule (card "
+            "docs/human_steps/restore_founder_review.md, \"After upgrading to 3.1\"); `aios instance check` fails "
+            "until it's done" % ", ".join(paths)]
+
+
 def _founder_review_after_move(target, record, manifest, installed="2"):
     new_layout = manifest.get("layout") or {}
     if not new_layout.get("moves") or layout_mod.version_of(new_layout) == installed:
@@ -2671,6 +2690,18 @@ ADOPTION_CLASSES = ("adopt", "instance_owned", "exclude")
 # Paths no real plan names, in every shape: top level, nested, dotted, with and without an extension.
 CATCH_ALL_PROBES = ("aios-probe-7f3a", "aios-probe-7f3a.md", ".aios-probe-7f3a", "aios-probe-7f3a/x",
                     "aios-probe-7f3a/x/y.z", ".aios-probe-7f3a/.x/y")
+
+
+def ownership_paths(record):
+    """The files that say which files are the installer's own: the install record, and after
+    `adopt --existing` the plan it names. `instance check` and `start` require them in the founder
+    lane (governance.ownership_lane_check; 3.1, owner decision C3)."""
+    out = [INSTALL_PATH.replace(os.sep, "/")]
+    adoption = record.get("adoption") if isinstance(record, dict) else None
+    if isinstance(adoption, dict):
+        plan = adoption.get("plan")
+        out.append((plan if isinstance(plan, str) and plan else ADOPTION_PLAN).replace(os.sep, "/"))
+    return out
 
 
 def load_adoption_plan(target, rel=None):

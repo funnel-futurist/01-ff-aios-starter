@@ -162,16 +162,37 @@ def _local_cache_path_ok(root, rel):
 _SHORT_NAME = re.compile(r"^[^.~]{1,6}~[0-9]{1,6}(\.[^.]{0,3})?$")
 
 
+def path_key(path):
+    """A path as a Mac or Windows disk resolves the name: case- and Unicode-folded, with either separator, and
+    each part without a stream suffix (`name:stream` names the file itself) or the trailing periods and spaces
+    Windows drops."""
+    import unicodedata
+
+    key = unicodedata.normalize("NFC", (path or "").replace("\\", "/")).casefold().lstrip("/")
+    return "/".join(p.split(":", 1)[0].rstrip(". ") for p in key.split("/"))
+
+
+def lane_match(patterns, path):
+    """match_any for a founder-lane list (a role's paths_denied), with both sides compared as a Mac or Windows
+    disk resolves the name (path_key): `.AIOS/Install.json` or `.aios/install.json.` is the lane's
+    `.aios/install.json` there. A part that is a short (8.3) name could stand for any long name, so a path with
+    one matches whenever the list holds anything (3.1, owner decision C3)."""
+    patterns = [p for p in patterns or [] if p]
+    if not patterns:
+        return False
+    key = path_key(path)
+    if any(_SHORT_NAME.match(part) for part in key.split("/")):
+        return True
+    return any(match_pattern(path_key(p), key) for p in patterns)
+
+
 def is_reserved(path):
     """Whether `path` is, or would be on a Mac or Windows disk, one of the installer's own state paths:
     compared case- and Unicode-folded, with either separator (independent review, 3.1 round 3). As
     Windows resolves a name, a stream suffix (`lock:x`) names the file itself and trailing periods and
     spaces are dropped; and a short name (`AIOS~1`) could be any long name, so a release path with
     one under `.aios` is refused too (independent review, 3.1 round 11)."""
-    import unicodedata
-
-    key = unicodedata.normalize("NFC", (path or "").replace("\\", "/")).casefold().lstrip("/")
-    parts = [p.split(":", 1)[0].rstrip(". ") for p in key.split("/")]
+    parts = path_key(path).split("/")
     if len(parts) > 1 and (parts[0] == ".aios" or _SHORT_NAME.match(parts[0])) and any(
             _SHORT_NAME.match(p) for p in parts):
         return True

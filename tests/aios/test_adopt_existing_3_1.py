@@ -4526,7 +4526,7 @@ class SubmoduleSweep(Existing):
 
     READ_ONLY = {"install_record_path", "load_record", "journal_path", "load_journal", "verify", "require_verified",
                  "state_fingerprint", "founder_review_notice", "drift_recipe", "load_adoption_plan",
-                 "classify_adoption", "adopted_view"}
+                 "classify_adoption", "adopted_view", "ownership_paths", "ownership_review_notice"}
     SWEPT = {"install", "adopt", "adopt_existing", "upgrade", "upgrade_plan", "rollback", "clear_dead_lock"}
 
     def test_every_public_operation_is_swept_or_only_reads(self):
@@ -4717,3 +4717,177 @@ class ReviewRoundSixtyThree(Existing):
             list(util.read_tree(self.source, "--output=" + outside))
         self.assertFalse(util.rev_exists(self.source, "--output=" + outside))
         self.assertFalse(os.path.lexists(outside))
+
+
+OWNERSHIP = [".aios/install.json", ".aios/adoption.json"]
+
+
+class OwnerDecisionC3(Existing):
+    """Owner decision C3 (2026-10-17, #81 6234002893, with A): the ownership list, the install record and an
+    adoption's plan, is in the founder lane. An upgrade or the undo trusts that list to say which files are the
+    installer's own, so a pull request that changes it needs founder-lane approval, by the same rule as the
+    Starter's other sensitive files; and `instance check` fails while a workspace's own policy leaves it open."""
+
+    def shipped_policy(self):
+        return util.read_json(os.path.join(harness.REPO_ROOT, ".aios/roles.json"))
+
+    def test_the_shipped_policy_and_code_owner_template_hold_the_ownership_list(self):
+        policy = self.shipped_policy()
+        self.assertEqual([st for st, _d in governance.ownership_lane_check(policy, OWNERSHIP)], ["PASS", "PASS"])
+        with open(os.path.join(harness.REPO_ROOT, "templates/governance/CODEOWNERS.template")) as fh:
+            rendered = governance.render(fh.read(), "acme/acme-aios", {
+                "REPO_OWNER": ["@acme-founder"], "PRIMARY_REVIEWER": ["@acme-partner"],
+                "TECHNICAL_REVIEWER": ["@acme-founder"]})
+        results = dict((d.split(" (", 1)[0], st) for st, d in governance.founder_rules_check(
+            governance.parse(rendered), policy, {"@acme-founder", "@acme-partner"}, "CODEOWNERS"))
+        for path in OWNERSHIP:
+            self.assertEqual(results.get("founder lane " + path), "PASS", results)
+
+    def pr_repo(self):
+        repo = os.path.join(self.tmp, "pr-repo")
+        os.makedirs(repo)
+        run_git(repo, "init", "-q", "-b", "main")
+        run_git(repo, "config", "user.email", "t@example.com")
+        run_git(repo, "config", "user.name", "t")
+        write(repo, ".aios/roles.json", json.dumps(self.shipped_policy(), indent=2))
+        write(repo, ".aios/config.json", json.dumps(harness.config(), indent=2))
+        write(repo, ".aios/install.json", json.dumps({"managed": [{"path": "START_HERE.md"}]}, indent=2))
+        write(repo, ".aios/adoption.json", json.dumps(PLAN, indent=2))
+        run_git(repo, "add", "-A")
+        run_git(repo, "commit", "-qm", "base")
+        return repo, util.git(repo, ["rev-parse", "HEAD"])
+
+    def test_a_pull_request_that_edits_the_ownership_list_fails_until_a_founder_approves(self):
+        from aioslib import boundary
+        repo, base = self.pr_repo()
+        for path, claim in ((".aios/install.json", {"managed": [{"path": "START_HERE.md"}, {"path": "CLAUDE.md"}]}),
+                            (".aios/adoption.json", dict(PLAN, adopt=PLAN["adopt"] + ["CLAUDE.md"]))):
+            run_git(repo, "checkout", "-q", "-B", "pr-" + path.split("/")[-1], base)
+            write(repo, path, json.dumps(claim, indent=2))  # claims one of the repository's own files
+            run_git(repo, "commit", "-qam", "claim CLAUDE.md for the installer")
+            head = util.git(repo, ["rev-parse", "HEAD"])
+            for author in ("acme-va", "ff-agents-bot"):  # an operator, and an author the people map doesn't name
+                with self.subTest(path=path, author=author):
+                    code, lines = boundary.check_pr(repo, base, head, author, [])
+                    self.assertEqual(code, util.EXIT_ROLE, lines)
+                    self.assertIn("  - " + path, lines)
+                    code, lines = boundary.check_pr(repo, base, head, author, ["acme-founder"])
+                    self.assertEqual(code, util.EXIT_OK, lines)
+
+    def test_claude_will_not_edit_the_ownership_list_for_an_operator(self):
+        from aioslib import boundary
+        repo, _base = self.pr_repo()
+        for path in OWNERSHIP:
+            allowed, reason = boundary.check_edit(repo, "Write", {"file_path": os.path.join(repo, path)},
+                                                  identify=lambda _r: "acme-va")
+            self.assertFalse(allowed, path)
+            self.assertIn("founder lane", reason)
+            allowed, _reason = boundary.check_edit(repo, "Write", {"file_path": os.path.join(repo, path)},
+                                                   identify=lambda _r: "acme-founder")
+            self.assertTrue(allowed, path)
+
+    def instance_check(self):
+        return self.cli("instance", "check", "--offline", "--target", self.target, "--repo-slug", "acme/acme-aios")
+
+    def test_instance_check_fails_while_the_instances_own_policy_leaves_the_list_open(self):
+        write(self.target, ".github/CODEOWNERS", "# aios-codeowners-for: acme/acme-aios\n"
+                                                 "/.github/   @acme-founder\n/CLAUDE.md  @acme-founder\n")
+        self.commit("our CODEOWNERS")
+        self.adopt()
+        code, out, err = self.instance_check()
+        for path in OWNERSHIP:
+            self.assertIn("FAIL  founder   ownership list %s: the role policy lets operator change it" % path,
+                          out, out + err)
+        self.assertIn("FOUNDER REVIEW IS NOT IN FORCE", out)
+        self.assertNotEqual(code, 0)
+        # The instance puts the list in its own lane, with a code owner for each: both lines pass.
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["roles"]["operator"]["paths_denied"] += OWNERSHIP
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        with open(os.path.join(self.target, ".github/CODEOWNERS"), "a") as fh:
+            fh.write("/.aios/install.json  @acme-founder\n/.aios/adoption.json  @acme-founder\n")
+        code, out, err = self.instance_check()
+        for path in OWNERSHIP:
+            self.assertIn("PASS  founder   ownership list %s" % path, out, out + err)
+            self.assertIn("PASS  founder   founder lane %s (.github/CODEOWNERS)" % path, out, out + err)
+        self.assertNotIn("ownership list .aios/install.json: the role policy lets", out)
+
+    def test_an_adoption_with_its_own_plan_path_needs_that_path_in_the_lane(self):
+        write(self.target, "ops/our_plan.json", json.dumps(PLAN, indent=2))
+        os.remove(os.path.join(self.target, ".aios/adoption.json"))
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["roles"]["operator"]["paths_denied"] += OWNERSHIP
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        self.commit("our plan lives elsewhere")
+        record = self.adopt(plan_rel="ops/our_plan.json")
+        self.assertEqual(install_mod.ownership_paths(record), [".aios/install.json", "ops/our_plan.json"])
+        failed = [d for st, d in governance.founder_review_local(
+            self.target, policy, harness.config(), (), install_mod.ownership_paths(record)) if st == "FAIL"]
+        self.assertTrue(any(d.startswith("ownership list ops/our_plan.json:") for d in failed), failed)
+        self.assertFalse(any(d.startswith("ownership list .aios/install.json:") for d in failed), failed)
+
+    def test_a_plain_install_lists_only_its_record(self):
+        self.assertEqual(install_mod.ownership_paths({"managed": []}), [".aios/install.json"])
+
+    def commit_in_git_only(self, repo, path, text):
+        """A commit adding `path` to git without touching the disk: on a Mac a case variant of a file that's there
+        would otherwise just rewrite that file."""
+        blob = subprocess.run(["git", "-C", repo, "hash-object", "-w", "--stdin"], input=text.encode(),
+                              stdout=subprocess.PIPE, check=True).stdout.decode().strip()
+        run_git(repo, "update-index", "--add", "--cacheinfo", "100644,%s,%s" % (blob, path))
+        run_git(repo, "commit", "-qm", "add %s" % path)
+        return util.git(repo, ["rev-parse", "HEAD"])
+
+    def test_a_case_or_windows_spelling_of_a_lane_path_is_that_path(self):
+        from aioslib import boundary
+        repo, base = self.pr_repo()
+        claim = json.dumps({"managed": [{"path": "CLAUDE.md"}]})
+        for path in (".AIOS/Install.json", ".aios/install.json.", ".aios/install.json :x", ".aios/INSTAL~1.JSO",
+                     "ſcripts/aios/aios.py", ".Claude/settings.json"):
+            with self.subTest(path=path):
+                run_git(repo, "checkout", "-q", "-f", "-B", "variant", base)
+                head = self.commit_in_git_only(repo, path, claim)
+                code, lines = boundary.check_pr(repo, base, head, "acme-va", [])
+                self.assertEqual(code, util.EXIT_ROLE, lines)
+                self.assertIn("  - " + path, lines)
+                allowed, _reason = boundary.check_edit(repo, "Write", {"file_path": os.path.join(repo, path)},
+                                                       identify=lambda _r: "acme-va")
+                self.assertFalse(allowed, path)
+
+    def test_the_folded_match_stays_exact_about_other_names(self):
+        lane = OWNERSHIP + ["scripts/aios/**"]
+        for path in (".aios/install.json.bak", ".aios/installs.json", ".aios/x/install.json", "docs/aios/x.md",
+                     "scripts/aiosx/y.py"):
+            self.assertFalse(util.lane_match(lane, path), path)
+        for path in (".AIOS/INSTALL.JSON", ".aios\\install.json", "/.aios/install.json", "Scripts/AIOS/x.py",
+                     "scripts/aios.", "scripts/PROGRA~1/x"):
+            self.assertTrue(util.lane_match(lane, path), path)
+        self.assertFalse(util.lane_match([], ".aios/INSTAL~1.JSO"))
+
+    def cli_upgrade(self, version):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\n%s.\n" % version}, version)
+        rel = self.write_json("release-%s.json" % version, harness.approve(
+            harness.build_manifest(self.source, rev, version)))
+        self.be("acme-founder")
+        return self.cli("upgrade", "--release", rel, "--target", self.target, "--repo", self.source)
+
+    def test_the_upgrade_says_when_the_ownership_list_still_needs_founder_review(self):
+        write(self.target, ".github/CODEOWNERS", "# aios-codeowners-for: acme/acme-aios\n/.github/   @acme-founder\n")
+        self.commit("our CODEOWNERS")
+        self.adopt()
+        self.commit("adopted")
+        code, out, err = self.cli_upgrade("3.1.0")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("NEXT:     founder review: the ownership list (.aios/install.json, .aios/adoption.json)", out)
+        # Once the instance holds the list (its policy and a CODEOWNERS rule for each), the upgrade says nothing.
+        install_mod.rollback(self.target, self.source)
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["roles"]["operator"]["paths_denied"] += OWNERSHIP
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        with open(os.path.join(self.target, ".github/CODEOWNERS"), "a") as fh:
+            fh.write("/.aios/install.json  @acme-founder\n/.aios/adoption.json  @acme-founder\n")
+        self.commit("the ownership list in our lane")
+        self.assertEqual(install_mod.ownership_review_notice(self.target, install_mod.load_record(self.target)), [])
+        code, out, err = self.cli_upgrade("3.1.1")
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("ownership list", out)

@@ -6,9 +6,11 @@ usage: rehearse_310_aios.py <empty scratch dir> --aios <local ai-os clone> [--br
 Nothing touches the real ai-os. Steps:
   1. a shared clone of ai-os at origin/main (detached), and a fresh GitHub clone of the Starter branch;
   2. a draft record for the candidate, with a REHEARSAL-ONLY approval copy;
-  3. in the ai-os copy only: FF's own role policy (G81 decision 2 draft: the founder lane and its
-     reviewer accounts read from the copy's own CODEOWNERS, as founder_lane_reviewers per G98) and
-     the adoption plan, then a commit;
+  3. in the ai-os copy only: the two CODEOWNERS rules FF's adoption PR adds for the ownership list
+     (the install record and the plan; owner decision C3), with the owners the copy's own /.github/
+     rule names; FF's own role policy (G81 decision 2 draft: the founder lane and its reviewer
+     accounts read from the copy's CODEOWNERS, as founder_lane_reviewers per G98) and the adoption
+     plan, then a commit;
   4. the real `aios adopt --existing`, run by a stub founder identity;
   5. checks: exactly the 18 adopted files plus the config and record are new; no tracked file
      changed (ai-os's own 01_Foundations included); verify --repo; instance check; start;
@@ -113,8 +115,19 @@ def main():
     print("\n### S3 FF's own role policy and adoption plan, committed in the copy")
     sys.path.insert(0, os.path.join(st, "scripts/aios"))
     from aioslib import governance  # noqa: E402
-    with open(os.path.join(ws, ".github/CODEOWNERS")) as fh:
+    # C3: the ownership list joins the lane the way FF's adoption PR adds it, with the owners ai-os's own
+    # /.github/ rule already names (read here, never written into this public file).
+    codeowners = os.path.join(ws, ".github/CODEOWNERS")
+    with open(codeowners) as fh:
+        text = fh.read()
+    gate = [o for _l, pattern, o in governance.parse(text) if pattern.rstrip("/") == "/.github"]
+    check("the copy's CODEOWNERS has a /.github/ rule to take the owners from", bool(gate and gate[-1]))
+    with open(codeowners, "a") as fh:
+        fh.write("".join("%s %s\n" % (p, " ".join(gate[-1])) for p in ("/.aios/install.json", "/.aios/adoption.json")))
+    with open(codeowners) as fh:
         LANE, REVIEWERS = lane_from_codeowners(fh.read(), governance.parse)
+    check("FF's founder lane holds the ownership list (C3)",
+          ".aios/install.json" in LANE and ".aios/adoption.json" in LANE)
     print("founder lane: %d path(s) from the copy's CODEOWNERS; %d reviewer account(s) declared"
           % (len(LANE), len(REVIEWERS)))
     policy = json.loads(git(st, "show", "HEAD:.aios/roles.json"))
@@ -134,8 +147,8 @@ def main():
     plan = {"schema": "ff-aios-starter/adoption@1", "adopt": ADOPT, "instance_owned": owned, "exclude": exclude}
     json.dump(plan, open(os.path.join(ws, ".aios/adoption.json"), "w"), indent=2)
     G = ["git", "-C", ws, "-c", "user.name=rehearsal", "-c", "user.email=rehearsal@example.invalid"]
-    sh(G + ["add", ".aios/roles.json", ".aios/adoption.json"])
-    sh(G + ["commit", "-qm", "FF's role policy and adoption plan (rehearsal copy)"])
+    sh(G + ["add", ".aios/roles.json", ".aios/adoption.json", ".github/CODEOWNERS"])
+    sh(G + ["commit", "-qm", "FF's role policy, adoption plan and ownership-list code owners (rehearsal copy)"])
     check("plan: %d adopt, %d instance-owned (FF's roles.json among them), %d excluded, %d in all"
           % (len(adopt_hits), len(owned), len(exclude), len(paths)),
           len(adopt_hits) == 18 and ".aios/roles.json" in owned and len(adopt_hits) + len(owned) + len(exclude) == len(paths))
@@ -171,9 +184,12 @@ def main():
     check("verify --repo: %s" % next((l.strip() for l in out.splitlines() if l.startswith("verdict")), "?"), code == 0,
           "" if code == 0 else " | ".join(l.strip() for l in out.splitlines() if l.strip().startswith("-"))[:600])
     code, out = sh(aios + ["instance", "check", "--offline", "--repo-slug", "funnel-futurist/ai-os"], cwd=ws, env=env)
-    lane = [l for l in out.splitlines() if "founder lane" in l]
+    lane = [l for l in out.splitlines() if any(" founder lane %s (" % g in l for g in LANE)]
     check("instance check: all %d founder-lane paths PASS with the declared reviewers" % len(LANE),
           len(lane) == len(LANE) and all(l.strip().startswith("PASS") for l in lane))
+    owns = [l.strip() for l in out.splitlines() if " ownership list " in l]
+    check("instance check: the ownership list (record and plan) is in the lane, PASS (C3)",
+          len(owns) == 2 and all(l.startswith("PASS") for l in owns), " | ".join(owns)[:400])
     check("instance check says reviewers are not founder status",
           any("not founder status" in l for l in out.splitlines()))
     check("instance check fails closed offline (enforcement unverified), exit %d" % code,

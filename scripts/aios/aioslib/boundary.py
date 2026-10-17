@@ -52,11 +52,12 @@ def denied_for(policy, role):
 
 def violations(policy, role, paths):
     denied = denied_for(policy, role)
-    return sorted({p for p in paths if util.match_any(denied, p)})
+    # As the disk resolves each name, so a case or Windows spelling of a lane path is that path (C3).
+    return sorted({p for p in paths if util.lane_match(denied, p)})
 
 
 def _any_role_denies(policy, path):
-    return any(util.match_any(spec.get("paths_denied") or [], path)
+    return any(util.lane_match(spec.get("paths_denied") or [], path)
                for spec in (policy.get("roles") or {}).values())
 
 
@@ -197,9 +198,10 @@ def _show_json(repo, rev, path):
 
 
 def changed_paths(repo, base, head):
-    """Every path the PR adds, edits, deletes or renames (both sides of a rename)."""
-    out = util.git(repo, ["diff", "--name-only", "--no-renames", "%s...%s" % (base, head)])
-    return [p for p in out.splitlines() if p]
+    """Every path the PR adds, edits, deletes or renames (both sides of a rename), as git stores it: NUL
+    separated, so a name git would print quoted (a non-ASCII one) reaches the lane check unchanged (C3)."""
+    out = util.git(repo, ["diff", "--name-only", "-z", "--no-renames", "%s...%s" % (base, head)], binary=True)
+    return [p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p]
 
 
 def check_pr(repo, base, head, author, approvers):

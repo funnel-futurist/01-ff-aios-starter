@@ -74,6 +74,10 @@ This is the one time an upgrade changes where your files are. It still never cha
 
 **Going back:** `rollback` reverses every move, puts the set-aside files back, removes the 3.0 starter files you haven't touched, and takes back the `CLAUDE.md` line. Right after an upgrade, the workspace comes back exactly as it was. A file you edited after upgrading goes back to its old path with your edit; one you deleted stays deleted. If something of yours now sits at an old path, rollback refuses before changing anything.
 
+## Upgrading to 3.1 (two CODEOWNERS rules)
+
+From 3.0.0 it's an ordinary upgrade: nothing moves. One step afterwards. The upgrade adds the install record (`.aios/install.json`) and the adoption plan (`.aios/adoption.json`) to the founder lane in `.aios/roles.json`, because they say which files are the installer's own. `.github/CODEOWNERS` is yours, so the upgrade doesn't write it. Add a rule for each, with the same handles as your `/.aios/roles.json` line, and merge it with a founder's approval. The upgrade's output ends with a `NEXT:` line saying so while it isn't done. Until you do, `aios instance check` fails and `start` shows `founder review: NOT RESTORED`. Card: [Restore founder review](human_steps/restore_founder_review.md), section "After upgrading to 3.1".
+
 ## Getting an exact release
 
 Every release is a record, `releases/starter-X.Y.Z.json`, plus a tag, `starter-X.Y.Z`. The
@@ -265,6 +269,13 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
   (its holder was killed while writing it) is cleared like any dead one.
 
 **What adoption and its rollback trust:**
+- **Who may change the ownership list (3.1).** The install record and the plan say which files are the
+  installer's own, and an upgrade or the undo acts on them. So both are in the founder lane: a pull
+  request from anyone who isn't a founder needs a founder's approval (or a declared founder-lane
+  reviewer's) to change either, and Claude won't edit them for an operator. An instance with its own
+  role policy puts both in that policy's `paths_denied` for every role that isn't a founder, and gives
+  each a CODEOWNERS rule (a plan kept somewhere else than `.aios/adoption.json` too, at its own path).
+  Until it does, `instance check` fails and `start` shows `founder review: NOT RESTORED`.
 - Rollback trusts the release source, and what your repository has committed: the install record
   and plan exactly as committed with the adoption.
 - To decide what to remove, it never trusts a file that anyone's pull request could change after
@@ -475,8 +486,8 @@ Identity comes from your authenticated GitHub CLI. Your role comes from the peop
 founder-only, and the tool refuses anyone else.
 
 Some paths belong to the founder lane: the offer economics folder, `.github/`, the people map and
-role policy, Claude's safety settings and hooks, and the install tool itself (the full list is
-`paths_denied` in `.aios/roles.json`). They are held in two places:
+role policy, the install record and an adoption's plan, Claude's safety settings and hooks, and the
+install tool itself (the full list is `paths_denied` in `.aios/roles.json`). They are held in two places:
 
 1. **In the session.** Claude will not edit them for an operator, or for anyone it cannot
    identify. It says why and offers to hand the change to a founder.
@@ -484,6 +495,11 @@ role policy, Claude's safety settings and hooks, and the install tool itself (th
    the author is a founder or a founder has approved that exact commit (when your role policy names
    founder-lane reviewers, one of them instead; never the author). It reads the rules from
    the base branch, so a pull request cannot loosen its own check.
+
+Both compare each path the way a Mac or Windows disk resolves the name (3.1): a different
+capitalization, a Windows spelling (a trailing period or space, a stream suffix like `:x`) or another
+Unicode form of a founder-lane path counts as that path. A name that could be a Windows short name
+(like `INSTAL~1.JSO`) counts as founder-lane wherever it is, because it could stand for any long name.
 
 What neither stops, honestly: somebody editing files by hand in their own terminal and pushing
 straight to `main`. Only GitHub can stop that, with branch protection that requires pull

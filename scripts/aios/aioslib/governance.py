@@ -437,21 +437,48 @@ def founders_of(config):
                    if p.get("role") in FOUNDER_ROLES and p.get("github")})
 
 
-def founder_review_local(root, policy, config, retired_folders=()):
-    """[(status, detail)] from the files alone: does CODEOWNERS send every path in the founder
-    lane to a founder? Also flags rules that still guard a folder the 3.0 move retired."""
+def ownership_lane_check(policy, paths):
+    """[(status, detail)] for the files that say which files are the installer's own (the install
+    record, and an adoption's plan). An upgrade or the undo trusts that list, so a pull request that
+    changes it needs a founder's approval, by the same founder-lane rule as every other sensitive
+    path: each one is denied to every role that isn't a founder, and to the role an unidentified
+    author is held to. A policy that leaves one open fails (3.1, owner decision C3)."""
+    from . import boundary  # boundary imports this module
+
+    defined = policy.get("roles") or {}
+    held = sorted({r for r in defined if r not in FOUNDER_ROLES} | {boundary.UNIDENTIFIED_ROLE})
     out = []
+    for path in paths:
+        open_to = [r for r in held if not util.lane_match(
+            (defined.get(r) or {}).get("paths_denied") or [], path)]
+        if open_to:
+            out.append(("FAIL", "ownership list %s: the role policy lets %s change it without founder-lane "
+                                "approval, so a pull request could change which files the installer treats "
+                                "as its own; add it to paths_denied for %s in .aios/roles.json, and give it "
+                                "a CODEOWNERS rule" % (path, ", ".join(open_to), "them" if len(open_to) > 1
+                                                       else "that role")))
+        else:
+            out.append(("PASS", "ownership list %s: in the founder lane, so a pull request from anyone who "
+                                "isn't a founder needs founder-lane approval to change it" % path))
+    return out
+
+
+def founder_review_local(root, policy, config, retired_folders=(), ownership=()):
+    """[(status, detail)] from the files alone: does CODEOWNERS send every path in the founder
+    lane to a founder? Also flags rules that still guard a folder the 3.0 move retired, and, given
+    the workspace's ownership list (see ownership_lane_check), any of it left outside the lane."""
+    out = list(ownership_lane_check(policy, ownership))
     rel, path = find_file(root)
     if not path:
-        return [("FAIL", "no CODEOWNERS file, so GitHub asks no founder about the founder lane")]
+        return out + [("FAIL", "no CODEOWNERS file, so GitHub asks no founder about the founder lane")]
     with open(path, encoding="utf-8", errors="replace") as fh:
         rules = parse(fh.read())
     founders, declared = lane_reviewers(policy, config)
     problems = lane_reviewer_problems(policy, config)
     if problems:
-        return [("FAIL", p) for p in problems]
+        return out + [("FAIL", p) for p in problems]
     if not founders:
-        return [("FAIL", "no founder in this workspace's people map (.aios/config.json), so no rule "
+        return out + [("FAIL", "no founder in this workspace's people map (.aios/config.json), so no rule "
                          "can send the founder lane to one")]
     if declared:
         out.append(("INFO", "founder-lane review is the role policy's founder_lane_reviewers (%s): "

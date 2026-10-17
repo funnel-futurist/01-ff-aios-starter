@@ -355,6 +355,8 @@ def cmd_upgrade(args):
                                                       .get("retired_roots") or []):
             _say("  NEXT:     %s" % line)
         _say("  next:     commit the change (git add -A, then git commit): git shows it as renames")
+    for line in install_mod.ownership_review_notice(target, record):
+        _say("  NEXT:     %s" % line)
     _say("  rollback: available (%s)" % record["previous"]["backup"])
     return EXIT_OK
 
@@ -433,7 +435,7 @@ def cmd_start(args):
         # Every workspace, as `aios instance check` does: the record's layout field is the workspace's
         # to edit, and a 3.0 copy pinned with `adopt` has none (independent review, 3.1 round 50).
         fails = [d for st, d in governance.founder_review_local(
-            target, policy, config, layout_mod.OLD_FOLDERS) if st == "FAIL"]
+            target, policy, config, layout_mod.OLD_FOLDERS, install_mod.ownership_paths(record)) if st == "FAIL"]
         _say("founder review: %s" % ("CODEOWNERS covers the founder lane (run `aios instance check` "
                                      "to confirm GitHub enforces it)" if not fails else
                                      "NOT RESTORED at the founder-lane paths - `aios instance check` "
@@ -485,8 +487,13 @@ def cmd_instance_check(args):
     for problem in governance.check(target, slug, config):
         results.append(("B4", "FAIL", problem))  # placeholders, binding, owner syntax
     if policy is not None and config is not None:
+        # The ownership list is the record's (and an adoption's plan): none without a record (C3).
+        try:
+            ownership = install_mod.ownership_paths(install_mod.load_record(target))
+        except Refusal:
+            ownership = []
         for status, detail in governance.founder_review_local(target, policy, config,
-                                                              layout_mod.OLD_FOLDERS):
+                                                              layout_mod.OLD_FOLDERS, ownership):
             results.append(("founder", status, detail))
         if args.offline:
             results.append(("founder", "FAIL", "GitHub enforcement not checked (--offline), so founder "
