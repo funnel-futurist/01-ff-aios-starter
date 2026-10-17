@@ -33,6 +33,8 @@ Until the line is fixed, `start` shows `founder review: NOT RESTORED`. Until it'
 /.aios/install.json   @founder-handle
 /.aios/adoption.json  @founder-handle
 ```
+Adopted a repository with its plan somewhere else? Use that path in the second line instead: it's `adoption.plan` in `.aios/install.json` (for example `/ops/our_plan.json`). Add the same path to your role policy's `paths_denied` too. `instance check` names the exact path it needs.
+
 Then follow steps 2 to 5 as written. Never changed CODEOWNERS since install? Rendering the file from the 3.1 template (step 1) includes both lines.
 
 ## It worked when

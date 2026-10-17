@@ -39,7 +39,7 @@
 - **Undoing an adoption:** only the record and plan as committed with the adoption (added once), the release source, and git history since.
 - **Recovering an interrupted operation:** its local journal, and a record that journal names.
 - **Install and adopt:** they write the record, and read it only to refuse when one is already there.
-- **`aios start`:** the release line and any drift it shows. The founder-review check doesn't use it.
+- **`aios start`, `instance check` and the upgrade's closing notice:** the release line and any drift it shows, and which plan path an adoption names, so the founder-review check can require the record and that plan in the founder lane. They only report. The record is itself in that lane, so changing the plan path it names needs a founder's approval.
 - **The new-release notice:** the installed version, which only changes the notice's text.
 - **Clearing a dead lock:** only whether a record exists.
 - **The notice and identity caches:** written only where the repository has no file of its own. Never read from a copy it tracks or reaches through a link or a submodule; a malformed one is ignored, so it can't switch off the edit check or break `aios start`.

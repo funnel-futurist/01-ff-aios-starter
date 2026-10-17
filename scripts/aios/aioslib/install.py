@@ -1227,16 +1227,14 @@ def founder_review_notice(target, retired_roots):
 
 def ownership_review_notice(target, record):
     """A line telling the client the ownership list isn't held to founder review here yet (3.1, owner decision
-    C3): the role policy leaves it open, or CODEOWNERS has no founder rule for it. [] when both hold it, or
-    when there's no policy or people map to judge by. Reads only."""
+    C3): the role policy leaves it open, or no CODEOWNERS rule sends it to founder-lane reviewers (no CODEOWNERS
+    file at all included). [] when both hold it, or when there's no policy or people map to judge by. Reads only."""
     try:
         policy, config = roles.load_policy(target), orgconfig.load(target)
     except (Refusal, ValueError):
         return []
     paths = ownership_paths(record)
-    open_ = [d for st, d in governance.founder_review_local(target, policy, config, (), paths)
-             if st == "FAIL" and any(p in d for p in paths)]
-    if not open_:
+    if governance.ownership_held(target, policy, config, paths):
         return []
     return ["founder review: the ownership list (%s) says which files are the installer's own, and it isn't held "
             "to founder review here yet. Add each to the founder lane and give it a CODEOWNERS rule (card "

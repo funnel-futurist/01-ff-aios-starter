@@ -4891,3 +4891,53 @@ class OwnerDecisionC3(Existing):
         code, out, err = self.cli_upgrade("3.1.1")
         self.assertEqual(code, 0, out + err)
         self.assertNotIn("ownership list", out)
+
+
+class ReviewRoundSixtySix(Existing):
+    """Codex, 3.1 round 66: the upgrade's NEXT notice judged the ownership list by the founder-review lines that
+    name one of its paths, so a workspace with no CODEOWNERS file at all, whose one failure names no path, got no
+    notice after upgrading."""
+
+    def held_policy(self):
+        policy = json.loads(json.dumps(FF_ROLES))
+        policy["roles"]["operator"]["paths_denied"] += OWNERSHIP
+        write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+        return policy
+
+    def test_no_codeowners_file_still_gets_the_notice(self):
+        self.held_policy()
+        self.commit("the list in our lane, but no CODEOWNERS file")
+        self.assertFalse(os.path.lexists(os.path.join(self.target, ".github/CODEOWNERS")))
+        record = self.adopt()
+        self.assertTrue(install_mod.ownership_review_notice(self.target, record))
+        self.commit("adopted")
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\n3.1.0.\n"}, "3.1.0")
+        rel = self.write_json("release-3.1.0.json", harness.approve(harness.build_manifest(self.source, rev, "3.1.0")))
+        self.be("acme-founder")
+        code, out, err = self.cli("upgrade", "--release", rel, "--target", self.target, "--repo", self.source)
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("NEXT:     founder review: the ownership list (.aios/install.json, .aios/adoption.json)", out)
+
+    def test_held_means_a_founder_rule_for_every_path(self):
+        policy = self.held_policy()
+        config = harness.config()
+        paths = install_mod.ownership_paths({"adoption": {"plan": ".aios/adoption.json"}})
+        for codeowners, held in (
+                (None, False),
+                ("/.aios/install.json @acme-founder\n", False),                      # the plan has no rule
+                ("/.aios/install.json @acme-founder\n/.aios/adoption.json @acme-va\n", False),  # not a founder
+                ("/.aios/ @acme-founder\n", True),                                     # one folder rule covers both
+                ("/.aios/ @acme-founder\n/.aios/*.json @acme-va\n", False),             # a later rule takes them
+                ("/.aios/install.json @acme-founder\n/.aios/adoption.json @acme-founder\n", True)):
+            with self.subTest(codeowners=codeowners):
+                path = os.path.join(self.target, ".github/CODEOWNERS")
+                if codeowners is None:
+                    if os.path.lexists(path):
+                        os.remove(path)
+                else:
+                    write(self.target, ".github/CODEOWNERS", "# aios-codeowners-for: acme/acme-aios\n" + codeowners)
+                self.assertEqual(governance.ownership_held(self.target, policy, config, paths), held)
+        open_policy = json.loads(json.dumps(FF_ROLES))  # the rules are there, the policy leaves the list open
+        self.assertFalse(governance.ownership_held(self.target, open_policy, config, paths))
+        no_founder = harness.config(people=[{"github": "acme-va", "role": "operator", "display_name": "V"}])
+        self.assertFalse(governance.ownership_held(self.target, policy, no_founder, paths))

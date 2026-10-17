@@ -76,7 +76,7 @@ This is the one time an upgrade changes where your files are. It still never cha
 
 ## Upgrading to 3.1 (two CODEOWNERS rules)
 
-From 3.0.0 it's an ordinary upgrade: nothing moves. One step afterwards. The upgrade adds the install record (`.aios/install.json`) and the adoption plan (`.aios/adoption.json`) to the founder lane in `.aios/roles.json`, because they say which files are the installer's own. `.github/CODEOWNERS` is yours, so the upgrade doesn't write it. Add a rule for each, with the same handles as your `/.aios/roles.json` line, and merge it with a founder's approval. The upgrade's output ends with a `NEXT:` line saying so while it isn't done. Until you do, `aios instance check` fails and `start` shows `founder review: NOT RESTORED`. Card: [Restore founder review](human_steps/restore_founder_review.md), section "After upgrading to 3.1".
+From 3.0.0 it's an ordinary upgrade: nothing moves. One step afterwards. The upgrade adds the install record (`.aios/install.json`) and the adoption plan (`.aios/adoption.json`) to the founder lane in `.aios/roles.json`, because they say which files are the installer's own. `.github/CODEOWNERS` is yours, so the upgrade doesn't write it. Add a rule for each, with the same handles as your `/.aios/roles.json` line (an adopted repository with its plan elsewhere uses that plan's path, `adoption.plan` in the record), and merge it with a founder's approval. The upgrade's output ends with a `NEXT:` line saying so while it isn't done. Until you do, `aios instance check` fails and `start` shows `founder review: NOT RESTORED`. Card: [Restore founder review](human_steps/restore_founder_review.md), section "After upgrading to 3.1".
 
 ## Getting an exact release
 

@@ -463,6 +463,23 @@ def ownership_lane_check(policy, paths):
     return out
 
 
+def ownership_held(root, policy, config, paths):
+    """Whether this workspace holds every path in `paths` to founder review: the role policy keeps each in the
+    founder lane (ownership_lane_check), and a CODEOWNERS file sends each one to founder-lane reviewers only.
+    No CODEOWNERS file, an unusable reviewer declaration or no founder at all means it isn't held (3.1, C3)."""
+    if any(st == "FAIL" for st, _d in ownership_lane_check(policy, paths)):
+        return False
+    _rel, path = find_file(root)
+    if not path or lane_reviewer_problems(policy, config):
+        return False
+    founders, _declared = lane_reviewers(policy, config)
+    if not founders:
+        return False
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        rules = parse(fh.read())
+    return all(owners_for(rules, p)[0] and founders_only(owners_for(rules, p)[1], founders) for p in paths)
+
+
 def founder_review_local(root, policy, config, retired_folders=(), ownership=()):
     """[(status, detail)] from the files alone: does CODEOWNERS send every path in the founder
     lane to a founder? Also flags rules that still guard a folder the 3.0 move retired, and, given
