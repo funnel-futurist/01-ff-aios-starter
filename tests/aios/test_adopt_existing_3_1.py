@@ -5025,3 +5025,50 @@ class ReviewRoundSixtySeven(Sandbox):
                         d.startswith("ownership list ") or any(d.startswith("founder lane %s (" % g) for g in entries))]
                     notice = install_mod.ownership_review_notice(self.target, record)
                     self.assertEqual(bool(notice), bool(failing), (notice, failing))
+
+
+class NoBytecodeBesideThePackage(Sandbox):
+    """GitHub's runs of 3.1 rounds 62 to 68: on a Python that writes bytecode beside the source (a Linux runner's), the
+    CLI left scripts/aios/aioslib/__pycache__ in the repository it ran from, a Starter clone included, which the
+    runtime audit rightly counts as a write into another repository. macOS's own python3 keeps its cache elsewhere
+    (under ~/Library/Caches), so no run on a Mac showed it. Judged by where this interpreter would cache each module,
+    so the check means the same on both."""
+
+    def copy(self, name):
+        pkg = os.path.join(self.tmp, name, "scripts", "aios")
+        shutil.copytree(harness.AIOS_DIR, pkg, ignore=shutil.ignore_patterns("__pycache__"))
+        return pkg
+
+    def caches(self, pkg):
+        import importlib.util
+        sources = [os.path.join(pkg, "aios.py")] + [os.path.join(pkg, "aioslib", f)
+                                                     for f in os.listdir(os.path.join(pkg, "aioslib"))
+                                                     if f.endswith(".py")]
+        found = [importlib.util.cache_from_source(src) for src in sources]
+        for path in found:  # a cache this test makes outside its folder is removed with it
+            self.addCleanup(lambda p=path: os.path.isfile(p) and os.remove(p))
+        return [p for p in found if os.path.isfile(p)]
+
+    def run_py(self, code, *args):
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}
+        return subprocess.run([sys.executable, "-c", code] + list(args), stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, env=env, cwd=self.tmp)
+
+    def test_the_cli_writes_no_bytecode_cache_where_python_would(self):
+        # The control: this interpreter, told to write bytecode, caches a plain import of the package.
+        control = self.copy("control")
+        self.caches(control)
+        proc = self.run_py("import sys; sys.dont_write_bytecode = False; sys.path.insert(0, sys.argv[1]); "
+                           "import aioslib.install", control)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertTrue(self.caches(control), "the control cached nothing, so the test below would prove nothing")
+        # The CLI under the same setting, every module of the package imported: no cache for any of them.
+        pkg = self.copy("starter")
+        self.caches(pkg)
+        proc = self.run_py("import runpy, sys; sys.dont_write_bytecode = False; path = sys.argv[1]; "
+                           "sys.argv = [path, 'instance', 'check', '--help']; runpy.run_path(path, run_name='__main__')",
+                           os.path.join(pkg, "aios.py"))
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn(b"instance", proc.stdout)
+        self.assertEqual(self.caches(pkg), [])
+        self.assertEqual([d for d, _s, _f in os.walk(os.path.join(self.tmp, "starter")) if "__pycache__" in d], [])

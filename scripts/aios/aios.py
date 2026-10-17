@@ -31,6 +31,10 @@ import os
 import shutil
 import sys
 
+# No bytecode cache beside the package, before any of it is imported. Run from a Starter clone or a workspace, Python
+# would otherwise write scripts/aios/aioslib/__pycache__ into that repository, a write the installer never makes on
+# purpose. macOS's own python3 never writes one; a Linux runner's Python did (GitHub's runs of 3.1, rounds 62 to 68).
+sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aioslib import governance, install as install_mod, orgconfig, release as release_mod  # noqa: E402
