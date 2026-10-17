@@ -1234,8 +1234,15 @@ def ownership_review_notice(target, record):
     except (Refusal, ValueError):
         return []
     paths = ownership_paths(record)
-    if governance.ownership_held(target, policy, config, paths):
+    # And the ownership paths the policy keeps in the founder lane though the record doesn't name them: a plain
+    # install's policy holds the default plan path too, and `instance check` wants a founder rule for it
+    # (independent review, 3.1 round 67).
+    lane = governance.founder_lane_paths(policy)
+    also = [rel for rel in (INSTALL_PATH.replace(os.sep, "/"), ADOPTION_PLAN.replace(os.sep, "/"))
+            if rel not in paths and util.lane_match(lane, rel)]
+    if governance.ownership_held(target, policy, config, paths, also):
         return []
+    paths = paths + also
     return ["founder review: the ownership list (%s) says which files are the installer's own, and it isn't held "
             "to founder review here yet. Add each to the founder lane and give it a CODEOWNERS rule (card "
             "docs/human_steps/restore_founder_review.md, \"After upgrading to 3.1\"); `aios instance check` fails "

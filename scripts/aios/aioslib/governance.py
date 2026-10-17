@@ -463,21 +463,30 @@ def ownership_lane_check(policy, paths):
     return out
 
 
-def ownership_held(root, policy, config, paths):
+def ownership_held(root, policy, config, paths, also_reviewed=()):
     """Whether this workspace holds every path in `paths` to founder review: the role policy keeps each in the
-    founder lane (ownership_lane_check), and a CODEOWNERS file sends each one to founder-lane reviewers only.
-    No CODEOWNERS file, an unusable reviewer declaration or no founder at all means it isn't held (3.1, C3)."""
+    founder lane (ownership_lane_check), and CODEOWNERS sends it to founder-lane reviewers. `also_reviewed` are
+    paths the policy's founder lane already names, which need only the CODEOWNERS half. That half is judged as
+    `instance check` judges it, entry by entry: every founder-lane entry that covers one of the paths (the file
+    itself, or a folder holding it) must pass founder_rules_check. No CODEOWNERS file, an unusable reviewer
+    declaration or no founder at all means it isn't held (3.1, C3)."""
     if any(st == "FAIL" for st, _d in ownership_lane_check(policy, paths)):
         return False
-    _rel, path = find_file(root)
+    rel, path = find_file(root)
     if not path or lane_reviewer_problems(policy, config):
         return False
-    founders, _declared = lane_reviewers(policy, config)
+    founders, declared = lane_reviewers(policy, config)
     if not founders:
         return False
     with open(path, encoding="utf-8", errors="replace") as fh:
         rules = parse(fh.read())
-    return all(owners_for(rules, p)[0] and founders_only(owners_for(rules, p)[1], founders) for p in paths)
+    targets = list(paths) + list(also_reviewed)
+    entries = [g for g in founder_lane_paths(policy) if any(util.lane_match([g], p) for p in targets)]
+    if not entries:
+        return not targets
+    return all(st == "PASS" for st, _d in founder_rules_check(
+        rules, {"roles": {"lane": {"paths_denied": entries}}}, founders, rel,
+        REVIEWERS_NOUN if declared else "founders"))
 
 
 def founder_review_local(root, policy, config, retired_folders=(), ownership=()):

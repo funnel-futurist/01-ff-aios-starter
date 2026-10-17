@@ -4941,3 +4941,87 @@ class ReviewRoundSixtySix(Existing):
         self.assertFalse(governance.ownership_held(self.target, open_policy, config, paths))
         no_founder = harness.config(people=[{"github": "acme-va", "role": "operator", "display_name": "V"}])
         self.assertFalse(governance.ownership_held(self.target, policy, no_founder, paths))
+
+
+class ReviewRoundSixtySeven(Sandbox):
+    """Codex, 3.1 round 67: on a plain install the record names no plan, so the upgrade's NEXT notice looked at the
+    record alone, while the upgraded policy keeps the default plan path in the founder lane and `instance check`
+    wants a founder rule for it. CODEOWNERS covering only the record got no notice and a failing instance check."""
+
+    def setUp(self):
+        super(ReviewRoundSixtySeven, self).setUp()
+        policy = json.loads(json.dumps(harness.ROLES))
+        policy["roles"]["operator"]["paths_denied"] += OWNERSHIP  # as the Starter's own policy has it from 3.1
+        rev = harness.bump_source(self.source, {".aios/roles.json": json.dumps(policy, indent=2)}, "the list in the lane")
+        install_mod.install(self.target, harness.approve(harness.build_manifest(self.source, rev, "3.0.0")),
+                            self.source, harness.config())
+        run_git(self.target, "init", "-q", "-b", "main")
+        run_git(self.target, "config", "user.email", "client@example.com")
+        run_git(self.target, "config", "user.name", "client")
+        self.codeowners("/.github/ @acme-founder\n/.aios/install.json @acme-founder\n")  # the record only
+
+    def codeowners(self, rules):
+        write(self.target, ".github/CODEOWNERS", "# aios-codeowners-for: acme/acme-aios\n" + rules)
+        run_git(self.target, "add", "-A")
+        run_git(self.target, "commit", "-qm", "our CODEOWNERS")
+
+    def upgrade(self, version):
+        rev = harness.bump_source(self.source, {"START_HERE.md": "# start here\n%s.\n" % version}, version)
+        rel = self.write_json("release-%s.json" % version, harness.approve(harness.build_manifest(self.source, rev, version)))
+        self.be("acme-founder")
+        return self.cli("upgrade", "--release", rel, "--target", self.target, "--repo", self.source)
+
+    def test_a_plain_install_hears_about_the_plan_path_its_lane_holds(self):
+        self.assertEqual(install_mod.ownership_paths(install_mod.load_record(self.target)), [".aios/install.json"])
+        code, out, err = self.upgrade("3.1.0")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("NEXT:     founder review: the ownership list (.aios/install.json, .aios/adoption.json)", out)
+        code, out, _err = self.cli("instance", "check", "--offline", "--target", self.target, "--repo-slug", "acme/acme-aios")
+        self.assertIn("FAIL  founder   founder lane .aios/adoption.json (.github/CODEOWNERS): no rule covers it", out)
+        # With a rule for the plan path too, the notice and instance check agree: nothing about the list.
+        run_git(self.target, "add", "-A")
+        run_git(self.target, "commit", "-qm", "upgraded")
+        self.codeowners("/.github/ @acme-founder\n/.aios/install.json @acme-founder\n/.aios/adoption.json @acme-founder\n")
+        self.assertEqual(install_mod.ownership_review_notice(self.target, install_mod.load_record(self.target)), [])
+        code, out, _err = self.cli("instance", "check", "--offline", "--target", self.target, "--repo-slug", "acme/acme-aios")
+        self.assertFalse([l for l in out.splitlines() if "FAIL" in l and ".aios/" in l and "founder" in l], out)
+
+    def test_a_lane_path_needs_only_its_code_owner_as_instance_check_judges_it(self):
+        # A further role that may change the plan path: instance check doesn't require it of a plain install, and
+        # neither does the notice once CODEOWNERS covers both paths.
+        policy = util.read_json(os.path.join(self.target, ".aios/roles.json"))
+        policy["roles"]["reviewer"] = {"entries": ["operator"], "lifecycle": [], "paths_denied": [".aios/install.json"]}
+        self.codeowners("/.github/ @acme-founder\n/.aios/install.json @acme-founder\n/.aios/adoption.json @acme-founder\n")
+        config = harness.config()
+        record = install_mod.load_record(self.target)
+        self.assertTrue(governance.ownership_held(self.target, policy, config, [".aios/install.json"],
+                                                 [".aios/adoption.json"]))
+        self.assertFalse(governance.ownership_held(self.target, policy, config, [".aios/install.json",
+                                                                                 ".aios/adoption.json"]))
+        self.assertEqual(install_mod.ownership_paths(record), [".aios/install.json"])
+
+    def test_the_notice_and_instance_check_agree_in_both_directions(self):
+        record = install_mod.load_record(self.target)
+        base = util.read_json(os.path.join(self.target, ".aios/roles.json"))
+        literal = json.loads(json.dumps(base))
+        folder = json.loads(json.dumps(base))
+        folder["roles"]["operator"]["paths_denied"] = [p for p in base["roles"]["operator"]["paths_denied"]
+                                                       if p not in OWNERSHIP] + [".aios/**"]
+        bare = json.loads(json.dumps(harness.ROLES))  # the list left out of the lane altogether
+        for name, policy in (("literal", literal), ("folder", folder), ("bare", bare)):
+            for rules in ("/.github/ @acme-founder\n",
+                          "/.github/ @acme-founder\n/.aios/install.json @acme-founder\n",
+                          "/.github/ @acme-founder\n/.aios/install.json @acme-founder\n/.aios/adoption.json @acme-founder\n",
+                          "/.github/ @acme-founder\n/.aios/ @acme-founder\n",
+                          "/.github/ @acme-founder\n/.aios/ @acme-founder\n/.aios/*.json @acme-va\n"):
+                with self.subTest(policy=name, rules=rules):
+                    write(self.target, ".aios/roles.json", json.dumps(policy, indent=2))
+                    write(self.target, ".github/CODEOWNERS", "# aios-codeowners-for: acme/acme-aios\n" + rules)
+                    lines = governance.founder_review_local(self.target, policy, harness.config(), (),
+                                                            install_mod.ownership_paths(record))
+                    entries = [g for g in governance.founder_lane_paths(policy)
+                               if any(util.lane_match([g], p) for p in OWNERSHIP)]
+                    failing = [d for st, d in lines if st == "FAIL" and (
+                        d.startswith("ownership list ") or any(d.startswith("founder lane %s (" % g) for g in entries))]
+                    notice = install_mod.ownership_review_notice(self.target, record)
+                    self.assertEqual(bool(notice), bool(failing), (notice, failing))
