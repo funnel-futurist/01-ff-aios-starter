@@ -2,12 +2,10 @@
 
 **Written for:** the founder, before approving. About four minutes.
 
-> **Candidate, not approved.** `releases/starter-3.1.0.json` is a draft pinned to `@@PIN@@`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
->
-> **Draft until the release step.** The `@@...@@` fields (the pin and the proof) are filled by the release step, from one uninterrupted evidence run on the pin the independent reviewer approved with no findings. The reviewer then confirms the filled brief before it reaches you. Until then this brief isn't for approval, and this folder holds no evidence outputs, so none can be mistaken for the candidate's.
+> **Candidate, not approved.** `releases/starter-3.1.0.json` is a draft pinned to `7ebf598959b5f97e5e36e6548ddea0db6af1b58a`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
 
 ## Decision
-**Approve AIOS Starter 3.1.0 at `@@PIN7@@`.**
+**Approve AIOS Starter 3.1.0 at `7ebf598`.**
 - It adds the one thing FF's own adoption needs (your G81 and G98 rulings): a way to bring the Starter into a repository that already exists, without overwriting anything. It also keeps who may approve founder-gated paths separate from who is a founder.
 - For clients on 3.0.0 it's an ordinary upgrade: nothing moves. A 2.x client still gets the 3.0 folder move, as before. Review hardened three things that apply to every workspace, listed below: the committed install record is no longer trusted, a shallow clone can't upgrade, and an upgrade made before 3.1 is rolled back with its own installer. And, as you chose (C3), a change to the list of which files are the installer's own needs a founder's approval.
 
@@ -61,14 +59,18 @@
 Its control tests remove one check (the rollback's), add an unlisted write, and add git writes through each wrapper; each makes it fail. At `75753b0` it finds the lock written before any check, the gap round 60 fixed. The submodule sweep then proves each check covers the paths that operation actually writes.
 
 **And at runtime (the audit backstop)**
-Python's audit hooks record every write the installer actually makes, whatever its source looks like, with every git command it runs. They run during the submodule sweep and in every command-line process of the integration test. In the integration run that was 5,114 writes and 1,430 git runs across 27 processes. The checks: every write stays in the test's own folder or the system's temporary folder; nothing goes into a `.git` folder but the installer's guard; nothing goes into the Starter's source repository; every git command only reads. In the sweep, no write lands inside the other repository, not even one made and taken back before the refusal. Its control plants a write the static scanner can't read (an `open` reached through `getattr`, removed again before the refusal), and the audit catches it.
+Python's audit hooks record every write the installer actually makes, whatever its source looks like, with every git command it runs. They run during the submodule sweep and in every command-line process of the integration test. In the pinned run's integration test that was 4,890 writes and 1,430 git runs across 27 processes (4,470 writes on GitHub's Linux runner). The checks: every write stays in the test's own folder or the system's temporary folder; nothing goes into a `.git` folder but the installer's guard; nothing goes into the Starter's source repository; every git command only reads. In the sweep, no write lands inside the other repository, not even one made and taken back before the refusal. Its control plants a write the static scanner can't read (an `open` reached through `getattr`, removed again before the refusal), and the audit catches it.
 
-**How review findings are graded (from round 63, for both reviewers)**
+**How review findings are graded (from round 63)**
 - **Medium or above:** a reachable write by the product, before its refusal or into another repository, that the runtime audit misses. Record-trust findings are graded as before.
-- **NIT:** a gap in the static scanner's reading of the source, with no such write behind it. It's fixed when cheap, and it doesn't hold the release.
+- **NIT:** a gap in the static scanner's reading of the source, with no such write behind it. It's fixed like any finding: the review counts as clean only with none open.
 
 **What was proven** (detail in `evidence/dispatch/p22-starter/release-3.1.0/`):
-@@PROOF@@
+- **FF's own adoption, rehearsed on a throwaway copy of ai-os:** 18 files created and read back; no tracked file changed, `CLAUDE.md` and `01_Foundations` included; all 12 founder-lane paths pass with the declared reviewers, the install record and the plan among them, and both ownership checks pass; rollback returns the copy exactly. **15 checks passed, 0 failed.** Nothing was written to ai-os.
+- **Every existing client:** upgrades to 3.1.0 from 3.0.0 and from every 2.x release keep each client file byte for byte, roll back exactly and recover from hard kills. **219 checks passed, 0 failed.**
+- **915 tests** from a fresh clone, and GitHub's own checks are green on the exact head. Each code fix from review has a test shown to fail without it.
+- **Independent review:** Codex approves `7ebf598` with no findings (69 rounds in all: through round 65 alongside Gemini, whose findings were all fixed; from round 66, as you set, Codex alone).
+- **Scans:** no client name in what 3.1 adds; FF's protected text: none at or over the overlap rule (7 single shared windows of generic code, under it), every protected file compared (0 unscanned).
 
 ## Recommendation
 **Approve.** It's the implementation route your G81 approval set and your G98 approval shaped. It is carded only once the independent reviewer (Codex, one subscription reviewer, as you set) approves the exact pin with no findings. If four more rounds end with findings still open, they come to you together as one list instead, with no severity waived. Every code finding was fixed with a test shown to fail without its fix; findings in the documentation and this brief were corrected and checked by the next review round. For existing clients it changes nothing but safer internals and the hardening listed above.
@@ -87,7 +89,7 @@ Python's audit hooks record every write the installer actually makes, whatever i
 - **If not approved:** FF's adoption waits; clients stay on 3.0.0.
 
 ## Owner action
-1. **Say:** "Approve starter 3.1.0 at @@PIN7@@".
+1. **Say:** "Approve starter 3.1.0 at 7ebf598".
 2. CL03 records the approval:
    - a `releases/`-only commit, with the record re-cut byte-identical;
    - 3.0.0 marked `superseded`;
