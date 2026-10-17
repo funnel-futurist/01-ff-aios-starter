@@ -20,7 +20,7 @@
   },
   "created_from": {
     "branch": "exec/lane01-starter-3.1.0-20261015",
-    "git_rev": "1414546bbbac33b27a1d82ea80ce692493e58902"
+    "git_rev": "c6954c5399a0cb12a004044868bf8affa2adc516"
   },
   "credentials": [
     {
@@ -102,7 +102,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".aios/roles.json",
-      "sha256": "a99cddbe81038f4db921b95e3f48af03495e0da3ac938b325dcc2fffa41690fa"
+      "sha256": "6bf090d9f1bf52e5104f98d55a7c9c1121642ef8576016c4271535025b6650d5"
     },
     {
       "class": "managed",
@@ -702,7 +702,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "docs/INSTALL_AND_UPGRADE.md",
-      "sha256": "b6b3df651721cdd5091a0d418bb41c1dbe55f040eb4a5166e590aa6f279e82af"
+      "sha256": "4376c200bccfedff6ed9d0c407e0a05d7c14373912cc6f4ba9120207a04ce175"
     },
     {
       "class": "managed",
@@ -786,7 +786,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "docs/human_steps/restore_founder_review.md",
-      "sha256": "0792e71858e3cfe079bb31c0d336a05fde57043e1bb1b1dea2f8baf90df27729"
+      "sha256": "3d92cf6d3d73ab666637fa44b5545f0fc42a3dfcc06ec6420b368c30294d4634"
     },
     {
       "class": "managed",
@@ -810,7 +810,7 @@
       "class": "managed",
       "mode": "100755",
       "path": "scripts/aios/aios.py",
-      "sha256": "7a329ff765e81967bb0f9654a88ff835ba91dc948a5dac91cb6a8110536444f2"
+      "sha256": "72563ae21a32e71cc1a4b7e93763c2b0c99b0dcc2d56ccfbc5cd55cf1f4c3ba5"
     },
     {
       "class": "managed",
@@ -828,13 +828,13 @@
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/boundary.py",
-      "sha256": "85c8e0052faa85683b1a0e80aa2b0635290d953dc7d90b2a3d3ccd0c845b3fdb"
+      "sha256": "7b59218bbe64796847c17147a5f8c39363fa4c37d2a138954c3a917bf54adc42"
     },
     {
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/governance.py",
-      "sha256": "7e03feccf057acb76b1288ae45652f961d080e0332a706faff99353edcda845f"
+      "sha256": "21ae72d2000e8480b70a306942b6018ab81f5be897173da7c7b9c53600939148"
     },
     {
       "class": "managed",
@@ -846,7 +846,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/install.py",
-      "sha256": "21767c3e321601b7b793b90b5d47c8219a04b8eaa97007782bed7a00f51c2c28"
+      "sha256": "b9144c92c22c77a542f6bce0153c3e613dd839a0b3b6c2ad7eb3e9925bf645b8"
     },
     {
       "class": "managed",
@@ -882,7 +882,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/roles.py",
-      "sha256": "6529d9440a727c65ab3d9f8e3cbc0acd06a0c6aa7e6dc7565ebaaae06a39633d"
+      "sha256": "6c15017a41a2f6b77e90def03d73fd1054859916dd3320a95679e0c8bb6e640d"
     },
     {
       "class": "managed",
@@ -894,7 +894,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/util.py",
-      "sha256": "4b93b9fd8aa756acba3858fb196d4e629e0ea018c455ae1e2d31a934256846b1"
+      "sha256": "9644dfeffaf82a7e1da46edfaed93dba78309be04ab6cbdb72a717af3173125f"
     },
     {
       "class": "managed",
@@ -960,7 +960,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "templates/governance/CODEOWNERS.template",
-      "sha256": "84a2938c634adc549a95361365967ff10cd38fb03ec0b1229742880b67f6bca8"
+      "sha256": "27856442bff5ab2b87c3157f3be9aadc5d7086909e5268fd0e5bb39d4d621831"
     },
     {
       "class": "managed",
