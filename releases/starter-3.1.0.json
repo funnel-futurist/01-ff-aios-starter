@@ -1,7 +1,8 @@
 {
   "approval": {
-    "approved_at": null,
-    "approved_by": null
+    "approved_at": "2026-10-18T00:26:00Z",
+    "approved_by": "phoenix-ship-it",
+    "basis": "Phoenix's direction of 2026-10-17 at 17:26 PT (2026-10-18 00:26Z), his direct reply in the FF Planning Project, relayed by the FF Planning conversation through his GitHub login (phoenix-ship-it, Phoenix Bohannon) as ff-delegation #81 comment 6244146269 (2026-10-18 01:19:00Z), section 1: 'CL03 Starter 3.1.0: OWNER APPROVED for release, code pin 7ebf598, PR #42 currently 61ecdfc5044c9ddb3b2a667623126450a1873c27. CL03 records owner approval, code-owner reviews, Chat Zero merges/pins and tags under standard gates. If PR head moves, re-confirm with Phoenix.' Integrated by Chat Zero as #81 comment 6244177321. Relayed through that record, not typed in the CL03 session. This approval commit moves the head of PR #42, so Phoenix's code-owner review of that exact head is his re-confirmation (Chat Zero, 2026-10-18)."
   },
   "compatibility": {
     "breaking": [
@@ -1138,6 +1139,6 @@
     "workspace_health",
     "wrap-up"
   ],
-  "status": "draft",
+  "status": "approved",
   "version": "3.1.0"
 }

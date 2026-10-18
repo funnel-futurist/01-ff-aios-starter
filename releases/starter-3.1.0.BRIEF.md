@@ -1,5 +1,7 @@
 # Release brief: AIOS Starter 3.1.0
 
+> **Approved 2026-10-17 (17:26 PT) at `7ebf598`**, the exact commit this brief names. Phoenix's direction and where it is recorded are in `releases/starter-3.1.0.json`.
+
 **Written for:** the founder, before approving. About four minutes.
 
 > **Candidate, not approved.** `releases/starter-3.1.0.json` is a draft pinned to `7ebf598959b5f97e5e36e6548ddea0db6af1b58a`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3).
