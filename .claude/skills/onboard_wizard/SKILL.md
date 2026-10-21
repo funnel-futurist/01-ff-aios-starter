@@ -1,6 +1,6 @@
 ---
 name: onboard_wizard
-description: Guided first-run onboarding for a new AIOS. Use on the first setup, or when a new operator/teammate joins. Walks the person caveman-clear through tool -> repo -> keys -> inviting the team, loads their business brain, captures vision/mission/values, confirms they understand the structure, and points them to the unstuck protocol + the certification. No skipped steps.
+description: Guided first-run onboarding for a new AIOS. Use on the first setup, or when a new operator/teammate joins. Walks the person caveman-clear through tool -> repo -> keys -> inviting the team, loads their business brain, captures vision/mission/values, confirms they understand the structure, and points them to the unstuck protocol + the certification. NOT for upgrading an existing workspace or changing a released system layer; use /start and the install guide instead. No skipped steps.
 ---
 
 # Onboarding Wizard
@@ -20,7 +20,7 @@ Ask: **"Are you the founder, a co-founder, or a cyborg VA / operator?"**
 
 ## Step 2: Core access setup (caveman, in order, confirm each before the next)
 1. **Claude subscription**, Pro or Max (Max if you'll use it heavily).
-2. **Your template repo**, get it through the portal (one-click "Use this template" link).
+2. **Your private AIOS repo.** For first-time setup, follow [the install guide](../../../docs/INSTALL_AND_UPGRADE.md): create an empty private repository, select the newest approved release, check its tag, and run that release's installer. The installer pins and verifies the files it writes.
 3. **Pick your surface:** Web (easiest, no install) / Desktop / **VS Code (recommended, full control + you see your files)**.
 4. **If local (Desktop/VS Code):** install **git** once (search "install git for [your OS]" if needed); then **clone your repo into a folder on your computer, that folder IS your AIOS.**
 5. **Open Claude Code** in that folder and run your first session (load your foundational docs). When Claude Code asks whether you trust this folder, say yes - that is what turns on the safety settings.
@@ -32,7 +32,7 @@ Ask: **"Are you the founder, a co-founder, or a cyborg VA / operator?"**
 Link your **Google Drive** and load your foundational docs (your offer/orientation answers, any intake/Typeform answers) so the AIOS can pull from your real knowledge, not guesses.
 
 ## Step 4: Vision / mission / values (the one-lever business plan)
-Briefly grill them: What's the business? Who's it for? The mission? 1-3 core values? **The one lever that matters most right now?** Save it to a `vision_mission_values.md` (their "one-lever business plan"), this anchors every future decision.
+Briefly grill them: What's the business? Who's it for? The mission? 1-3 core values? **The one lever that matters most right now?** Save it as a new vision_mission_values.md file inside `00_AIOS/company/` (their "one-lever business plan"), this anchors every future decision.
 
 ## Step 5: Do you understand the structure? (the check)
 Quick check: can they explain the folder layout, where global vs client material lives, and how to find things? If not, walk it once. (Skipping this causes problems later.)
@@ -70,3 +70,30 @@ Tell them plainly: *"these exist to protect you, you can't turn them off by acci
 - **Caveman mode:** any time something's over your head, tell Claude *"treat me like a caveman, explain like I'm 5, give me every click."*
 - **Stay current:** the tools change fast, so for any step, search YouTube for it (last 1-2 months) + use the unstuck protocol + NotebookLM (a learning aid, NOT your brain, your brain lives in your repo + Google Drive). Stick to the core move; ignore the rabbit-hole extras.
 - **99% self-sufficiency:** between Claude Code and the unstuck protocol you can solve almost anything yourself; escalate to your founder only if you truly can't.
+
+## Boundaries
+| Ask | Route |
+|---|---|
+| Upgrade an existing workspace | Run `/start`, then follow `docs/INSTALL_AND_UPGRADE.md` |
+| Recover a setup step that does not match the screen | Use `docs/UNSTUCK_PROTOCOL.md` and record the exact step and screen |
+| Change the Starter's managed system layer | Route it back to the Starter repository owner for a reviewed release |
+| Build or change a business workflow after onboarding | Use `/project_management` to define and route that work |
+
+## Definition of done
+- [ ] **D-1 - The person used the approved release installer for first-time setup.**
+  - **Example:** They created an empty private repository, checked the approved tag, ran the installer, and `start` names the installed release.
+  - **Counter-example:** They copied the current development branch or cannot name which release was installed.
+- [ ] **D-2 - Access is secured before a teammate is invited.**
+  - **Example:** 2FA is on, keys stay in `.env`, and spend limits are set before the collaborator invite.
+  - **Counter-example:** A teammate receives access while the airlock steps are still incomplete.
+- [ ] **D-3 - The business brain answers from the person's own files.**
+  - **Example:** The context check answers with specifics and names the matching foundation file.
+  - **Counter-example:** The answer is generic or guesses facts that are absent from the workspace.
+- [ ] **D-4 - The person completes one safe start-and-finish cycle.**
+  - **Example:** They run `/start-my-day`, make a bounded change, and finish with `/wrap-up` on their own branch.
+  - **Counter-example:** They edit the official branch directly or leave work only on their computer.
+
+## QC gate
+Check D-1 through D-4 before calling onboarding complete. If the installer, identity, role, release check, or business-context check does not match, stop at that step, record the observed output, and use the unstuck protocol. Route unresolved release or managed-file failures back to the Starter repository owner. Do not skip a failed step to finish the checklist.
+
+No approved gold standard yet.

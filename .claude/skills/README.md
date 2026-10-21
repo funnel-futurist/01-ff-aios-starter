@@ -38,7 +38,7 @@ When you catch yourself explaining the same task twice, make it a skill: a folde
 - **Install packs:** periodically we ship curated bundles of new, tested skills you can opt into, so you stay current without chasing every update yourself. You + your operator doing light research consistently = you stay ahead of the curve.
 - **Stay current yourself:** run `/upskill` now and then. The tools change monthly, this keeps you on today's best setup without bloat.
 - **Pull template updates:** run `/start` to see which release you are on and whether your workspace still matches it, then run `upgrade` from an up-to-date copy of the Starter to move to a newer approved release. Upgrades replace the system layer and never touch your work, and `rollback` puts you back. Full walkthrough: **[docs/INSTALL_AND_UPGRADE.md](../../docs/INSTALL_AND_UPGRADE.md)**.
-- **The template brain (copy it / share it):** github.com/funnel-futurist/ff-aios-starter → green **"Use this template."**
+- **Start a new AIOS:** create an empty private repository, then install the newest approved release from `ff-aios-starter`. Follow **[docs/INSTALL_AND_UPGRADE.md](../../docs/INSTALL_AND_UPGRADE.md)** so the release is pinned and every installed file is checked.
 
 ## Useful source docs (always current, never stale)
 - Claude + Claude Code: https://docs.claude.com
