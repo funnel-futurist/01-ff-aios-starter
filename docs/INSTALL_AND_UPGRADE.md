@@ -30,10 +30,13 @@ python3 scripts/aios/aios.py rollback --target .   # back to the previous releas
 
 **Upgrade runs from a fresh copy of the Starter, not from inside your workspace.** The releases
 and the exact commits they pin live in the Starter repository, and your workspace carries
-neither. So, from an up-to-date clone of `ff-aios-starter` next to your workspace:
+neither. So, from your clone of `ff-aios-starter` next to your workspace:
 
 ```bash
-cd ../ff-aios-starter && git pull
+cd ../ff-aios-starter
+git fetch --tags origin   # the clone sits on the old release's tag, where `git pull` refuses
+python3 scripts/aios/aios.py release check-tag starter-X.Y.Z --release-id starter-X.Y.Z
+git checkout starter-X.Y.Z   # only once check-tag passes: the new release's record and tool are here
 python3 scripts/aios/aios.py upgrade --release releases/starter-X.Y.Z.json --target ../my-workspace --dry-run   # what would change; writes nothing
 python3 scripts/aios/aios.py upgrade --release releases/starter-X.Y.Z.json --target ../my-workspace
 ```
@@ -41,6 +44,9 @@ python3 scripts/aios/aios.py upgrade --release releases/starter-X.Y.Z.json --tar
 That also means the upgrade always runs the *new* release's tool, so a fix in the tool reaches
 you on the upgrade that installs it. Commit your workspace first: an upgrade refuses a workspace
 with uncommitted work.
+
+Don't skip the checkout. The old release's tag has no `releases/starter-X.Y.Z.json`, so the
+upgrade stops with `No such file or directory: 'releases/starter-X.Y.Z.json'`.
 
 `start` and `verify` are safe to run any time and change nothing. `upgrade` and `rollback` are
 founder-only.
@@ -145,6 +151,17 @@ Anything you have to do by hand along the way (2FA, a scoped token, a backup, co
   "code_owners": {"REPO_OWNER": ["@acme-founder"], "PRIMARY_REVIEWER": ["@acme-founder"]}
 }
 ```
+
+Save it as `my-org.json` in the `ff-aios-starter` folder, where you run `install`. Three things
+must match:
+- `repository` is `<owner>/<name>` of the repository you created for your workspace (GETTING_STARTED
+  step 5), as it appears in its GitHub address. The installer writes `.github/CODEOWNERS` for that
+  repository, and `instance check` and `governance check` fail when it doesn't match the
+  workspace's `origin` remote;
+- each `github` is that person's GitHub login: what `gh api user --jq .login` prints for them;
+- the person running `install` is in `people` with the role `founder` (or `co_founder`). Anyone
+  else is refused with nothing written. A refusal that says to add them to `.aios/config.json`
+  means this file at install time: add them here and run `install` again.
 
 **Credentials are references, never values.** `env:NAME` reads an environment variable;
 `dotenv:NAME` reads a name from your `.env`. The config records *where* the key lives, never

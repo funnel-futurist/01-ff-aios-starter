@@ -28,14 +28,14 @@ Until the line is fixed, `start` shows `founder review: NOT RESTORED`. Until it'
 5. **Check it's in force.** In your workspace, run `python3 scripts/aios/aios.py instance check`. Every line marked `founder` must say `PASS`.
 
 ## After upgrading to 3.1
-3.1 adds two files to the founder lane: the install record and the adoption plan, which say which files the installer treats as its own. Your CODEOWNERS needs a rule for each. In step 1, add these two lines under your `/.aios/roles.json` line, with the same handles it has:
+3.1 adds two files to the founder lane: the install record and the adoption plan, which say which files the installer treats as its own. Your CODEOWNERS needs a rule for each. In step 1, add these two lines under your `/.aios/roles.json` line, with the same handles it has. Coming from 3.0, your offer economics line already names `/00_AIOS/company/offer_economics/`: leave it, and only add the two lines.
 ```
 /.aios/install.json   @founder-handle
 /.aios/adoption.json  @founder-handle
 ```
 Adopted a repository with its plan somewhere else? Use that path in the second line instead: it's `adoption.plan` in `.aios/install.json` (for example `/ops/our_plan.json`). Add the same path to your role policy's `paths_denied` too. `instance check` names the exact path it needs.
 
-Then follow steps 2 to 5 as written. Never changed CODEOWNERS since install? Rendering the file from the 3.1 template (step 1) includes both lines.
+Then follow steps 2 to 5 as written. In step 3, a commit message such as `Restore founder review for the 3.1 ownership list` fits better. Never changed CODEOWNERS since install? Rendering the file from the 3.1 template (step 1) includes both lines.
 
 ## It worked when
 - `instance check` shows `PASS` on every `founder` line, including `GitHub requires code-owner review on main`, and its last line reads `verdict:  meets the instance contract's checks`;
