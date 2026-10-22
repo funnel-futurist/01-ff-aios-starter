@@ -27,6 +27,7 @@
 
 # The review/merge gate itself - weakening this dilutes every other guarantee
 /.github/                   @phoenix-ship-it @Joburn-ai
+/scripts/pr_review/         @phoenix-ship-it @Joburn-ai
 
 # The brain's constitution + the skill/hook engine (governs every session + agent)
 /CLAUDE.md                  @phoenix-ship-it @Joburn-ai
