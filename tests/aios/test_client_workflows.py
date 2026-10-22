@@ -125,7 +125,7 @@ class Permissions(unittest.TestCase):
         self.assertRegex(step, r"if git ls-files --error-unmatch verdict\.json[^\n]*; then\n[^\n]*\n\s*exit 1",
                          "a pull request that tracks verdict.json is refused")
         def cond(s):
-            found = re.findall(r"^\s*if: (.+)$", s, re.M)
+            found = re.findall(r"^ {8}if: (.+)$", s, re.M)
             self.assertEqual(len(found), 1, "one condition, the step's own")
             return found[0]
         checkout_step = ai[checkout:ai.index("\n      - ", checkout)]
