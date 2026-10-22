@@ -83,6 +83,25 @@ class WizardOrder(unittest.TestCase):
         self.assertIn("2FA", lines[airlock])
 
 
+class ApprovedReleaseRoute(unittest.TestCase):
+
+    def test_every_setup_consumer_uses_the_approved_release_route(self):
+        consumers = {
+            "onboard_wizard": read(".claude", "skills", "onboard_wizard", "SKILL.md"),
+            "skills_readme": read(".claude", "skills", "README.md"),
+        }
+        stale_positive_routes = (
+            re.compile(r"get it through the portal.*Use this template", re.I),
+            re.compile(r"green\s+\*{0,2}[\"']?Use this template", re.I),
+        )
+        for name, text in consumers.items():
+            with self.subTest(consumer=name):
+                self.assertIn("approved release", text.lower(), name)
+                self.assertIn("INSTALL_AND_UPGRADE.md", text, name)
+                for route in stale_positive_routes:
+                    self.assertIsNone(route.search(text), "%s still recommends %s" % (name, route.pattern))
+
+
 class SecurityClaims(unittest.TestCase):
 
     def test_security_md_does_not_promise_the_deny_rules_stop_every_read(self):
