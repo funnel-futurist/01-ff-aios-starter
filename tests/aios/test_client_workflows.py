@@ -124,6 +124,11 @@ class Permissions(unittest.TestCase):
         self.assertIn("rm -rf .pr_context\n", step, "a .pr_context/ in the pull request is removed too")
         self.assertRegex(step, r"if git ls-files --error-unmatch verdict\.json[^\n]*; then\n[^\n]*\n\s*exit 1",
                          "a pull request that tracks verdict.json is refused")
+        review_step = self.steps(ai)["Claude review (pr_review skill)"]
+        cond = lambda s: re.search(r"^\s*if: (.+)$", s, re.M).group(1)
+        self.assertEqual(cond(step), cond(review_step), "the discard runs whenever the review runs")
+        self.assertNotIn("continue-on-error", step, "a refused pull request fails the job")
+        self.assertEqual(ai.count("uses: actions/checkout@"), 1, "nothing checks out the pull request again after the discard")
 
     def test_the_gate_reads_only_this_runs_verdict_and_a_missing_one_is_never_eligible(self):
         gate = jobs(read(PR_REVIEW))["gate"]
