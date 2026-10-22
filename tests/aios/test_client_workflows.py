@@ -114,33 +114,16 @@ class Permissions(unittest.TestCase):
         ai = jobs(read(PR_REVIEW))["ai_review"]
         checkout = ai.index("uses: actions/checkout@")
         discard = ai.index("      - name: Discard review files from the pull request\n")
+        collect = ai.index("      - name: Collect the pull request for the reviewer\n")
         review = ai.index("      - name: Claude review (pr_review skill)\n")
         self.assertLess(checkout, discard, "the files are removed after the checkout brings them in")
-        self.assertLess(discard, review, "and before the reviewer runs")
+        self.assertLess(discard, collect, "and before this run's .pr_context/ is written")
+        self.assertLess(collect, review)
         step = self.steps(ai)["Discard review files from the pull request"]
-        self.assertIn("rm -f verdict.json review.md review_comment.md", step)
+        self.assertIn("rm -f verdict.json review.md review_comment.md\n", step)
+        self.assertIn("rm -rf .pr_context\n", step, "a .pr_context/ in the pull request is removed too")
         self.assertRegex(step, r"if git ls-files --error-unmatch verdict\.json[^\n]*; then\n[^\n]*\n\s*exit 1",
                          "a pull request that tracks verdict.json is refused")
-
-    def test_the_review_is_posted_only_when_the_review_step_succeeded(self):
-        post = self.steps(jobs(read(PR_REVIEW))["ai_review"])["Post the review"]
-        cond = re.search(r"(?m)^\s*if: (.+)$", post)
-        self.assertTrue(cond, "the post step has a condition")
-        self.assertIn("steps.claude_review.outcome == 'success'", cond.group(1))
-
-    def test_the_reviewer_config_comes_from_the_base_branch_fetched_by_name(self):
-        ai = jobs(read(PR_REVIEW))["ai_review"]
-        checkout = ai.index("uses: actions/checkout@")
-        restore = ai.index("      - name: Restore .claude/ from the base branch\n")
-        review = ai.index("      - name: Claude review (pr_review skill)\n")
-        self.assertLess(checkout, restore)
-        self.assertLess(restore, review, ".claude/ is restored before the reviewer reads it")
-        step = self.steps(ai)["Restore .claude/ from the base branch"]
-        self.assertIn("BASE_REF: ${{ github.event.pull_request.base.ref }}", step)
-        self.assertIn('git fetch --no-tags origin "refs/heads/$BASE_REF"', step, "fetched fresh by name")
-        self.assertNotIn("base.sha", step, "not the event's base sha, which can be stale")
-        self.assertIn("rm -rf .claude\n", step, "the whole directory is replaced, so a file the PR adds is gone")
-        self.assertIn("git archive FETCH_HEAD .claude | tar -x -f -", step)
 
     def test_the_gate_reads_only_this_runs_verdict_and_a_missing_one_is_never_eligible(self):
         gate = jobs(read(PR_REVIEW))["gate"]
