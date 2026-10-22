@@ -129,9 +129,9 @@ class Sanitization(Sandbox):
         self.assertEqual(findings[0]["kind"], "client_name")
 
     def test_n6c_word_boundaries_stop_the_false_positives_that_kill_a_scanner(self):
-        """A substring scan of this very repo flagged `Reporter` and `compounds`."""
-        findings = self._scan([("a.md", "the Reporter said it compounds monthly")],
-                              denylist_terms=["porter", "pounds"])
+        """Invented terms that start or end an ordinary word: a substring scan would flag both."""
+        findings = self._scan([("a.md", "the administrator updated the inventory")],
+                              denylist_terms=["invento", "strator"])
         self.assertEqual(findings, [])
 
     def test_enumerable_findings_carry_no_hash_to_confirm_a_guess_against(self):
