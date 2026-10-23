@@ -15,8 +15,8 @@ Three classes of thing:
 3. **Internal infrastructure.** Deployment hosts, workspace URLs and chat/CRM object links
    that mean nothing to a client and quietly describe our estate.
 
-Matching is **word-boundary**, learned the expensive way: a substring scan of this repo
-flagged `Reporter` and `compounds` as client names. A check that cries wolf gets switched
+Matching is **word-boundary**: a name inside a longer word is not a finding, since a
+substring scan flags ordinary words that contain one. A check that cries wolf gets switched
 off, so precision is a safety property, not a nicety.
 
 ## What this does NOT prove

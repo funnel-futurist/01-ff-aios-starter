@@ -110,6 +110,37 @@ class Permissions(unittest.TestCase):
         self.assertIn("--body-file review.md", post)
         self.assertIn("--comment --body-file review.md", post, "falls back to a comment where Actions can't approve")
 
+    def test_review_files_from_the_pull_request_are_removed_and_a_tracked_verdict_refused(self):
+        ai = jobs(read(PR_REVIEW))["ai_review"]
+        checkout = ai.index("uses: actions/checkout@")
+        discard = ai.index("      - name: Discard review files from the pull request\n")
+        collect = ai.index("      - name: Collect the pull request for the reviewer\n")
+        review = ai.index("      - name: Claude review (pr_review skill)\n")
+        self.assertLess(checkout, discard, "the files are removed after the checkout brings them in")
+        self.assertLess(discard, collect, "and before this run's .pr_context/ is written")
+        self.assertLess(collect, review)
+        step = self.steps(ai)["Discard review files from the pull request"]
+        self.assertIn("rm -f verdict.json review.md review_comment.md\n", step)
+        self.assertIn("rm -rf .pr_context\n", step, "a .pr_context/ in the pull request is removed too")
+        self.assertRegex(step, r"if git ls-files --error-unmatch verdict\.json[^\n]*; then\n[^\n]*\n\s*exit 1",
+                         "a pull request that tracks verdict.json is refused")
+        def cond(s):
+            found = re.findall(r"^ {8}if: (.+)$", s, re.M)
+            self.assertEqual(len(found), 1, "one condition, the step's own")
+            return found[0]
+        checkout_step = ai[checkout:ai.index("\n      - ", checkout)]
+        self.assertEqual(cond(step), cond(checkout_step), "the discard runs whenever the pull request is checked out")
+        self.assertNotIn("continue-on-error", step, "a refused pull request fails the job")
+        self.assertEqual(ai.count("uses: actions/checkout@"), 1, "nothing checks out the pull request again after the discard")
+        self.assertEqual(ai.count("      - name: Discard review files from the pull request\n"), 1, "one discard step, the one checked above")
+
+    def test_the_gate_reads_only_this_runs_verdict_and_a_missing_one_is_never_eligible(self):
+        gate = jobs(read(PR_REVIEW))["gate"]
+        download = gate.split("actions/download-artifact@", 1)[1].split("\n      - ", 1)[0]
+        self.assertIn("name: ai_verdict", download)
+        self.assertNotIn("run-id", download, "only the artifact from this workflow run")
+        self.assertIn("&& !codeownerTouched && v && tierEligible;", gate, "no verdict, no auto-merge")
+
     def test_the_skill_tells_the_ci_reviewer_to_suggest_not_push(self):
         skill = read(os.path.join(harness.REPO_ROOT, ".claude", "skills", "pr_review", "SKILL.md"))
         ci = skill.split("## CI MODE", 1)[1].split("## FORBIDDEN", 1)[0]

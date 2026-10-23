@@ -112,6 +112,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false   # no git credential left on disk: the reviewer reads, it doesn't push
+      - name: Discard review files from the pull request
+        # verdict.json and the review text come only from the reviewer below, and .pr_context/ only from the
+        # next step. A copy in the pull request is removed before either runs, and a pull request that tracks
+        # verdict.json is refused.
+        if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
+        run: |
+          rm -f verdict.json review.md review_comment.md
+          rm -rf .pr_context
+          if git ls-files --error-unmatch verdict.json >/dev/null 2>&1; then
+            echo "::error::This pull request commits verdict.json, which only the reviewer writes. It is refused."
+            exit 1
+          fi
       - name: Collect the pull request for the reviewer
         # The reviewer gets the pull request as files and no credential at all; this step and
         # "Post the review" below hold the token, and both are deterministic.
