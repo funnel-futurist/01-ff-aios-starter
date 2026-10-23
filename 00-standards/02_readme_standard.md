@@ -11,4 +11,4 @@ A person who does not code should be able to answer what the repo does, where it
 7. **Training:** the matching portal lesson or certification, or “none yet” with owner.
 8. **Owner and last reviewed:** named accountable person and date.
 
-Use [the template](template/README.md). The automated check verifies headings and numbering for **new template-based README files**; human review still checks whether the answers and diagram are true. Existing READMEs are migrated in their repo's approved pass, not auto-rewritten.
+Use [the template](template/README.md). The automated check verifies the template and new repository-root READMEs, or roots that retain the template marker; human review still checks whether the answers and diagram are true. Folder READMEs are not held to these repository headings. Existing READMEs are migrated in their repo's approved pass, not auto-rewritten.

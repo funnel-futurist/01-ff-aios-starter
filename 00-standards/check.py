@@ -36,30 +36,46 @@ def readme_errors(path):
     return errors
 
 
-def new_paths(base):
-    result = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=A", f"{base}...HEAD"],
-        cwd=ROOT, text=True, capture_output=True, check=True,
-    )
-    return [pathlib.PurePosixPath(line) for line in result.stdout.splitlines()]
+def git_output(*args):
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, text=True, capture_output=True, check=True,
+    ).stdout
+
+
+def base_tree(event_base):
+    # GitHub checks out a synthetic merge commit for pull_request. Its first
+    # parent is the exact base tree used for this check, even if main moved.
+    parents = git_output("rev-list", "--parents", "-n", "1", "HEAD").split()
+    return "HEAD^1" if len(parents) == 3 else event_base
+
+
+def top_level_directories(ref):
+    return set(git_output("ls-tree", "-d", "--name-only", ref).splitlines())
+
+
+def added_root_readme(base):
+    return "README.md" in git_output(
+        "diff", "--name-only", "--diff-filter=A", base, "HEAD", "--", "README.md"
+    ).splitlines()
 
 
 def main():
     errors = readme_errors(ROOT / "00-standards/template/README.md")
     if len(sys.argv) > 1:
-        paths = new_paths(sys.argv[1])
-        for folder in sorted({p.parts[0] for p in paths if len(p.parts) > 1}):
+        base = base_tree(sys.argv[1])
+        for folder in sorted(top_level_directories("HEAD") - top_level_directories(base)):
             if folder.startswith(".") or folder in FRAMEWORK_FOLDERS:
                 continue
             if not NUMBERED.fullmatch(folder):
                 errors.append(f"new top-level folder {folder!r} needs a number, or a documented framework exception")
-        for path in paths:
-            # Existing READMEs and instance folders migrate only in their own reviewed pass.
-            if path.name != "README.md" or len(path.parts) != 2:
-                continue
-            if path.parts[0] == "00-standards":
-                continue
-            errors.extend(readme_errors(ROOT / path))
+        # The eight headings describe a repository, not every folder. A newly
+        # created repo's root README is the only PR-added README checked here.
+        root_readme = ROOT / "README.md"
+        if added_root_readme(base) or (
+            root_readme.exists()
+            and "<!-- aios-readme-template -->" in root_readme.read_text(encoding="utf-8")
+        ):
+            errors.extend(readme_errors(root_readme))
     for error in errors:
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:

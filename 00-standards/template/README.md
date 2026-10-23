@@ -1,3 +1,4 @@
+<!-- aios-readme-template -->
 # Project name
 
 ## What this is and who it is for
@@ -10,8 +11,8 @@ Link the Excalidraw diagram and explain inputs and outputs. Replace this text an
 
 ## Folder map
 
-1. `01-overview/` — purpose and decisions.
-2. `02-setup/` — setup instructions.
+1. `01-overview/`: purpose and decisions.
+2. `02-setup/`: setup instructions.
 
 Explain any framework folders used. Replace this list with the real tree.
 
