@@ -2,6 +2,8 @@
   "schema": "ff-aios-starter/package-spec@1",
   "_comment": "Which paths ship in a release, and who owns each one after install. managed = the release owns it (replaced on upgrade, verified by readback). seed = written once if absent, then yours forever. Anything excluded never ships; anything you create yourself is invisible to the installer. client_owned = paths that are the client's by contract and never part of any package (the settings override layer): the installer never writes, replaces, verifies or removes them, and a release build refuses a source that tracks one. seed_lines = declared lines a release adds once to a seed file that predates them (the operator core's import, and since 3.0 the folder map's import, in CLAUDE.md); never twice, never into a deleted file, taken back by rollback. layout = the 3.0 folder move (see its own comment).",
   "exclude": [
+    "00-standards/**",
+    ".github/workflows/standards.yml",
     "evidence/**",
     "releases/**",
     "release/**",
