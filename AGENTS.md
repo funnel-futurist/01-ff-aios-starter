@@ -33,7 +33,7 @@ Setup is in `SETUP.md`. File naming: lowercase, underscores, no spaces (`taxonom
 ## Your skills
 Type `/` to see them. What each one does: `.claude/skills/README.md`. Run `/start` any time to see the moves for your role.
 - **Start and end every session:** start · start-my-day · wrap-up · context_load · dashboard
-- **Setup and staying current:** onboard_wizard (run it first) · upskill
+- **Setup and staying current:** onboard_wizard (run it first) · upskill · env_keys (your keys and your one core `.env`)
 - **Think before you build:** grill_me · project_management
 - **Your foundations and quality:** f6_completeness_check · qc_review · humanize
 - **Keep the workspace healthy:** workspace_health · file_audit · security_check · changelog
