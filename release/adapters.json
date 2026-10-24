@@ -28,6 +28,8 @@
         ".claude/skills/changelog/SKILL.md",
         ".claude/skills/context_load/SKILL.md",
         ".claude/skills/dashboard/SKILL.md",
+        ".claude/skills/env_keys/SKILL.md",
+        ".claude/skills/env_keys/references/env_layout.md",
         ".claude/skills/f6_completeness_check/SKILL.md",
         ".claude/skills/file_audit/SKILL.md",
         ".claude/skills/financial_teardown/SKILL.md",
