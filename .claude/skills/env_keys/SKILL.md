@@ -1,6 +1,6 @@
 ---
 name: env_keys
-description: Keep your one core .env organized and your key registry current. It adds, shares or retires a key, labels each key (purpose, phase, where to get it, cost, owner) and checks that every key billed by use has a spend cap. It never reads, asks for or writes a key value. NOT for scanning a repo for leaked secrets; use `security_check` instead. NOT for cancelling paid tools or cutting spend; use `financial_teardown` rather than this skill.
+description: Keep your one core .env organized and your key registry current. It adds, shares or retires a key, labels each key (purpose, phase, where to get it, cost, owner) and records whether each key billed by use has an alert or an enforced spend limit. It never reads, asks for or writes a key value. NOT for scanning a repo for leaked secrets; use `security_check` instead. NOT for cancelling paid tools or cutting spend; use `financial_teardown` rather than this skill.
 ---
 
 # Keys and your .env
@@ -12,6 +12,7 @@ You keep a person's keys organized without ever seeing one. You work from the ke
 - **Never read the `.env`:** don't open it, grep it, cat it or source it, even for key names. The Starter's settings deny reading it, and you don't route around that with a shell command.
 - **Never ask for a value**, and never write one anywhere: not in the registry, not in `.env.example`, not in a commit, a message or this chat.
 - **Never in a repository:** a key never goes into any repository, including this AIOS. `.env` stays ignored by Git.
+- **Where a key may live:** the provider account that issued it, the person's password manager, their own core `.env`, and, for a deployed app that needs it, that host's encrypted environment settings. Copying a key along that path is normal. Anywhere else, the key is exposed.
 - **Own keys first:** use the person's own key wherever the provider allows it. A key that must be shared moves only through the password manager's sharing feature, with named people. The registry records who holds it.
 - **If a value is ever pasted into the chat,** say so at once. Tell the person to revoke that key at the provider and make a new one. Don't repeat the value.
 
@@ -33,7 +34,7 @@ Ask which of these the person wants:
 - share a key;
 - record that someone else pays;
 - retire a key;
-- check the spend caps;
+- check the spend controls;
 - rebuild the `.env` layout.
 
 Ask for the key's name, tool, provider and who pays. Never ask for the key itself.
@@ -59,13 +60,16 @@ Ask them to paste the names back. You don't run it yourself.
 4. **Retire a key:**
    - Tell the person to delete its line from their `.env` and revoke it at the provider.
    - Set the status to retired, and keep the row.
-5. **Spend caps:** for every key billed by use, confirm that a spend cap and a billing alert are set in the provider's console, and that the cap is written on the Cost label. List any key without one.
+5. **Spend controls:** for every key billed by use, ask what the provider's console shows, and record it on the Cost label.
+   - **Alert:** set or not. An alert only notifies; calls keep running.
+   - **Enforced limit:** on, off or not offered, and its scope (the key, a project or the whole organization). Where one is offered, ask the person to turn it on and confirm it shows as enforced. You never change a provider setting yourself.
+   - **Limitations:** an enforced limit can lag, so spend can run slightly past it. A key with an alert only goes on the open list, with the person who checks its usage.
 6. **Rebuild the layout:** produce the whole labeled `.env` layout from the registry, grouped by tool, with every value empty, for the person to fill in from their password manager.
 
 ## Definition of done
 
 - [ ] **D-1 - Every key in the registry carries all five labels in the layout.**
-  - **Example:** ANTHROPIC_API_KEY, with lines for Purpose, Phase, Get it from, Cost (billed per use, cap set) and Owner. Anyone reading it knows why the key exists and who pays.
+  - **Example:** ANTHROPIC_API_KEY, with lines for Purpose, Phase, Get it from, Cost (billed per use, alert set, enforced project limit on) and Owner. Anyone reading it knows why the key exists and who pays.
   - **Counter-example:** a bare `OPENAI_API_KEY=` line with no labels. Nobody can tell which tool uses it, what it costs or whose account it is.
   - **Resource:** `references/env_layout.md`
 
@@ -74,9 +78,9 @@ Ask them to paste the names back. You don't run it yourself.
   - **Counter-example:** a registry row, commit or chat reply that holds part of a key, even its first few characters. Treat that key as exposed and have it revoked.
   - **Resource:** `00_AIOS/systems/key_registry.md`
 
-- [ ] **D-3 - Every key billed by use has a spend cap and an alert recorded.**
-  - **Example:** "Cost: billed per use, monthly cap and an alert at half of it set in the provider console." The person knows the most it can cost.
-  - **Counter-example:** "Cost: pay as you go", with no cap and no alert. One runaway script can spend without limit before anyone notices.
+- [ ] **D-3 - Every key billed by use records its spend control: the alert, the enforced limit and its scope.**
+  - **Example:** "Cost: billed per use; alert at half the monthly amount (notifies only); enforced limit on the project, shown as on in the console (it can lag slightly)." A reader can see what stops spending and what only warns.
+  - **Counter-example:** "Cost: cap set", when the console shows only an email alert. Calls keep running past it, so an alert-only setup doesn't count as an enforced limit; record it as "alert only", with who checks the usage.
 
 - [ ] **D-4 - A shared key names its holders and the password manager.**
   - **Example:** "Who holds it: shared: the account owner and one named teammate, through the password manager's shared item." Anyone can see who to ask when it must be revoked.
@@ -94,6 +98,6 @@ No approved gold standard yet.
 ## OUTPUT
 - An updated `00_AIOS/systems/key_registry.md`.
 - A block of labeled `.env` lines with empty values for the person to paste.
-- A short list of anything still open: a key without a cap, an unlabeled key, or a mismatch between names.
+- A short list of anything still open: a key with an alert only or no control, an unlabeled key, or a mismatch between names.
 
-For the reasons behind these rules (own keys, keys in your own `.env` even when someone else pays, safe sharing and cost caps), see `docs/keys_lesson_outline.md`.
+For the reasons behind these rules (own keys, keys in your own `.env` even when someone else pays, safe sharing and spend controls), see `docs/keys_lesson_outline.md`.

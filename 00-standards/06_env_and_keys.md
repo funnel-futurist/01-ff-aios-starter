@@ -28,7 +28,7 @@ Five comment lines sit above each key in the `.env`:
 | Purpose | What the key is for and which tool uses it |
 | Phase | The portal phase that first needs it, or "optional" |
 | Get it from | The provider page where the key is created |
-| Cost | Free, subscription or billed per use, plus the spend cap that is set |
+| Cost | Free, subscription or billed per use, plus its spend control: alert only, or an enforced limit and its scope |
 | Owner | The account the key belongs to, and who pays if that's someone else |
 
 `.env.example` shows the format. Group the keys by tool, so one look shows which key belongs to which tool.
@@ -48,11 +48,19 @@ Every AIOS has `00_AIOS/systems/key_registry.md`.
 
 ## Cost control
 
-Before a usage-billed key is used for the first time:
-- set a spend cap and a billing alert in the provider's console;
-- write the cap on the key's Cost label.
+There are two different controls, and the Cost label says which one a key has:
+- **An alert** notifies you when spend passes an amount. Calls keep running.
+- **An enforced limit** makes the provider stop or reject calls once spend reaches it.
+  - It may cover one key, a project or the whole organization.
+  - Some providers make you switch enforcement on, and some don't offer it.
+  - It can lag, so spend can run slightly past it.
 
-One key per tool keeps each tool's spend separate.
+Before a usage-billed key is used for the first time:
+- set an alert;
+- where the provider offers an enforced limit, turn it on and confirm in the console that it shows as enforced and what it covers;
+- write both on the key's Cost label: the alert, and the limit's scope and status. Where no limit is offered, write "alert only: no enforced limit" and who checks the usage.
+
+An alert alone caps nothing, and even an enforced limit is a bound, not an exact maximum. One key per tool keeps each tool's spend separate.
 
 ## Claude Code and the .env
 

@@ -3,7 +3,7 @@
 Every key you hold, one row each, so you always know exactly what tech you have.
 
 - **Names only:** write the *name* of a key here, never its value.
-- **Where values live:** in the provider account that issued the key, your password manager, and your own core `.env` (never committed).
+- **Where values live:** the provider account that issued the key, your password manager, your own core `.env` (never committed) and, for a deployed app that needs it, that host's encrypted settings. Anywhere else, the key is exposed.
 - **Labels:** the five labels for each key (purpose, phase, where to get it, cost, owner) sit above it in your `.env`.
 - **Tools:** `connections.md` in this folder lists the tools themselves.
 - **Upkeep:** run `/env_keys` to add, share or retire a key and keep this file current.

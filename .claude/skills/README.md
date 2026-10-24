@@ -21,7 +21,7 @@ Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to
 | **qc_review** | Reviews a deliverable against your brand voice and quality standards. | `/qc_review` |
 | **workspace_health** | Checks your workspace is structured right (folders, files, no rot). | `/workspace_health` |
 | **f6_completeness_check** | Checks your Foundational 6 (market, avatar, offer, economics, pitch, profile) are complete enough for the brain to work well. | `/f6_completeness_check` |
-| **env_keys** | Keeps your one core `.env` organized and your key registry current: labels every key (purpose, phase, where to get it, cost, owner), adds, shares or retires a key, and checks spend caps. Never reads or asks for a key value. | `/env_keys` |
+| **env_keys** | Keeps your one core `.env` organized and your key registry current: labels every key (purpose, phase, where to get it, cost, owner), adds, shares or retires a key, and records each key's spend control (an alert or an enforced limit). Never reads or asks for a key value. | `/env_keys` |
 | **security_check** | Scans for leaked secrets and obvious security issues before you push. | `/security_check` |
 | **file_audit** | Audits filenames + structure against your naming rules. | `/file_audit` |
 | **changelog** | Generates a clean changelog entry from your recent changes. | `/changelog` |

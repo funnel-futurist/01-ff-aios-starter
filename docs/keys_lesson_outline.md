@@ -6,7 +6,7 @@ The outline for the keys training. A Portal lesson can be cut from it section by
 - has their own core `.env`, with every key labeled;
 - has a key registry that matches it;
 - knows how to share a key safely;
-- has a spend cap on every key that bills by use.
+- knows, for every key that bills by use, whether it has an alert or an enforced limit, and what that limit covers.
 
 **Rules this teaches:**
 - `00_AIOS/systems/key_registry.md` (the registry);
@@ -40,7 +40,7 @@ The outline for the keys training. A Portal lesson can be cut from it section by
 - **Purpose:** what it's for and which tool.
 - **Phase:** the portal phase that first needs it.
 - **Get it from:** the provider page.
-- **Cost:** free, subscription or billed per use, and the cap.
+- **Cost:** free, subscription or billed per use, and its spend control (an alert or an enforced limit).
 - **Owner:** whose account it is.
 
 **Why:** an unlabeled key is a mystery charge and a mystery risk. Labels let anyone answer "what is this, and can I turn it off?"
@@ -71,19 +71,26 @@ The outline for the keys training. A Portal lesson can be cut from it section by
 
 **Do:** for each shared key, record "shared: name, name" in the registry's "Who holds it" column.
 
-**If a key was pasted anywhere else:** revoke it at the provider and make a new one.
+**If a key was pasted outside the four places in section 4:** revoke it at the provider and make a new one.
 
 ## 6. Keeping cost under control
 
-**Point:** before you first use a key that bills by use:
-- set a spend cap and a billing alert in the provider's console;
-- write the cap on its Cost label.
+**Point:** there are two controls, and they do different jobs.
+- **An alert** tells you spend passed an amount. Calls keep running.
+- **An enforced limit** makes the provider stop or reject calls once spend reaches it. It may cover one key, a project or the whole organization. Some providers make you switch enforcement on; some don't offer it.
+
+Before you first use a key that bills by use:
+- set an alert;
+- turn on an enforced limit where the provider offers one, and confirm in the console that it shows as enforced and what it covers;
+- write both on the Cost label.
 
 Keep one key per tool, so each tool's spend shows on its own.
 
-**Why:** a looping script or a leaked key can spend without limit. A cap turns that into an alert and a stopped bill. Knowing which key belongs to which tool tells you what to switch off.
+**The limits of the limits:** an enforced limit can lag, so spend can run slightly past it. A key with an alert only has no ceiling at all, so someone has to watch its usage.
 
-**Do:** find every key billed by use in your registry, confirm its cap and alert, and fix any without one.
+**Why:** a looping script or a leaked key can spend fast. An alert tells you; an enforced limit bounds the damage, close to its amount. Knowing which key belongs to which tool tells you what to switch off.
+
+**Do:** for each key billed by use, record its alert, and whether an enforced limit is on and what it covers. List every alert-only key with the person who checks its usage.
 
 ## 7. Your key registry
 
@@ -98,5 +105,5 @@ Keep one key per tool, so each tool's spend shows on its own.
 1. Your company pays for a tool. Where does your key for it live, and what does its Owner label say?
 2. A teammate asks for "the key" in Slack. What do you do instead?
 3. Name two reasons to use your own key rather than a shared one.
-4. A key that bills by use has no cap. What two things do you set, and where do you write the cap?
+4. A key that bills by use has only an email alert. Is its spend capped? What do you check in the console, and what do you write on its Cost label?
 5. You find a key in your `.env` that the registry doesn't list. What do you do?
