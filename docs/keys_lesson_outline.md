@@ -98,7 +98,7 @@ Keep one key per tool, so each tool's spend shows on its own.
 
 **Do:**
 - Run `/env_keys` to add your keys to the registry.
-- Paste the names-only list it gives you a command for, and fix any mismatch between the registry and your `.env`.
+- Run the presence check it writes for you, in your own terminal, and paste back what it prints: "set", "empty" or "missing" for each registry name, plus a count of other lines. Fix anything missing, and explain any count above zero.
 
 ## Check for understanding
 

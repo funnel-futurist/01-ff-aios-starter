@@ -39,12 +39,36 @@ Ask which of these the person wants:
 
 Ask for the key's name, tool, provider and who pays. Never ask for the key itself.
 
-### G-3 Compare names, run by the person
-To check the `.env` against the registry, give the person this command to run in their own terminal. It prints key names only, never a value:
+### G-3 Check presence, run by the person
+To check the `.env` against the registry:
+- Write this check with the registry's key names in the `for` list. Only names made of letters, digits and underscores go in it.
+- Give it to the person to run in their own terminal (sh, bash or zsh), from the folder that holds their `.env`. You don't run it yourself.
 
-`sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' .env`
+```sh
+if [ -f .env ]; then
+  p='^[[:space:]]*(export[[:space:]]+)?'
+  known=0
+  for n in ANTHROPIC_API_KEY OPENAI_API_KEY; do
+    c=$(grep -Ec "${p}${n}[[:space:]]*=" .env)
+    known=$((known + c))
+    if grep -Eq "${p}${n}[[:space:]]*=[[:space:]]*[^[:space:]]" .env; then echo "${n} set"
+    elif [ "${c}" -gt 0 ]; then echo "${n} empty"
+    else echo "${n} missing"; fi
+  done
+  all=$(grep -Ec "${p}[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=" .env)
+  echo "other lines that look like assignments: $((all - known))"
+else
+  echo "no .env in this folder"
+fi
+```
 
-Ask them to paste the names back. You don't run it yourself.
+**What it prints:**
+- Only the names you wrote into the list, each with "set", "empty" or "missing", plus one count. It never prints anything it reads from the file.
+- "set" means something follows the `=` on that name's line; "empty" means the line is there with nothing after it.
+- The count covers every other line shaped like `NAME=`, `NAME = ` or `export NAME=`. Lines inside a multi-line value (a certificate or a JSON key) can be shaped like that too.
+- So a count above zero means the person looks through their own file. It never means you ask for its lines.
+
+Ask them to paste the output back.
 
 ## EXECUTION
 
@@ -86,9 +110,9 @@ Ask them to paste the names back. You don't run it yourself.
   - **Example:** "Who holds it: shared: the account owner and one named teammate, through the password manager's shared item." Anyone can see who to ask when it must be revoked.
   - **Counter-example:** "shared with the team", or a key pasted into a Slack channel. Nobody knows who has it, so it can't be revoked cleanly.
 
-- [ ] **D-5 - The names in the registry and the names in the person's `.env` match one to one.**
-  - **Example:** the names-only list the person pasted from G-3 matches the active registry rows exactly, and any extra or missing name is shown to them.
-  - **Counter-example:** a key in the `.env` that the registry doesn't list. It is tech nobody knows they have, and nobody owns its cost.
+- [ ] **D-5 - Every active registry name shows as set, and every other assignment-like line is explained.**
+  - **Example:** the G-3 output the person pasted says "set" for every active row and "other lines that look like assignments: 0", or the person traced that count to a multi-line value they know about.
+  - **Counter-example:** "other lines that look like assignments: 2", with nobody checking. Those may be keys the registry doesn't list: tech nobody knows they have, and whose cost nobody owns.
 
 ## QC gate
 Before the person pushes any change to this AIOS, route to `security_check` so a committed secret is caught. If a value was exposed, hand it to the person to revoke at the provider; you don't rotate keys yourself.
@@ -98,6 +122,6 @@ No approved gold standard yet.
 ## OUTPUT
 - An updated `00_AIOS/systems/key_registry.md`.
 - A block of labeled `.env` lines with empty values for the person to paste.
-- A short list of anything still open: a key with an alert only or no control, an unlabeled key, or a mismatch between names.
+- A short list of anything still open: a key with an alert only or no control, an unlabeled key, a registry name that's missing or empty, or other assignment-like lines nobody has explained.
 
 For the reasons behind these rules (own keys, keys in your own `.env` even when someone else pays, safe sharing and spend controls), see `docs/keys_lesson_outline.md`.
