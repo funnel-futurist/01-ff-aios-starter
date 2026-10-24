@@ -1,6 +1,6 @@
 # Repository standards pilot
 
-These rules make a repository understandable to its owner before anyone edits it. Start with the [core four](01_core_four.md), then use the [README checklist](02_readme_standard.md) and [folder rules](03_folder_structure.md). [Supabase](04_supabase.md) and [Vercel](05_vercel.md) apply only when a repo uses those services. Copy the [new-repo template](template/README.md) when creating a repo.
+These rules make a repository understandable to its owner before anyone edits it. Start with the [core four](01_core_four.md), then use the [README checklist](02_readme_standard.md) and [folder rules](03_folder_structure.md). [Supabase](04_supabase.md) and [Vercel](05_vercel.md) apply only when a repo uses those services. The [.env and keys standard](06_env_and_keys.md) applies to every person and every repo. Copy the [new-repo template](template/README.md) when creating a repo.
 
 This is a **pilot**, not an automatic rename of existing repos or client workspaces. The October 22 direction calls for a copy-brain pilot, then one approved Keep repo at a time. Existing Starter 3.0 folders and its `taxonomy_rules.md` still govern installed client instances until a reviewed migration changes them. The proposed `NN-scope-name` convention for repo and service names conflicts with that current underscore-based client taxonomy; do not silently rename those paths. Do not rename, archive, delete or change connected projects from this document alone.
 
