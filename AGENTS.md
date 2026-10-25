@@ -25,6 +25,17 @@ Edit this `CLAUDE.md` freely as your business and workflow evolve, it's your bra
 - **When you're stuck, use the unstuck protocol** (`docs/UNSTUCK_PROTOCOL.md`): Claude in caveman mode → screenshot + AI → YouTube (last 1–2 months) → NotebookLM → escalate. You'll solve ~99% yourself.
 - **Lean beats bloated.** Add the high-impact core; look the specifics up as you go.
 
+## Work that reaches use
+How work runs in this AIOS, for you and your agents. "The owner" means whoever owns this workspace.
+- **Every unit states:** the outcome, the owner and reviewer, the risk tier, the sensitivity tier, an estimate in agent minutes (human minutes listed separately), what it needs from the owner, the exact file or resource it locks, what it blocks, and an acceptance check. A missing field holds that one unit only.
+- **Ask first.** Before work starts, list every key, login and decision it needs in one batch, each with what it unblocks. Keep going on everything else.
+- **One claim per action.** One agent claims each action and does it once, so nothing runs twice. An approval is not proof it ran.
+- **Lock files, not areas.** A lock covers the exact files or resources being changed, never a whole folder.
+- **Review by consequence.** Docs pass on automated checks. Code with no production effect gets one reviewer. Production databases, deletions, money and credentials go to the owner in one batch. Paid AI review runs only if the owner chooses it.
+- **Investigations** state the expected result and a stop condition. They end in a fix, a handoff to the owner, one bounded next test, or "evidence exhausted". No polling and no "still working" posts.
+- **Report four states separately:** source complete, installed, deployed, accepted in use. Using it day to day counts as accepted.
+- **Sensitivity follows the data.** Personal goals and tasks are low. Company plans and team records are medium. Customer personal data, payments and credentials are high and get the full review.
+
 ## Your workspace
 Seven domain folders, the same in every company's instance (`00_AIOS/routing.md` says which one takes which request):
 `00_AIOS/` who we are (`company/` holds your Foundational 6), routing, decisions and the review queue · `01_Creation/` brand, the one asset library, preferences, finished outputs · `02_Team_Ops/` people, roles, projects, onboarding, routines · `03_RevOps/` site, funnels, CRM, automations, sales, customer journey, audits, reports, records · `04_Attention/` content, campaigns, publishing, accounts, performance · `05_Jobs/` recurring jobs · `99_Archive/`.
