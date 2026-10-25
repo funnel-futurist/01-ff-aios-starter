@@ -1,9 +1,10 @@
-# Converged PR auto-reviewer — event-driven, one brain (pr_review skill), GitHub-enforced gate.
+# Converged PR auto-reviewer - event-driven, deterministic checks, GitHub-enforced gate.
 #
 # Four jobs:
 #   static_checks — deterministic floor (no LLM). REQUIRED status check. Fails only on a true BLOCK.
-#   ai_review     — runs the pr_review skill via claude-code-action. Posts the review, writes verdict.json.
-#                   It reads and comments; it never changes the branch (LW-21).
+#   ai_review     - OFF. The paid AI review is turned off; this job stays only so the check name
+#                   exists, and it always shows as skipped. No model runs and no credential is read.
+#                   With no AI verdict, no pull request is auto-merge eligible: a person merges.
 #   gate          — deterministic. Sets the `pr-gate` commit status and decides auto-merge eligibility.
 #   automerge     — enables native auto-merge, only when the repo variable PR_AUTOMERGE is "on" and the
 #                   gate said eligible. The only job that can write to the repository.
@@ -84,111 +85,15 @@ jobs:
           retention-days: 3
           if-no-files-found: ignore
 
-  # ── 2. The brain — pr_review skill via the official action ────────────────────
+  # ── 2. AI review: off (a compatibility job, always skipped) ──────────────────
+  # The paid model review is turned off. Nothing here runs a model, reads a model credential,
+  # writes a verdict or casts an approving vote. Review is the deterministic floor plus a person.
+  # Turning a paid review back on is the owner's choice, made in its own reviewed change.
   ai_review:
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: static_checks
-    # Skip the (paid) deep review when the deterministic floor already hard-blocks. Matches the cron.
-    if: needs.static_checks.outputs.has_block != 'true'
-    permissions:
-      contents: read           # read the code; the reviewer never pushes (LW-21)
-      pull-requests: write     # post the review and its comment
-      id-token: write          # claude-code-action's own sign-in (OIDC); not a repository write
-    env:
-      # "No credential configured" and "the reviewer crashed" are different facts and must not
-      # look the same. Without this, a repo that never configured a key shows a red X on every
-      # single PR — and a check that is always red is a check nobody reads.
-      HAS_CLAUDE_CREDENTIAL: ${{ (secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '') && 'yes' || 'no' }}
     steps:
-      - name: AI review is not configured
-        if: env.HAS_CLAUDE_CREDENTIAL != 'yes'
-        run: |
-          echo "::warning title=AI review not configured::No ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret is set for this repository, so no AI review ran. The deterministic floor (static_checks) still ran. This PR needs a human review before merge."
-          printf '%s\n' '{"configured": false, "reason": "no ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN secret"}' > verdict.json
-          { echo "### AI review"; echo; echo "**Not configured** — no Claude credential secret on this repository."; echo "The deterministic floor still ran. A human reviews this PR."; } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
-        with:
-          fetch-depth: 0
-          persist-credentials: false   # no git credential left on disk: the reviewer reads, it doesn't push
-      - name: Discard review files from the pull request
-        # verdict.json and the review text come only from the reviewer below, and .pr_context/ only from the
-        # next step. A copy in the pull request is removed before either runs, and a pull request that tracks
-        # verdict.json is refused.
-        if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
-        run: |
-          rm -f verdict.json review.md review_comment.md
-          rm -rf .pr_context
-          if git ls-files --error-unmatch verdict.json >/dev/null 2>&1; then
-            echo "::error::This pull request commits verdict.json, which only the reviewer writes. It is refused."
-            exit 1
-          fi
-      - name: Collect the pull request for the reviewer
-        # The reviewer gets the pull request as files and no credential at all; this step and
-        # "Post the review" below hold the token, and both are deterministic.
-        if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          mkdir -p .pr_context
-          gh pr view "$PR" --repo "$REPO" --json number,title,body,author,baseRefName,headRefName,files,additions,deletions > .pr_context/pr.json
-          gh pr diff "$PR" --repo "$REPO" > .pr_context/diff.txt
-      - name: Claude review (pr_review skill)
-        id: claude_review
-        continue-on-error: true   # the review counts if verdict.json is valid (see 'Require a valid verdict'); timeout-minutes is the runaway guard
-        if: env.HAS_CLAUDE_CREDENTIAL == 'yes'
-        uses: anthropics/claude-code-action@34968b5981d5d170904281aa3df6f3c0d4a28855 # v1.0.249
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          # A subscription token from `claude setup-token` works too, so a client without API
-          # billing can still run the reviewer.
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Pull requests opened by automation (an agent's app, a dependency bot) still get reviewed.
-          allowed_bots: "*"
-          prompt: "/pr_review ${{ github.repository }} ${{ github.event.pull_request.number }}"
-          # The tools are the boundary, not the prompt: the reviewer can read the tree and
-          # .pr_context/, and write two files, review.md and verdict.json. No shell, no GitHub
-          # token, so a prompt-injected diff can't change the branch, post on its own, or read a
-          # credential. "Post the review" publishes what it wrote.
-          claude_args: |
-            --model claude-sonnet-4-6
-            --allowedTools "Read,Glob,Grep,Edit(./review.md),Edit(./verdict.json)"
-            --append-system-prompt "You are running headless in GitHub Actions CI as the always-on PR reviewer. Follow the pr_review skill CI mode exactly. The pull request is in ./.pr_context/ (pr.json and diff.txt); you have no shell and no GitHub access. Review with intent; SUGGEST safe mechanical fixes as exact changes; never edit any other file. Write your review comment to ./review.md and ALWAYS write ./verdict.json per the skill schema; a later workflow step posts them."
-        # DB-free v1: no DATABASE_CONNECTION_URL on the runner (smallest attack surface, matches
-        # the client version). Schema-checks downgraded to "flag for human" in the skill.
-      - name: Post the review
-        # Deterministic: approve unless the verdict has an error-severity issue, then request
-        # changes. If this repository doesn't let Actions approve, it comments instead.
-        if: always() && env.HAS_CLAUDE_CREDENTIAL == 'yes'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          [ -f verdict.json ] || { echo "no verdict.json, nothing to post"; exit 0; }
-          event=$(node -e 'const v=JSON.parse(require("fs").readFileSync("verdict.json","utf8")); console.log(v.has_error_severity ? "--request-changes" : "--approve")') || exit 0
-          [ -s review.md ] || node -e 'const v=JSON.parse(require("fs").readFileSync("verdict.json","utf8")); require("fs").writeFileSync("review.md", String(v.plain_english || v.summary || "Reviewed."))'
-          gh pr review "$PR" --repo "$REPO" "$event" --body-file review.md \
-            || gh pr review "$PR" --repo "$REPO" --comment --body-file review.md \
-            || echo "::warning::could not post the review"
-      - name: Persist verdict for the gate job
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: ai_verdict
-          path: verdict.json
-          retention-days: 3
-          if-no-files-found: ignore
-      - name: Require a valid verdict (a finished review passes even if the action reported an error)
-        # Only where a review could run: without a credential the review step is skipped, and an unconditional
-        # check failed ai_review on every PR (as it did on #23 while #22 was on main).
-        if: always() && env.HAS_CLAUDE_CREDENTIAL == 'yes'
-        run: |
-          node -e 'const fs=require("fs"); let v; try { v=JSON.parse(fs.readFileSync("verdict.json","utf8")); } catch (e) { process.exit(1); } const q=v && v.quality_score; process.exit(typeof q==="number" && q>=1 && q<=10 ? 0 : 1);' \
-            || { echo "::error::No valid verdict.json - the AI review did not finish"; exit 1; }
+      - run: echo 'Paid AI review is off. The deterministic checks still run, and a person reviews before merge.'
 
   # ── 3. Deterministic gate — sets pr-gate status + decides auto-merge eligibility ─
   gate:
