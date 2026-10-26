@@ -1,6 +1,6 @@
 # Intake questions
 
-The `/intake` skill asks these one at a time and writes each answer into your answers file as soon as you give it. Edit this list to change what the intake asks; keep the five fields on every question, because a test checks them. A strawman is only ever taken from your own files, never made up.
+The `/intake` skill asks these one at a time and writes each answer into your answers file as soon as you give it. This list ships with the Starter release and updates with it, so a change to the questions goes back to the Starter's owner for a reviewed release rather than a local edit; a hand-edited copy stops your next upgrade. Every question keeps the same five fields, and a test checks them. A strawman is only ever taken from your own files, never made up.
 
 ## Q1 - Your role
 - **Topic:** role

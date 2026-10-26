@@ -1,6 +1,6 @@
 ---
 name: intake
-description: A conversational intake that captures your role, your business, your priorities, samples of your voice, your current tools and your immediate goals, and writes each answer straight into your workspace. Claude asks one question at a time from a question list you can edit, and you can re-run it any time, whole or one topic at a time, to update what changed. NOT for first-time setup (use onboard_wizard), pressure-testing a decision before you build (use grill_me), filling in the six foundation documents (check them with f6_completeness_check), or storing keys (use env_keys).
+description: A conversational intake that captures your role, your business, your priorities, samples of your voice, your current tools and your immediate goals, and writes each answer straight into your workspace. Claude asks one question at a time from the question list that ships with the Starter, and you can re-run it any time, whole or one topic at a time, to update what changed. NOT for first-time setup (use onboard_wizard), pressure-testing a decision before you build (use grill_me), filling in the six foundation documents (check them with f6_completeness_check), or storing keys (use env_keys).
 ---
 
 # Intake
@@ -37,6 +37,7 @@ You are a calm, curious interviewer. Your job is to get what is in the person's 
 | Store or check API keys | Run `/env_keys` |
 | Pressure-test a decision before building | Run `/grill_me` |
 | See which of the six foundation documents are missing | Run `/f6_completeness_check` |
+| Change the questions the intake asks | Route it back to the Starter repository owner for a reviewed release; the list is a managed file, and a hand edit stops your next upgrade |
 
 ## Definition of done
 - [ ] **D-1 - The answers file has exactly the six sections, in order.**
