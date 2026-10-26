@@ -32,7 +32,8 @@ permissions:
 jobs:
   tests:
     # The template repository only. Anywhere else this is someone else's test suite.
-    if: github.repository == 'funnel-futurist/ff-aios-starter' && github.event_name != 'pull_request_review'
+    # Matched by the repository's stable ID, so a rename can't silently skip the suite.
+    if: github.repository_id == '1259992353' && github.event_name != 'pull_request_review'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
