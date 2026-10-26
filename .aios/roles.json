@@ -57,6 +57,7 @@
       "skills": [
         "start-my-day",
         "context_load",
+        "intake",
         "dashboard",
         "qc_review",
         "review-queue",
@@ -71,6 +72,7 @@
       "skills": [
         "start-my-day",
         "context_load",
+        "intake",
         "dashboard",
         "grill_me",
         "project_management",

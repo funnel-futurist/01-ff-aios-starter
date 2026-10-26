@@ -2,7 +2,7 @@
 
 Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to see them live. Here's the full list with a one-line description and how to trigger each.
 
-## The core set (23 ship in this repo, plus Anthropic's four document skills)
+## The core set (24 ship in this repo, plus Anthropic's four document skills)
 
 | Skill | What it does | Trigger |
 |---|---|---|
@@ -12,6 +12,7 @@ Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to
 | **review-queue** | The reviewer's live queue: every open change, sorted into ready, waiting on you, stuck and stale. | `/review-queue` |
 | **resolve-conflict** | A calm, plain-English path through a merge conflict, when two people changed the same lines. | `/resolve-conflict` |
 | **onboard_wizard** | First-run setup walk: tool → repo → keys → invite team; captures your vision / mission / values; proves the brain works. Run it first, and again when a teammate joins. | `/onboard_wizard` |
+| **intake** | A conversation that captures your role, business, priorities, voice samples, tools and immediate goals, one question at a time, and writes each answer into `00_AIOS/company/profile_snapshot/intake.md`. Re-run it any time, whole or one topic, to update what changed. | `/intake` |
 | **context_load** | Reads your whole workspace and gives you a session brief (what's here, what's active). | `/context_load` |
 | **dashboard** | Quick status: open tasks, what's in the review queue, what's coming up. | `/dashboard` |
 | **grill_me** | Pressure-tests your thinking before you act. DECIDE mode runs the Define-Before-You-Build gate so you never build the wrong thing; CAPTURE mode interviews you and writes a process/offer/decision into a clean doc so nothing tacit gets lost. Sparring partner, not answer machine. | `/grill_me` |
