@@ -224,6 +224,13 @@ class Registration(unittest.TestCase):
         self.assertIn("intake", entries["operator"]["skills"])
         self.assertIn("| **intake** |", read(".claude", "skills", "README.md"))
 
+    def test_the_onboarding_wizard_runs_it_after_the_vision_step(self):
+        wizard = read(".claude", "skills", "onboard_wizard", "SKILL.md")
+        step4 = re.search(r"(?ms)^## Step 4:.*?(?=^## Step 5:)", wizard)
+        self.assertIsNotNone(step4, "the wizard lost its Step 4 or Step 5 heading")
+        self.assertIn("`/intake`", step4.group(0))
+        self.assertIn("`00_AIOS/company/profile_snapshot/intake.md`", step4.group(0))
+
 
 if __name__ == "__main__":
     unittest.main()
