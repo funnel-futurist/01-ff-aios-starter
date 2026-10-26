@@ -1,5 +1,5 @@
 # CODEOWNERS - only CATASTROPHIC / IRREVERSIBLE paths need an owner.
-# aios-codeowners-for: funnel-futurist/ff-aios-starter
+# aios-codeowners-for: funnel-futurist/01-ff-aios-starter
 # Everything else moves freely (no bottleneck). A mistake on the paths below can't be cleanly undone,
 # so they require a code-owner's review before merging into main.
 #
