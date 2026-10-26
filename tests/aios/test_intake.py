@@ -55,6 +55,10 @@ def join_blocks(intro, blocks):
     return "\n".join(intro + [line for block in blocks for line in block]) + "\n"
 
 
+def renumber(blocks):
+    return [["## Q%d - %s" % (i, b[0].split(" - ", 1)[1])] + b[1:] for i, b in enumerate(blocks, start=1)]
+
+
 def topic_of(block):
     for line in block[1:]:
         m = FIELD_RE.match(line.strip())
@@ -142,10 +146,45 @@ class QuestionList(unittest.TestCase):
 
     def test_a_question_out_of_topic_order_fails(self):
         moved = self.blocks[1:] + [self.blocks[0]]
-        renumbered = [["## Q%d - %s" % (i, b[0].split(" - ", 1)[1])] + b[1:]
-                      for i, b in enumerate(moved, start=1)]
-        errors = validate_questions(join_blocks(self.intro, renumbered))
+        errors = validate_questions(join_blocks(self.intro, renumber(moved)))
         self.assertTrue(any("out of topic order" in e for e in errors), errors)
+
+    def test_a_wrong_first_line_fails(self):
+        mutant = self.text.replace("# Intake questions\n", "# Questions\n", 1)
+        self.assertNotEqual(mutant, self.text)
+        self.assertIn("the first line must be '# Intake questions'", validate_questions(mutant))
+
+    def test_too_few_or_too_many_questions_fail(self):
+        one_per_topic = [next(b for b in self.blocks if topic_of(b) == t) for t in TOPICS]
+        few = validate_questions(join_blocks(self.intro, renumber(one_per_topic)))
+        self.assertIn("there must be 10 to 14 questions, found 6", few)
+        extra = [self.blocks[0]] * (15 - len(self.blocks)) + self.blocks
+        many = validate_questions(join_blocks(self.intro, renumber(extra)))
+        self.assertIn("there must be 10 to 14 questions, found 15", many)
+
+    def test_a_badly_shaped_heading_fails(self):
+        mutant = self.text.replace("## Q1 - ", "## Q1 ", 1)
+        self.assertNotEqual(mutant, self.text)
+        self.assertTrue(any(e.startswith("bad question heading") for e in validate_questions(mutant)))
+
+    def test_an_empty_field_fails(self):
+        block = [("- **Ask:**" if l.startswith("- **Ask:**") else l) for l in self.blocks[0]]
+        self.assertNotEqual(block, self.blocks[0])
+        errors = validate_questions(join_blocks(self.intro, [block] + self.blocks[1:]))
+        self.assertIn("Q1 has an empty Ask", errors)
+
+    def test_an_unknown_topic_fails(self):
+        mutant = self.text.replace("- **Topic:** role", "- **Topic:** marketing", 1)
+        self.assertNotEqual(mutant, self.text)
+        self.assertIn("Q1 has an unknown topic 'marketing'", validate_questions(mutant))
+
+    def test_a_founder_question_opened_to_everyone_fails(self):
+        # Q5 asks for revenue, which only the founder answers.
+        self.assertIn("revenue", self.blocks[4][3])
+        block = [l.replace("- **Who answers:** founder", "- **Who answers:** everyone") for l in self.blocks[4]]
+        self.assertNotEqual(block, self.blocks[4])
+        errors = validate_questions(join_blocks(self.intro, self.blocks[:4] + [block] + self.blocks[5:]))
+        self.assertIn("Q5: Who answers must be founder or anyone", errors)
 
 
 class SkillInstructions(unittest.TestCase):
