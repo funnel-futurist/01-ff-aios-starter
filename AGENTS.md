@@ -21,9 +21,21 @@ Edit this `CLAUDE.md` freely as your business and workflow evolve, it's your bra
 ## Best practices (the guardrails)
 - **Secrets stay out of the repo.** Keys live in `.env` (it's gitignored, so it never reaches GitHub). Set a spend limit on each key; turn on 2FA. (Airlocks: scope access, contain the blast radius.)
 - **Reversible by default.** Commit early and often, git is your safety net. Don't delete important work or force-push.
-- **The PR reviewer has your back.** `.claude/skills/pr_review` reviews every PR, approves good work, flags real risk, and suggests the exact fix for safe issues (in CI it can't change your branch; run `/pr_review` yourself to have it apply them). It never blocks you.
+- **Review follows risk.** Keep deterministic checks. Use one meaningful independent review for nonproduction code; batch irreversible actions for the owner. Paid review is disabled unless separately authorized. Check the actual CI configuration before publishing; this instruction alone does not disable a workflow.
 - **When you're stuck, use the unstuck protocol** (`docs/UNSTUCK_PROTOCOL.md`): Claude in caveman mode → screenshot + AI → YouTube (last 1–2 months) → NotebookLM → escalate. You'll solve ~99% yourself.
 - **Lean beats bloated.** Add the high-impact core; look the specifics up as you go.
+
+## Work that reaches use
+
+- Before a plan starts, batch all needed keys, logins and decisions, each with what it unblocks. Check available access and whether the owner can act before routing to a teammate. Continue independent work.
+- Each unit links its owning pocket, project and optional round by stable IDs, with dependencies separate from parent-child placement, and states outcome, owner/reviewer, risk and sensitivity, agent-minute estimate (human time separately), required owner inputs, exact file/resource lock, dependency effect and acceptance check. Missing information holds that unit only.
+- Use one builder per independent pocket and two shared reviewers, with at most two unfinished candidates per pocket. A pocket groups work; it is not a dependency. Start fresh tasks from a short spec and keep existing IDs.
+- Working state belongs in the unit issue, including one execution claim, current revision, state-entry time and evidence. Decisions and accepted use belong in the decision log. Where issue access is unavailable, report that specific limit rather than claiming an automatic board is installed.
+- Review by consequence: docs/planning use automated checks; nonproduction code gets one meaningful reviewer; production databases, deletions, money and credentials go into a prepared human batch. Do not revive paid AI reviews. Immediately before publication, recheck the target base, active claims and open PRs touching the same files; reconcile overlaps with the owner. Inspect the target base's PR and push workflow triggers before publication; a PR can start a paid action automatically. If paid execution is possible or unknown, keep the patch local until disabled and continue deterministic local checks. Do not rerun paid CI to obtain review.
+- A verified owner decision from any chat counts, but one claimed executor performs it once. An approval is not proof of execution. Reversible defaults need an explicit deadline; silence never authorizes irreversible actions.
+- Investigations name the expected result and a stop condition. Finish with a fix, escalation package, one bounded next experiment or evidence exhausted. No polling/holding posts.
+- Report source complete, installed, deployed and accepted in use separately. Batch owner QC at pocket completion; using daily tools counts as acceptance. Preserve every commitment as delivered, cancelled, replaced, active, deferred with a watched restart, or unresolved.
+- Sensitivity follows the data: goals/workouts/tasks low, company operating records medium, credentials/payments/client personal data high. Keep baseline security and privacy boundaries; do not assume every personal record is low sensitivity.
 
 ## Your workspace
 Seven domain folders, the same in every company's instance (`00_AIOS/routing.md` says which one takes which request):
@@ -37,7 +49,7 @@ Type `/` to see them. What each one does: `.claude/skills/README.md`. Run `/star
 - **Think before you build:** grill_me · project_management
 - **Your foundations and quality:** f6_completeness_check · qc_review · humanize
 - **Keep the workspace healthy:** workspace_health · file_audit · security_check · changelog
-- **Working as a team:** review-queue · resolve-conflict · pr_review (your guardian, runs on every change)
+- **Working as a team:** review-queue · resolve-conflict · pr_review (proportionate review; no automatic paid calls)
 - **Money:** financial_teardown
 - **Sounds (Mac):** pause · play (quiet or restore the finished / needs-you sounds for Claude and Codex)
 - **Documents:** Word, PDF, PowerPoint and Excel come from Anthropic's `document-skills` plugin, which `/onboard_wizard` installs. They are Anthropic's, not copied here (`THIRD_PARTY_NOTICES.md`).
