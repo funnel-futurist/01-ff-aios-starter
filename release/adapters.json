@@ -35,6 +35,8 @@
         ".claude/skills/financial_teardown/SKILL.md",
         ".claude/skills/grill_me/SKILL.md",
         ".claude/skills/humanize/SKILL.md",
+        ".claude/skills/intake/SKILL.md",
+        ".claude/skills/intake/questions.md",
         ".claude/skills/onboard_wizard/SKILL.md",
         ".claude/skills/pause/SKILL.md",
         ".claude/skills/play/SKILL.md",

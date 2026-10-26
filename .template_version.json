@@ -1,6 +1,6 @@
 {
   "_comment": "skills/skill_count are asserted against the tree, and plugins against .claude/settings.json, by tests/aios/test_governance_and_sanitize.py. skills = the skills that ship in this repo; plugins = capabilities installed from their makers, not copied. The authoritative version of an installed workspace is .aios/install.json, not this file.",
-  "skill_count": 23,
+  "skill_count": 24,
   "skills": [
     "changelog",
     "context_load",
@@ -11,6 +11,7 @@
     "financial_teardown",
     "grill_me",
     "humanize",
+    "intake",
     "onboard_wizard",
     "pause",
     "play",
