@@ -85,6 +85,7 @@ jobs:
           if-no-files-found: ignore
 
   # ── 2. The brain — pr_review skill via the official action ────────────────────
+  # Paid review is disabled for FF; client-owned installs may use their own credentials.
   ai_review:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -99,7 +100,7 @@ jobs:
       # "No credential configured" and "the reviewer crashed" are different facts and must not
       # look the same. Without this, a repo that never configured a key shows a red X on every
       # single PR — and a check that is always red is a check nobody reads.
-      HAS_CLAUDE_CREDENTIAL: ${{ (secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '') && 'yes' || 'no' }}
+      HAS_CLAUDE_CREDENTIAL: ${{ github.repository_owner != 'funnel-futurist' && (secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '') && 'yes' || 'no' }}
     steps:
       - name: AI review is not configured
         if: env.HAS_CLAUDE_CREDENTIAL != 'yes'
@@ -213,12 +214,13 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           ADDITIONS: ${{ github.event.pull_request.additions }}
           STATIC_BLOCK: ${{ needs.static_checks.outputs.has_block }}
+          STATIC_RESULT: ${{ needs.static_checks.result }}
           AI_RESULT: ${{ needs.ai_review.result }}
           PR_AUTOMERGE: ${{ vars.PR_AUTOMERGE }}   # repo variable; unset/!="on" => auto-merge DISARMED (bake mode + kill-switch)
         run: |
           node <<'EOF'
           const fs = require('fs');
-          const { GH_TOKEN, PR, REPO, HEAD_SHA, ADDITIONS, STATIC_BLOCK, AI_RESULT } = process.env;
+          const { GH_TOKEN, PR, REPO, HEAD_SHA, ADDITIONS, STATIC_BLOCK, STATIC_RESULT, AI_RESULT } = process.env;
           const sh = (c) => require('child_process').execSync(c, { stdio: 'pipe' }).toString().trim();
 
           // Read the AI verdict if present; fail CLOSED for auto-merge on any uncertainty.
@@ -226,6 +228,7 @@ jobs:
           try { v = JSON.parse(fs.readFileSync('verdict.json', 'utf8')); } catch {}
 
           const staticBlocked = STATIC_BLOCK === 'true';
+          const staticReported = STATIC_BLOCK === 'true' || STATIC_BLOCK === 'false';
           const notConfigured = !!(v && v.configured === false);
           const aiErrored = AI_RESULT !== 'success' && AI_RESULT !== 'skipped';
           const hasErrorSeverity = !!(v && v.has_error_severity);
@@ -235,11 +238,13 @@ jobs:
 
           // pr-gate status: FAIL only on a real block signal. Otherwise success (do not block humans
           // on an AI crash — the deterministic floor already guarded the dangerous stuff).
-          const gateFail = staticBlocked || hasErrorSeverity;
+          const gateFail = staticBlocked || !staticReported || STATIC_RESULT !== 'success' || hasErrorSeverity;
           const state = gateFail ? 'failure' : 'success';
           const desc = staticBlocked ? 'Blocked by deterministic floor'
+            : !staticReported || STATIC_RESULT !== 'success' ? 'Deterministic floor incomplete - merge blocked'
             : hasErrorSeverity ? 'AI review found error-severity issues'
             : notConfigured ? 'AI review not configured - manual merge only'
+            : AI_RESULT === 'skipped' ? 'AI review skipped - manual merge only'
             : aiErrored ? 'AI review did not complete - manual merge only'
             : 'Passed review';
           const safeDesc = desc.replace(/'/g, '').slice(0, 140);
@@ -249,7 +254,7 @@ jobs:
           // Tiering (deterministic — from the cron). Eligible => enable native auto-merge.
           const tierEligible =
             (adds <= 200 && score >= 7) || (adds <= 500 && score >= 8) || (adds <= 1000 && score >= 9);
-          const eligible = !gateFail && !aiErrored && !notConfigured && !codeownerTouched && v && tierEligible;
+          const eligible = AI_RESULT === 'success' && !gateFail && !aiErrored && !notConfigured && !codeownerTouched && v && tierEligible;
           const armed = process.env.PR_AUTOMERGE === 'on';   // repo variable; OFF during bake = kill-switch
 
           // The merge itself is the automerge job's: it alone holds write access, and it runs only

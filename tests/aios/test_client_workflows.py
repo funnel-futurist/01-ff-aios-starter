@@ -8,6 +8,7 @@ it reviews, whatever its prompt says.
 Standard library only, so no YAML parser: the checks read the text, job by job.
 """
 
+import ast
 import glob
 import os
 import re
@@ -36,6 +37,42 @@ def jobs(text):
         elif name:
             out[name] += line + "\n"
     return out
+
+
+def credential_result(expression, owner, api_key, oauth):
+    """Evaluate only the boolean/comparison subset used by the real Actions expression."""
+    expression = expression.strip()
+    if not (expression.startswith("${{") and expression.endswith("}}")):
+        raise AssertionError("Actions expression delimiters required")
+    expression = expression[3:-2].strip()
+    for name, value in [("github.repository_owner", owner), ("secrets.ANTHROPIC_API_KEY", api_key),
+                        ("secrets.CLAUDE_CODE_OAUTH_TOKEN", oauth)]:
+        expression = expression.replace(name, repr(value))
+    tree = ast.parse(expression.replace("&&", " and ").replace("||", " or "), mode="eval")
+    def value(node):
+        if isinstance(node, ast.Expression): return value(node.body)
+        if isinstance(node, ast.Constant): return node.value
+        if isinstance(node, ast.BoolOp):
+            result = value(node.values[0])
+            for child in node.values[1:]:
+                if isinstance(node.op, ast.And) and not result: return result
+                if isinstance(node.op, ast.Or) and result: return result
+                result = value(child)
+            return result
+        if isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], ast.NotEq):
+            left, right = value(node.left), value(node.comparators[0])
+            if isinstance(left, str) and isinstance(right, str):
+                left, right = left.casefold(), right.casefold()
+            return left != right
+        raise AssertionError("unexpected credential expression syntax")
+    return value(tree)
+
+
+def credential_expression(workflow):
+    ai = jobs(workflow)["ai_review"]
+    found = re.findall(r"^      HAS_CLAUDE_CREDENTIAL: (.+)$", ai, re.M)
+    if len(found) != 1: raise AssertionError("one job-level credential decision required")
+    return found[0]
 
 
 class Pins(unittest.TestCase):
@@ -133,6 +170,52 @@ class Permissions(unittest.TestCase):
         self.assertNotIn("continue-on-error", step, "a refused pull request fails the job")
         self.assertEqual(ai.count("uses: actions/checkout@"), 1, "nothing checks out the pull request again after the discard")
         self.assertEqual(ai.count("      - name: Discard review files from the pull request\n"), 1, "one discard step, the one checked above")
+
+    def test_skipped_ai_is_manual_and_an_incomplete_floor_cannot_qualify(self):
+        gate = jobs(read(PR_REVIEW))["gate"]
+        self.assertIn("AI_RESULT === 'skipped' ? 'AI review skipped - manual merge only'", gate)
+        self.assertIn("STATIC_RESULT: ${{ needs.static_checks.result }}", gate)
+        self.assertIn("staticBlocked || !staticReported || STATIC_RESULT !== 'success'", gate)
+        self.assertIn("const eligible = AI_RESULT === 'success' && !gateFail", gate)
+        self.assertIn("needs: [static_checks, ai_review]", gate)
+        self.assertIn("if: always()", gate)
+
+
+    def test_ff_owner_never_enables_paid_review_and_clients_keep_their_choice(self):
+        expression = credential_expression(read(PR_REVIEW))
+        for owner in ["funnel-futurist", "FUNNEL-FUTURIST", "client-org", "funnel-futurist-client", "not-funnel-futurist"]:
+            for api_key, oauth in [("", ""), ("test-api", ""), ("", "test-oauth"), ("test-api", "test-oauth")]:
+                with self.subTest(owner=owner, api=bool(api_key), oauth=bool(oauth)):
+                    expected = "yes" if owner.casefold() != "funnel-futurist" and (api_key or oauth) else "no"
+                    self.assertEqual(credential_result(expression, owner, api_key, oauth), expected)
+        # A missing or inverted owner guard must actually trip the FF-with-credentials control.
+        for mutant in [expression.replace("github.repository_owner != 'funnel-futurist' && ", ""),
+                       expression.replace("github.repository_owner != 'funnel-futurist'", "github.repository_owner != 'other-owner'")]:
+            self.assertNotEqual(mutant, expression)
+            self.assertNotEqual(credential_result(mutant, "funnel-futurist", "test-api", ""), "no")
+
+    def test_every_credential_using_step_is_guarded_and_not_configured_is_manual(self):
+        ai = jobs(read(PR_REVIEW))["ai_review"]
+        steps = self.steps(ai)
+        self.assertIn("if: needs.static_checks.outputs.has_block != 'true'", ai)
+        for name in ["Discard review files from the pull request", "Collect the pull request for the reviewer",
+                     "Claude review (pr_review skill)", "Post the review", "Require a valid verdict (a finished review passes even if the action reported an error)"]:
+            conditions = re.findall(r"^        if: (.+)$", steps[name], re.M)
+            self.assertEqual(len(conditions), 1, name)
+            self.assertIn("env.HAS_CLAUDE_CREDENTIAL == 'yes'", conditions[0], name)
+        checkout = ai.split("      - uses: actions/checkout@", 1)[1].split("\n      - ", 1)[0]
+        self.assertIn("if: env.HAS_CLAUDE_CREDENTIAL == 'yes'", checkout)
+        unconfigured = steps["AI review is not configured"]
+        self.assertIn("if: env.HAS_CLAUDE_CREDENTIAL != 'yes'", unconfigured)
+        self.assertIn('"configured": false', unconfigured)
+        self.assertIn("human review before merge", unconfigured)
+        self.assertNotIn("ANTHROPIC_API_KEY:", unconfigured)
+        self.assertNotIn("GH_TOKEN:", unconfigured)
+        self.assertEqual(ai.count("HAS_CLAUDE_CREDENTIAL:"), 1, "no step may override the job decision")
+        gate = jobs(read(PR_REVIEW))["gate"]
+        self.assertIn("!!(v && v.configured === false)", gate)
+        self.assertIn("!notConfigured", gate)
+        self.assertIn("AI review not configured - manual merge only", gate)
 
     def test_the_gate_reads_only_this_runs_verdict_and_a_missing_one_is_never_eligible(self):
         gate = jobs(read(PR_REVIEW))["gate"]
