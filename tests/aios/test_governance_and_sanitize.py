@@ -47,7 +47,7 @@ class CodeownersCheck(Sandbox):
         the other way round - if placeholders ever come back, or an owner is named who is not
         bound to this repository, this fails.
         """
-        problems = governance.check(REAL_ROOT, expected_slug="funnel-futurist/ff-aios-starter")
+        problems = governance.check(REAL_ROOT, expected_slug="funnel-futurist/01-ff-aios-starter")
         self.assertEqual(problems, [], "the repository's own CODEOWNERS stopped enforcing")
 
     def test_a5_a_filled_file_passes(self):
