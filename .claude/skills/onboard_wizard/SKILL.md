@@ -34,6 +34,8 @@ Link your **Google Drive** and load your foundational docs (your offer/orientati
 ## Step 4: Vision / mission / values (the one-lever business plan)
 Briefly grill them: What's the business? Who's it for? The mission? 1-3 core values? **The one lever that matters most right now?** Save it as a new vision_mission_values.md file inside `00_AIOS/company/` (their "one-lever business plan"), this anchors every future decision.
 
+**Then run `/intake`** to capture the rest: their role, business, priorities, voice samples, current tools and immediate goals, one question at a time. It starts from the file they just saved, writes each answer into `00_AIOS/company/profile_snapshot/intake.md`, and saves as it goes, so it can stop halfway and pick up later (or re-run one topic, like `/intake voice samples`).
+
 ## Step 5: Do you understand the structure? (the check)
 Quick check: can they explain the folder layout, where global vs client material lives, and how to find things? If not, walk it once. (Skipping this causes problems later.)
 
