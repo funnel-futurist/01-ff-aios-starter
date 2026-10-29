@@ -20,7 +20,7 @@
   },
   "created_from": {
     "branch": "p2a/starter-3.2.0-rc-1029",
-    "git_rev": "0d3a1e00344375d9770d2939820f124ecd0bbbb1"
+    "git_rev": "c1f59bcc5c41acdb836d17b446bc5ff9787e59db"
   },
   "credentials": [
     {
@@ -132,7 +132,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/README.md",
-      "sha256": "9d51919ac224acbf2d09d797f6ccd4991030b2acdfe11279c60229091fe51eb3"
+      "sha256": "e08e293038414eea72d8d35f97484fa81ba0ecb2c387767f5fcdb1d396a6f746"
     },
     {
       "class": "managed",
@@ -204,13 +204,13 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/intake/questions.md",
-      "sha256": "ee4e7bea8be8143e3b5f40011d8a76d0d5e5fd67de4e5b1d09ba8f8dbea8d537"
+      "sha256": "d35f117bd5df0b949ee390802b870352f5077ee10a8f2ab59ef1bbce74a89fba"
     },
     {
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/onboard_wizard/SKILL.md",
-      "sha256": "dda12cba7d24d7ad1ed3f6073b76c5a794b7e25a59bf0df78afed3677a10318e"
+      "sha256": "2db0943f22d1dd00ace449d290d6a9a00abd070ae67cd7955adf1433344473f3"
     },
     {
       "class": "managed",
@@ -270,7 +270,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/start/SKILL.md",
-      "sha256": "595122419fd1a8e96f285d353ea4ca0cdabf67ec8a486cfc7189a6df908cd95a"
+      "sha256": "c27e028f2048fa9439287fca890fc149d62462dae2354012421c48ea9c675875"
     },
     {
       "class": "managed",
@@ -690,7 +690,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "GETTING_STARTED.md",
-      "sha256": "9aa3f515257e6c2792b3d268a1baad5656c00d37584cc22daa958db2fb9d7eae"
+      "sha256": "ce928e2e77e290642cd1db36b3d3901a3daef20c8980a628b5ddd24a03841b61"
     },
     {
       "class": "managed",
@@ -702,7 +702,7 @@
       "class": "seed",
       "mode": "100644",
       "path": "README.md",
-      "sha256": "7f578f4b0060ef37b8ef4f37710e2271a14e8a81d6ba2ecfe9f39aec98c9e59c"
+      "sha256": "dbb7ed0b25b70d646df1d73bd421abc1db1f68fabb6b18da4004bccc63636425"
     },
     {
       "class": "seed",
@@ -714,13 +714,13 @@
       "class": "managed",
       "mode": "100644",
       "path": "SECURITY.md",
-      "sha256": "c9aa801588bdd705ed30a59467944fe049bec760265cbc850945814c52f16787"
+      "sha256": "259162b482c97a58048bc83b4844006a51b0aa54230fc6c0e15043983bc859d0"
     },
     {
       "class": "managed",
       "mode": "100644",
       "path": "SETUP.md",
-      "sha256": "777b619735b588c103bf6979cfe7bdb117a9611b3b0618fcaa7a4a3a3e9825f1"
+      "sha256": "984f58c9f8f31a5629c5469cfa91492390e0ea3523835f62c023a5cf61e5da66"
     },
     {
       "class": "managed",
@@ -810,7 +810,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "docs/human_steps/move_a_vercel_site.md",
-      "sha256": "13e70d4f29c66e29eb8c58f17169b50fea510942da85798eff197ed4b671e909"
+      "sha256": "24f2bae67e8d11cd9fa2ff6da2d746b5dac24496d08f1828bfca98aced34c934"
     },
     {
       "class": "managed",
