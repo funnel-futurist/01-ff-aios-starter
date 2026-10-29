@@ -41,7 +41,7 @@ Every key in this Starter is optional:
 `start` and `verify` list which ones are set.
 
 ## 5. The pull-request reviewer
-Follow `docs/PR_REVIEWER_SETUP.md`. It reviews every pull request and never blocks you.
+Follow `docs/PR_REVIEWER_SETUP.md`. It reviews every pull request. A real danger found by its deterministic check, or a check that did not finish, fails the `pr-gate` status; everything else is advice.
 
 ## 6. A site, if you have one
 A new site lives in `03_RevOps/site/`, and Vercel's Root Directory is `03_RevOps/site`. A site that came across from Starter 2.x stays at `02_Team_Ops/projects/<site>/` until you choose to move it. Either way, the site deploys from `main` only, and Vercel's Root Directory must name its folder exactly.

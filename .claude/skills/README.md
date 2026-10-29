@@ -18,7 +18,7 @@ Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to
 | **grill_me** | Pressure-tests your thinking before you act. DECIDE mode runs the Define-Before-You-Build gate so you never build the wrong thing; CAPTURE mode interviews you and writes a process/offer/decision into a clean doc so nothing tacit gets lost. Sparring partner, not answer machine. | `/grill_me` |
 | **project_management** | Break-glass clarity when your plate is overwhelming. Dump everything on it; it triages the whole plate on a value x energy 2x2, tags each by acquisition/fulfillment/operations, flags what you're avoiding, names the one lever, and hands back own/delegate/automate/eliminate + a single "do this next." Pairs with grill_me (grill_me = one decision; this = the whole plate). | `/project_management` |
 | **upskill** | Researches what Claude Code + the ecosystem now offer for YOUR workflows, grills you on skill-bloat (you can have 500 skills and use 10), and proposes what to add, update, or retire. Stay current and lean. | `/upskill` |
-| **pr_review** | Your guardian. Reviews every pull request, suggests exact fixes for safe issues (in CI it never changes the branch), flags real risk, approves good work. Never blocks you. | runs on PRs |
+| **pr_review** | Your guardian. Reviews every pull request, suggests exact fixes for safe issues (in CI it never changes the branch), flags real risk, approves good work. A real danger, or a check that did not finish, fails its `pr-gate` status; the rest is advice. | runs on PRs |
 | **qc_review** | Reviews a deliverable against your brand voice and quality standards. | `/qc_review` |
 | **workspace_health** | Checks your workspace is structured right (folders, files, no rot). | `/workspace_health` |
 | **f6_completeness_check** | Checks your Foundational 6 (market, avatar, offer, economics, pitch, profile) are complete enough for the brain to work well. | `/f6_completeness_check` |
@@ -40,7 +40,7 @@ When you catch yourself explaining the same task twice, make it a skill: a folde
 - **Install packs:** periodically we ship curated bundles of new, tested skills you can opt into, so you stay current without chasing every update yourself. You + your operator doing light research consistently = you stay ahead of the curve.
 - **Stay current yourself:** run `/upskill` now and then. The tools change monthly, this keeps you on today's best setup without bloat.
 - **Pull template updates:** run `/start` to see which release you are on and whether your workspace still matches it, then run `upgrade` from an up-to-date copy of the Starter to move to a newer approved release. Upgrades replace the system layer and never touch your work, and `rollback` puts you back. Full walkthrough: **[docs/INSTALL_AND_UPGRADE.md](../../docs/INSTALL_AND_UPGRADE.md)**.
-- **Start a new AIOS:** create an empty private repository, then install the newest approved release from `ff-aios-starter`. Follow **[docs/INSTALL_AND_UPGRADE.md](../../docs/INSTALL_AND_UPGRADE.md)** so the release is pinned and every installed file is checked.
+- **Start a new AIOS:** create an empty private repository, then install the newest approved release from `01-ff-aios-starter`. Follow **[docs/INSTALL_AND_UPGRADE.md](../../docs/INSTALL_AND_UPGRADE.md)** so the release is pinned and every installed file is checked.
 
 ## Useful source docs (always current, never stale)
 - Claude + Claude Code: https://docs.claude.com

@@ -54,7 +54,7 @@ The `/intake` skill asks these one at a time and writes each answer into your an
 ## Q8 - A message you sent
 - **Topic:** voice samples
 - **Who answers:** founder
-- **Ask:** Paste a recent message you wrote to a client or teammate, exactly as you sent it, with other people's names and contact details taken out.
+- **Ask:** Paste a recent message you wrote to a client or teammate, exactly as you sent it. Leave other people's names and contact details in: the intake replaces them with `[name]`, `[email]` or `[phone]` before it writes the sample.
 - **Strawman:** none, ask open
 - **Writes to:** ## Voice samples
 
