@@ -24,16 +24,16 @@ one whose files no longer hash to what the manifest recorded.
 ```bash
 python3 scripts/aios/aios.py start                 # who you are, what you may do, what is installed
 python3 scripts/aios/aios.py verify --target .     # does this workspace still match its release?
-python3 scripts/aios/aios.py verify --target . --repo ../ff-aios-starter   # ...and does the record still match the pin?
+python3 scripts/aios/aios.py verify --target . --repo ../01-ff-aios-starter   # ...and does the record still match the pin?
 python3 scripts/aios/aios.py rollback --target .   # back to the previous release
 ```
 
 **Upgrade runs from a fresh copy of the Starter, not from inside your workspace.** The releases
 and the exact commits they pin live in the Starter repository, and your workspace carries
-neither. So, from your clone of `ff-aios-starter` next to your workspace:
+neither. So, from your clone of `01-ff-aios-starter` next to your workspace:
 
 ```bash
-cd ../ff-aios-starter
+cd ../01-ff-aios-starter
 git fetch --tags origin   # the clone sits on the old release's tag, where `git pull` refuses
 python3 scripts/aios/aios.py release check-tag starter-X.Y.Z --release-id starter-X.Y.Z
 git checkout starter-X.Y.Z   # only once check-tag passes: the new release's record and tool are here
@@ -93,8 +93,8 @@ commit is the one tagged.** A checkout of the tag then carries the approved reco
 installer accepts it.
 
 ```bash
-git clone https://github.com/funnel-futurist/ff-aios-starter.git
-cd ff-aios-starter
+git clone https://github.com/funnel-futurist/01-ff-aios-starter.git
+cd 01-ff-aios-starter
 python3 scripts/aios/aios.py release check-tag starter-X.Y.Z --release-id starter-X.Y.Z
 git checkout starter-X.Y.Z        # only once check-tag says the tag is the approved release
 ```
@@ -152,7 +152,7 @@ Anything you have to do by hand along the way (2FA, a scoped token, a backup, co
 }
 ```
 
-Save it as `my-org.json` in the `ff-aios-starter` folder, where you run `install`. Three things
+Save it as `my-org.json` in the `01-ff-aios-starter` folder, where you run `install`. Three things
 must match:
 - `repository` is `<owner>/<name>` of the repository you created for your workspace (GETTING_STARTED
   step 5), as it appears in its GitHub address. The installer writes `.github/CODEOWNERS` for that
@@ -221,12 +221,12 @@ the release ships under exactly one heading:
 
 Then commit your own role policy (`.aios/roles.json`) and run it as someone that policy lets
 `adopt` (your instance's policy decides, not the release's). Run it from an up-to-date clone of
-`ff-aios-starter`, which is the release's source, beside your repository. Your repository doesn't
+`01-ff-aios-starter`, which is the release's source, beside your repository. Your repository doesn't
 have the installer yet, and the people map file must stay outside it (an uncommitted file inside it
 is uncommitted work, which refuses):
 
 ```bash
-cd ../ff-aios-starter
+cd ../01-ff-aios-starter
 python3 scripts/aios/aios.py adopt --existing --release releases/starter-X.Y.Z.json --target ../my-repo --config ../my-org.json
 ```
 
@@ -256,7 +256,7 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
 - `aios rollback` takes back exactly what it created and left unchanged, whether the adoption
   finished or was killed partway.
 - Undoing a finished adoption needs the release's source, as an upgrade does:
-  `aios rollback --target . --repo <your ff-aios-starter clone>`. The install record is committed,
+  `aios rollback --target . --repo <your 01-ff-aios-starter clone>`. The install record is committed,
   so anyone's pull request could change it. So, to decide what to remove, rollback trusts the
   release source and the install record and plan as they were committed with the adoption. Before
   you commit, it trusts the sealed record on disk and the plan at `HEAD`.
