@@ -1,9 +1,9 @@
-aios release checks on the draft 3.2.0 record, 2026-10-29. Record: releases/starter-3.2.0.json, pinned to 0d3a1e00344375d9770d2939820f124ecd0bbbb1.
+aios release checks on the draft 3.2.0 record, 2026-10-29. Record: releases/starter-3.2.0.json, pinned to c1f59bcc5c41acdb836d17b446bc5ff9787e59db.
 
 $ python3 scripts/aios/aios.py release verify releases/starter-3.2.0.json --repo .
 release:  starter-3.2.0
 status:   draft
-pinned:   0d3a1e00344375d9770d2939820f124ecd0bbbb1
+pinned:   c1f59bcc5c41acdb836d17b446bc5ff9787e59db
 verdict:  NOT INSTALLABLE
   - release status is 'draft'; only 'approved' may be installed (founder ruling D3)
   - approval.approved_by is empty; approval is a human act

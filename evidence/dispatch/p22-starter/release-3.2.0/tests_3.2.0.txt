@@ -1,10 +1,10 @@
-Starter 3.2.0 candidate: test runs, 2026-10-29. Run on the record commit 561cbaf, whose tree adds only releases/ files to the pinned 0d3a1e00344375d9770d2939820f124ecd0bbbb1.
+Starter 3.2.0 candidate: test runs, 2026-10-29. Run on the record commit 87e11a3, whose tree adds only releases/ files to the pinned c1f59bcc5c41acdb836d17b446bc5ff9787e59db.
 Environment: Python 3.9.6, Node v25.8.1, an empty environment (no user Claude or git settings).
 
 python3 -m unittest discover -s tests/aios -t tests/aios
-Ran 945 tests in 1541.880s
+Ran 945 tests in 1488.500s
 OK
 
 python3 -m unittest tests.test_verify_skills
-Ran 40 tests in 20.719s
+Ran 40 tests in 19.487s
 OK
