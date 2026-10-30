@@ -20,7 +20,7 @@
   },
   "created_from": {
     "branch": "p2a/starter-3.2.0-rc-1029",
-    "git_rev": "1e09d3c1af82b428925c20f7edc84416bdc3e9b7"
+    "git_rev": "b84d1380b175a31aa4263532c0c1c354c7fc95f8"
   },
   "credentials": [
     {
@@ -798,7 +798,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "docs/human_steps/configure_github_agent_app.md",
-      "sha256": "c7fc0ddc2bf9eb32fdfef5bbae4d01060c16695c4bd953b21ba7b2268d6cc169"
+      "sha256": "9f6793baeb4fc7d4af76d8e65afbb27612b502e7e0aaafd80e824dec19f09baf"
     },
     {
       "class": "managed",

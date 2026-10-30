@@ -1,11 +1,11 @@
 # Release brief: AIOS Starter 3.2.0
 
-> **Candidate, not approved.** `releases/starter-3.2.0.json` is a draft pinned to `1e09d3c1af82b428925c20f7edc84416bdc3e9b7`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3). The approval block in the record is empty on purpose.
+> **Candidate, not approved.** `releases/starter-3.2.0.json` is a draft pinned to `b84d1380b175a31aa4263532c0c1c354c7fc95f8`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3). The approval block in the record is empty on purpose.
 
 **Written for:** the founder, before approving. About three minutes.
 
 ## Decision
-**Approve AIOS Starter 3.2.0 at `1e09d3c`.**
+**Approve AIOS Starter 3.2.0 at `b84d138`.**
 - **Why now:** the newest approved release, 3.1.0, does not contain the conversational intake, so a new learner who installs it never gets `/intake` or the onboarding wizard's hand-off to it. Both are already on `main`. 3.1.0 was approved before them, and the install route only ever installs an approved release, never `main`.
 - **What it asks of you:** one approval of this exact commit. It changes no layout and moves no file, so a 3.1.0 workspace upgrades in the ordinary way. 3.1.0 workspaces keep every file they already have.
 
