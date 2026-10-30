@@ -17,6 +17,10 @@ Edit this `CLAUDE.md` freely as your business and workflow evolve, it's your bra
 
 ## Work that reaches use
 
+AIOS turns a business outcome into a bounded job, gives it one builder, checks the result and follows it into actual use. A **pocket** groups related work, a **unit** is one job with an outcome, and its **unit issue** is the shared work record. An **execution claim** names the builder responsible for the next action. A **file/resource lock** identifies the specific material that builder is changing so another session can work elsewhere. An **agent-minute** estimates active AI work, with your own time estimated separately. **Accepted in use** means the owner has used and accepted the result. These terms describe responsibilities and evidence, not automatic permissions or background execution.
+
+Before asking a new person (founder or operator) to make a workflow decision, explain its purpose and concrete effect using [How AIOS work reaches use](docs/how_aios_work_reaches_use.md). Use these terms as written and introduce each through the worked example.
+
 - Before a plan starts, batch all needed keys, logins and decisions, each with what it unblocks. Check available access and whether the owner can act before routing to a teammate. Continue independent work.
 - Each unit links its owning pocket, project and optional round by stable IDs, with dependencies separate from parent-child placement, and states outcome, owner/reviewer, risk and sensitivity, agent-minute estimate (human time separately), required owner inputs, exact file/resource lock, dependency effect and acceptance check. Missing information holds that unit only.
 - Use one builder per independent pocket and two shared reviewers, with at most two unfinished candidates per pocket. A pocket groups work; it is not a dependency. Start fresh tasks from a short spec and keep existing IDs.
