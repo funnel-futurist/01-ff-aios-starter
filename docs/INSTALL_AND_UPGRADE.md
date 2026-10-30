@@ -108,6 +108,14 @@ release bundled third-party document-skill files whose licence doesn't allow red
 and it was already superseded, so it can't be installed. Workspaces still on 2.6.0 upgrade
 as usual; the upgrade removes those copies.
 
+## Verify the GitHub agent App separately
+
+Installing a Starter release does not configure a GitHub App or prove its access. Follow [Configure the GitHub agent App](human_steps/configure_github_agent_app.md) for this client's own App, selected repositories and chosen capability profile.
+
+Keep a receipt in the client's existing setup record: requested App permissions, accepted installation permissions, fresh token scope, successful reads and any unavailable capability. Do not store credentials there. In particular, verify both check runs and commit statuses through the App identity before relying on merge checks. Team code owners also need membership and repository-access proof.
+
+The installer can finish while an App read remains refused. Report those states separately; do not label agent access verified until the required readbacks pass. A release upgrade does not authorize additional App permissions, workflow execution, paid calls or production changes. Existing approvals and release conditions still govern those actions.
+
 ## Installing a new workspace
 
 ```bash
