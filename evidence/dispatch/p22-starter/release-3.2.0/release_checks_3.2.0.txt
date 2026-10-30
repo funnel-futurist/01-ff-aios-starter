@@ -1,9 +1,9 @@
-aios release checks on the draft 3.2.0 record, 2026-10-29. Record: releases/starter-3.2.0.json, pinned to c1f59bcc5c41acdb836d17b446bc5ff9787e59db.
+aios release checks on the draft 3.2.0 record, 2026-10-30. Record: releases/starter-3.2.0.json, pinned to b84d1380b175a31aa4263532c0c1c354c7fc95f8 (revision 3, after #62).
 
 $ python3 scripts/aios/aios.py release verify releases/starter-3.2.0.json --repo .
 release:  starter-3.2.0
 status:   draft
-pinned:   c1f59bcc5c41acdb836d17b446bc5ff9787e59db
+pinned:   b84d1380b175a31aa4263532c0c1c354c7fc95f8
 verdict:  NOT INSTALLABLE
   - release status is 'draft'; only 'approved' may be installed (founder ruling D3)
   - approval.approved_by is empty; approval is a human act
@@ -15,5 +15,6 @@ tag:      starter-3.2.0
 release:  starter-3.2.0
 verdict:  a checkout of this tag is NOT the approved release
   - tag starter-3.2.0 does not exist in <clone>
+exit status: 2
 
 Both refuse, as they must while the record is a draft and no tag exists.

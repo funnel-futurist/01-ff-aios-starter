@@ -1,10 +1,12 @@
-Starter 3.2.0 candidate: test runs, 2026-10-29. Run on the record commit 87e11a3, whose tree adds only releases/ files to the pinned c1f59bcc5c41acdb836d17b446bc5ff9787e59db.
+Starter 3.2.0 candidate: test runs, 2026-10-30. Run on the record commit d4a1f40c, whose tree adds only releases/ files to the pinned b84d1380b175a31aa4263532c0c1c354c7fc95f8.
 Environment: Python 3.9.6, Node v25.8.1, an empty environment (no user Claude or git settings).
 
 python3 -m unittest discover -s tests/aios -t tests/aios
-Ran 945 tests in 1488.500s
+Ran 945 tests in 1386.307s
 OK
 
 python3 -m unittest tests.test_verify_skills
-Ran 40 tests in 19.487s
+Ran 40 tests in 7.768s
 OK
+
+An earlier run on the record commit for the previous pin (1e09d3c1) failed one test, test_human_steps.HumanStepCards.test_the_index_lists_exactly_the_cards_on_disk: the new App-setup card was on disk but not in the test's card list, and once listed it lacked the house "Steps checked against" line and "Video and checks" heading. The card and the list were fixed in b84d1380 and the candidate re-pinned; the run above is the full suite on the new pin. No test was skipped, weakened or removed.
