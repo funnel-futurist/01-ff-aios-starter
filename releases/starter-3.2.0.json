@@ -13,14 +13,14 @@
     "aios_release": null
   },
   "counts": {
-    "files": 164,
-    "managed": 103,
+    "files": 166,
+    "managed": 105,
     "seed": 61,
     "skills": 24
   },
   "created_from": {
     "branch": "p2a/starter-3.2.0-rc-1029",
-    "git_rev": "c1f59bcc5c41acdb836d17b446bc5ff9787e59db"
+    "git_rev": "1e09d3c1af82b428925c20f7edc84416bdc3e9b7"
   },
   "credentials": [
     {
@@ -672,13 +672,13 @@
       "class": "managed",
       "mode": "100644",
       "path": "AGENTS.md",
-      "sha256": "05cb891166fce577e2bf89f3aa6c3e9a6b2b6b618d5d1735063d9229fa55c6c0"
+      "sha256": "3bd11cf325fd9619e95d1323ef6b919894631247e23d517de53a395ee0b0aebb"
     },
     {
       "class": "seed",
       "mode": "100644",
       "path": "CLAUDE.md",
-      "sha256": "3673be04a79879f9fa283f06a447f9ad3daf0bc52d408ef91316e4f146f38e0b"
+      "sha256": "3d014e5770f0fdc9c4c188eb5b628940e71962f6e81e6bb847353d6b3b6e12eb"
     },
     {
       "class": "managed",
@@ -690,7 +690,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "GETTING_STARTED.md",
-      "sha256": "ce928e2e77e290642cd1db36b3d3901a3daef20c8980a628b5ddd24a03841b61"
+      "sha256": "df45c08b4fd927995cd04d9756f6bf09cfe0b2b6073e3347989530d5656fd733"
     },
     {
       "class": "managed",
@@ -702,7 +702,7 @@
       "class": "seed",
       "mode": "100644",
       "path": "README.md",
-      "sha256": "dbb7ed0b25b70d646df1d73bd421abc1db1f68fabb6b18da4004bccc63636425"
+      "sha256": "4e4d542c5e7bf545a3787d5f82c5e27b5bd9f01da89269f50abeb5bd22fe783d"
     },
     {
       "class": "seed",
@@ -714,13 +714,13 @@
       "class": "managed",
       "mode": "100644",
       "path": "SECURITY.md",
-      "sha256": "259162b482c97a58048bc83b4844006a51b0aa54230fc6c0e15043983bc859d0"
+      "sha256": "b105eac4c8ee8a5f22da0a7d0ceb6fa25e48e3cbf51eafb41c2d24218600914b"
     },
     {
       "class": "managed",
       "mode": "100644",
       "path": "SETUP.md",
-      "sha256": "984f58c9f8f31a5629c5469cfa91492390e0ea3523835f62c023a5cf61e5da66"
+      "sha256": "59624d4ad5833a200a4bfdcbb28f502305108f06c856ceb8f93b8603bba07376"
     },
     {
       "class": "managed",
@@ -738,7 +738,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "docs/INSTALL_AND_UPGRADE.md",
-      "sha256": "943e84807e08ce7c0f532ed67ac844453fcb46ff82ca05bd1b550630621a8478"
+      "sha256": "57bcc7ab522551a725463cabaa5ce38942d2ee9328632e93eb2658c1b5f3ca0c"
     },
     {
       "class": "managed",
@@ -785,8 +785,20 @@
     {
       "class": "managed",
       "mode": "100644",
+      "path": "docs/how_aios_work_reaches_use.md",
+      "sha256": "eb13c5274cef1630654c421ed1ac338c7465c3b72fe12f15b65b9e38ebf6a2c6"
+    },
+    {
+      "class": "managed",
+      "mode": "100644",
       "path": "docs/human_steps/README.md",
-      "sha256": "87ce65975a284a07786dcafc7d8559f7a3fffb4fa2cf579d86556833ec2a48fe"
+      "sha256": "c767610da38dd6b9fbd9a09c2af834019f020cb5d6f5043a12414a0accc840db"
+    },
+    {
+      "class": "managed",
+      "mode": "100644",
+      "path": "docs/human_steps/configure_github_agent_app.md",
+      "sha256": "c7fc0ddc2bf9eb32fdfef5bbae4d01060c16695c4bd953b21ba7b2268d6cc169"
     },
     {
       "class": "managed",
