@@ -61,11 +61,12 @@ A403 is not success, even after the owner accepted the request. Check the App, i
 
 To remove an unused capability, first check whether an active job depends on it, then update the App and installation through the same owner route. Suspend or uninstall the App to stop its access if needed. Neither action reverses changes the App already made; use the affected system's recovery procedure for those.
 
-## Sources and limits
+## Video and checks
 
-Official GitHub documentation checked2026-10-30:
+- **Video:** still to find; no transcript verified.
+- **Steps checked against:** official GitHub documentation, read 2026-10-30:
 - [Choose App permissions](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/choosing-permissions-for-a-github-app) and [endpoint permission reference](https://docs.github.com/en/rest/authentication/permissions-required-for-github-apps).
 - [Accept updated permissions](https://docs.github.com/en/apps/using-github-apps/approving-updated-permissions-for-a-github-app).
 - [Workflow dispatch](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event), [team membership](https://docs.github.com/en/rest/teams/members), and [code owners](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners).
 
-The profile choices, client separation, readback receipt and action-authorization rules are this workspace's operating guidance, not a claim that GitHub enforces every step. Settings labels may differ by account role. No live installation is proved by reading this card. **Video:** still to find; no transcript verified.
+The profile choices, client separation, readback receipt and action-authorization rules are this workspace's operating guidance, not a claim that GitHub enforces every step. Settings labels may differ by account role. No live installation is proved by reading this card.
