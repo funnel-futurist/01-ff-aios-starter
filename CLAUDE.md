@@ -40,7 +40,7 @@ Setup is in `SETUP.md`. File naming: lowercase, underscores, no spaces (`taxonom
 Type `/` to see them. What each one does: `.claude/skills/README.md`. Run `/start` any time to see the moves for your role.
 - **Start and end every session:** start · start-my-day · wrap-up · context_load · dashboard
 - **Setup and staying current:** onboard_wizard (run it first) · intake (your role, business, priorities, voice and goals, written into your files; re-run any time) · upskill · env_keys (your keys and your one core `.env`)
-- **Think before you build:** grill_me · project_management
+- **Think before you build:** grill_me · explain-from-the-ground-up (the background, terms and consequences behind a decision, before you judge it) · project_management
 - **Your foundations and quality:** f6_completeness_check · qc_review · humanize
 - **Keep the workspace healthy:** workspace_health · file_audit · security_check · changelog
 - **Working as a team:** review-queue · resolve-conflict · pr_review (proportionate review; no automatic paid calls)
