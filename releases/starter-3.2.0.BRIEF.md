@@ -1,13 +1,13 @@
 # Release brief: AIOS Starter 3.2.0
 
-> **Candidate, not approved.** `releases/starter-3.2.0.json` is a draft pinned to `b84d1380b175a31aa4263532c0c1c354c7fc95f8`. Nothing is tagged and nothing installs it until a founder approves that exact commit in their own words (ruling D3). The approval block in the record is empty on purpose.
+> **Owner approval recorded; source integration and release steps remain.** Phoenix approved Starter 3.2.0 at the unchanged payload pin `b84d1380b175a31aa4263532c0c1c354c7fc95f8`: “Approve Starter 3.2.0 at pin b84d1380b175a31aa4263532c0c1c354c7fc95f8; carry the three wording corrections into the next release.” The [accepted decision record](https://github.com/funnel-futurist/03a-ff-ai-augmented-team-intelligence/issues/419#issuecomment-6540997146) was posted at 2026-10-31T08:11:05Z and absorbed as PHOENIX-STARTER-320-APPROVE-1031 on records `57120a35`. The release record uses that observed recording time; the exact time of the spoken decision is unavailable. The earlier 07:52Z GitHub vote covers the previous candidate head, not this approval-record successor. No tag or installation is claimed here.
 
-**Written for:** the founder, before approving. About three minutes.
+**Written for:** the founder and release owner. About three minutes.
 
-## Decision
-**Approve AIOS Starter 3.2.0 at `b84d138`.**
-- **Why now:** the newest approved release, 3.1.0, does not contain the conversational intake, so a new learner who installs it never gets `/intake` or the onboarding wizard's hand-off to it. Both are already on `main`. 3.1.0 was approved before them, and the install route only ever installs an approved release, never `main`.
-- **What it asks of you:** one approval of this exact commit. It changes no layout and moves no file, so a 3.1.0 workspace upgrades in the ordinary way. 3.1.0 workspaces keep every file they already have.
+## Recorded decision
+**Approved: AIOS Starter 3.2.0 at `b84d1380b175a31aa4263532c0c1c354c7fc95f8`.**
+- **Why now:** the previous approved release, 3.1.0, does not contain the conversational intake, so a new learner who installs it never gets `/intake` or the onboarding wizard's hand-off to it. Both are already on `main`. 3.1.0 was approved before them, and the install route only ever installs an approved release, never `main`.
+- **What was approved:** this exact payload, with the three wording corrections deferred. It changes no layout and moves no file, so a 3.1.0 workspace upgrades in the ordinary way. 3.1.0 workspaces keep every file they already have.
 
 ## What a learner gets that 3.1.0 lacks
 | New | What it means for a learner |
@@ -22,12 +22,12 @@
 | **The reviewer's blocking cases stated in full** | `README.md`, `GETTING_STARTED.md`, `SECURITY.md` and `SETUP.md` now list what actually fails the `pr-gate` status: leaked secrets or env files, destructive or security-weakening SQL, file names with spaces, a broken symlink under `.claude/`, an error-level finding from the AI review when one is set up, and a check that did not finish. |
 | **Install guide and a human step corrected** | The upgrade steps that failed as written are fixed, and the restore-founder-review step has better commit wording. |
 
-## Two changes to decide on before you approve
+## Scope accepted with this approval
 **1. FF's internal operating model reaches every upgraded workspace.**
 - **`CLAUDE.md` is a starter file.** A new install gets the new text. An existing workspace keeps its own copy.
 - **`AGENTS.md` is managed and replaced on upgrade.** Every 3.1.0 workspace that upgrades gets the new "Work that reaches use" section in `AGENTS.md`, which is what Codex reads, while its `CLAUDE.md` stays as it was. The two tools then run on different instructions in the same workspace.
 - **Where it comes from.** The section came in with commit `364c763d` ("Align starter host instructions with approved unit execution model", 10-26). It is FF's internal operating model. #62 (merged 20:07:30Z on 10-30 as `1d1ff7c4`, with an approving review and every required check) now explains it: the section defines pocket, unit, unit issue, execution claim, file lock, agent-minute and accepted in use in one short paragraph, and points to the new guide, which teaches them through a worked example. One working term, **two shared reviewers**, is still used without a definition in the guide. The "Review follows risk" line beside it is generic and matches the shipped workflow.
-- **Your choice.** Approving as written ships it, with the explanation. Trimming the section to the generic lines first is a separate change and would move the pin. I did not trim it.
+- **Accepted scope.** The approved payload keeps this section and its explanation. Trimming the section would be a separate change that moves the pin; no trim is part of this record.
 
 **2. The shipped review workflow is stricter.**
 - The review's verdict comes only from the reviewer and the base branch, a pull request that commits its own `verdict.json` is refused, and an incomplete deterministic check fails the gate (`gateFail = staticBlocked || !staticReported || STATIC_RESULT !== 'success' || hasErrorSeverity`).
@@ -44,6 +44,8 @@ In `evidence/dispatch/p22-starter/release-3.2.0/`:
 - `release_checks_3.2.0.txt`: `aios release verify` on the draft, which refuses because it isn't approved, and the pin and file hashes it checks.
 - `RECEIPT_2026-10-30.md`: what was built, from which commit, how it differs from the candidate you were first shown, and what was not done.
 
-## What approving does
-- **You write the approval,** in your own words, naming the exact commit. The approval commit then changes only release records and this brief: the approval block and the `approved` status in 3.2.0's record, the `superseded` status in 3.1.0's, and an approved banner here. That commit is the one that gets tagged, as with 3.1.0.
-- **Not part of this approval:** Starter kit items 1 to 3 (the clean-markdown standard, `/tidy`, the core-four check), which stay behind the standard rollout.
+## Approval record and remaining release steps
+- This successor records the accepted owner words and changes only three release-record files: 3.2.0's approval and `approved` status, 3.1.0's `superseded` status, and this brief. Its payload pin, manifest, counts, file ownership and package bytes are unchanged.
+- Independent delta review and a real eligible GitHub approving review must cover this successor head. Then the sole Coordinator follows the pinned merge, tag and release checks. Installation and actual use need their own receipts.
+- **Deferred to the next release:** [CL10's three optional wording corrections](https://github.com/funnel-futurist/03a-ff-ai-augmented-team-intelligence/issues/244#issuecomment-6535785113): include AI error-severity findings in the reviewer descriptions in `.claude/skills/README.md` and `.claude/skills/onboard_wizard/SKILL.md`, and remove the inaccurate “Never blocks you” claim in `.claude/skills/pr_review/SKILL.md`. All three are managed files. They stay unchanged in this approved payload.
+- **Separate work:** the accepted built-out README and four-repository context audit stays outside frozen 3.2.0, in the existing cleanup route. Starter kit items 1 to 3 (the clean-markdown standard, `/tidy`, the core-four check) stay behind the standard rollout.

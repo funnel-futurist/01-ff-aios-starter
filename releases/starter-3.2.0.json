@@ -1,7 +1,8 @@
 {
   "approval": {
-    "approved_at": null,
-    "approved_by": null
+    "approved_at": "2026-10-31T08:11:05Z",
+    "approved_by": "phoenix-ship-it",
+    "basis": "Phoenix's exact pin-specific decision, relayed by accountable root in 03a #419 comment6540997146 (https://github.com/funnel-futurist/03a-ff-ai-augmented-team-intelligence/issues/419#issuecomment-6540997146): 'Approve Starter 3.2.0 at pin b84d1380b175a31aa4263532c0c1c354c7fc95f8; carry the three wording corrections into the next release.' Canonical decision PHOENIX-STARTER-320-APPROVE-1031 was recorded on records/ff-operating 57120a359ed8413bc6c30459a0f1770814cd417f, with Coordinator receipt4196541023766. approved_at is the observed timestamp of that explicit decision's relay record, not a claimed timestamp of the spoken decision; its exact spoken time is unavailable. Phoenix's earlier GitHub APPROVED review5721878378 (2026-10-31T07:52:00Z) covered candidate89d371fba8b02eb050d30bcb170bf8a2ddd056d8 and is separate source-review provenance, not the timestamp of this later release decision. This approval-record successor changes the PR head and still requires independent delta review and an actual eligible GitHub approval of that successor before pinned integration. No new signature, tag or installation is claimed."
   },
   "compatibility": {
     "breaking": [
@@ -1194,6 +1195,6 @@
     "workspace_health",
     "wrap-up"
   ],
-  "status": "draft",
+  "status": "approved",
   "version": "3.2.0"
 }
