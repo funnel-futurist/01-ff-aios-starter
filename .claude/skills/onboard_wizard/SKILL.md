@@ -66,7 +66,7 @@ Tell them plainly: *"these exist to protect you, you can't turn them off by acci
 
 ## Step 8: Save, commit, and what's next
 - Save everything; the simplest way is to just run **`/wrap-up`** — it commits, pushes, and opens your review request in one go (`git` keeps history, so nothing is ever truly lost).
-- Point them to: the **unstuck protocol** (their safety net the whole way), the **PR reviewer** (now watching every change, it fixes safe stuff and never blocks you), and, if they're a **cyborg VA, the certification** (that's the next step; it proves they can run this safely).
+- Point them to: the **unstuck protocol** (their safety net the whole way), the **PR reviewer** (now watching every change; it suggests fixes for safe stuff, and only a real danger or an unfinished check fails its `pr-gate` status), and, if they're a **cyborg VA, the certification** (that's the next step; it proves they can run this safely).
 
 ## Always-on reminders
 - **Caveman mode:** any time something's over your head, tell Claude *"treat me like a caveman, explain like I'm 5, give me every click."*

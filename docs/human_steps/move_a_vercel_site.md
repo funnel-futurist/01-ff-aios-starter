@@ -4,7 +4,7 @@
 
 **You need:**
 - to be a founder: only a founder can run an upgrade;
-- an up-to-date clone of `ff-aios-starter` next to your workspace. The upgrade runs from there, not from inside your workspace;
+- an up-to-date clone of `01-ff-aios-starter` next to your workspace. The upgrade runs from there, not from inside your workspace;
 - your workspace with everything committed. The upgrade refuses uncommitted work;
 - access to the site's project in Vercel.
 

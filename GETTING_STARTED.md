@@ -24,9 +24,9 @@
 
 6. **Install the approved release into it.** The installer copies an exact, approved version and checks every file it wrote. In Terminal:
    ```sh
-   git clone https://github.com/funnel-futurist/ff-aios-starter.git
+   git clone https://github.com/funnel-futurist/01-ff-aios-starter.git
    git clone https://github.com/<you>/my-aios.git
-   cd ff-aios-starter
+   cd 01-ff-aios-starter
    grep -l '"status": "approved"' releases/*.json    # the approved releases; use the newest
    ```
    (On Windows, open each file in the `releases` folder and use the newest one that says `"status": "approved"`.)
@@ -44,7 +44,7 @@
 
 12. **Learn the sync loop: commit, push, pull.** Commit = save a labeled snapshot locally. Push = upload your commits to GitHub so the team sees them. Pull = download what teammates pushed. Claude does these for you when you ask, but the habit is simple: pull at the start of a session, commit + push at the end. That keeps everyone in sync.
 
-13. **Turn on the PR reviewer (2 minutes).** Open [docs/PR_REVIEWER_SETUP.md](docs/PR_REVIEWER_SETUP.md) and follow it. A PR (pull request) is a proposed change before it's merged. The reviewer reads every PR, flags real risks, auto-fixes safe things, and approves good work. It never blocks you. It's your safety net.
+13. **Turn on the PR reviewer (2 minutes).** Open [docs/PR_REVIEWER_SETUP.md](docs/PR_REVIEWER_SETUP.md) and follow it. A PR (pull request) is a proposed change before it's merged. The reviewer reads every PR, flags real risks, suggests fixes for safe things, and approves good work. Its checks fail the PR's `pr-gate` status for leaked secrets or env files, destructive or security-weakening SQL, file names with spaces, or a broken symlink under `.claude/`, and so does an error-level finding from the AI review when one is set up, or a check that did not finish; whether that stops a merge depends on your branch protection. Everything else is advice. It's your safety net.
 
 14. **Bookmark the unstuck protocol.** Open [docs/UNSTUCK_PROTOCOL.md](docs/UNSTUCK_PROTOCOL.md) and pin it. The order: caveman-mode Claude → screenshot + AI → YouTube (last 1-2 months) → NotebookLM → escalate to a human. Between Claude Code and this, you'll solve ~99% yourself.
 

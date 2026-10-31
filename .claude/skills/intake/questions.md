@@ -54,7 +54,7 @@ The `/intake` skill asks these one at a time and writes each answer into your an
 ## Q8 - A message you sent
 - **Topic:** voice samples
 - **Who answers:** founder
-- **Ask:** Paste a recent message you wrote to a client or teammate, exactly as you sent it, with other people's names and contact details taken out.
+- **Ask:** Paste a recent message you wrote to a client or teammate, exactly as you sent it. Leave other people's names and contact details in: the intake replaces them with `[name]`, `[email]` or `[phone]` before it writes the sample.
 - **Strawman:** none, ask open
 - **Writes to:** ## Voice samples
 
@@ -76,14 +76,14 @@ The `/intake` skill asks these one at a time and writes each answer into your an
 - **Topic:** current tools
 - **Who answers:** anyone
 - **Ask:** Which tools does the business use every day for messages, email and files?
-- **Strawman:** If your connections file lists tools, offer that list to confirm; otherwise none, ask open.
+- **Strawman:** If your connections file lists tools other than its two default rows (GitHub and Claude Code), offer that list to confirm; otherwise none, ask open.
 - **Writes to:** ## Current tools
 
 ## Q12 - Selling and delivering
 - **Topic:** current tools
 - **Who answers:** anyone
 - **Ask:** Which tools run your sales, marketing, payments and delivery?
-- **Strawman:** If your connections file lists tools, offer that list to confirm; otherwise none, ask open.
+- **Strawman:** If your connections file lists tools other than its two default rows (GitHub and Claude Code), offer that list to confirm; otherwise none, ask open.
 - **Writes to:** ## Current tools
 
 ## Q13 - First thing off your plate

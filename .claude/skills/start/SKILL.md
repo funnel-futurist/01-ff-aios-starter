@@ -66,7 +66,7 @@ The upgrade itself runs from an up-to-date clone of the Starter, pointed at this
 because the releases and their pinned commits live there, not here:
 
 ```bash
-cd ../ff-aios-starter && git pull
+cd ../01-ff-aios-starter && git pull
 python3 scripts/aios/aios.py upgrade --release releases/<next>.json --target <this workspace>
 ```
 

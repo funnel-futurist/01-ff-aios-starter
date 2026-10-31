@@ -23,6 +23,7 @@ CARDS = [
     "run_a_terminal_command_from_claude.md",
     "move_a_vercel_site.md",
     "restore_founder_review.md",
+    "configure_github_agent_app.md",
 ]
 
 

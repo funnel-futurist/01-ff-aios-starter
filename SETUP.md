@@ -2,7 +2,7 @@
 
 **What this is:** the list of things that have to be true for this company's workspace to run safely. Do them in order, once. Each step that needs a person to click something links its card in `docs/human_steps/`, which has the exact clicks, what success looks like, and what to send back.
 
-**Ask for everything up front.** Grant every access listed here in one sitting, at first connect, so nobody is stopped halfway through a job waiting for a permission.
+**Ask for everything up front.** Choose the capabilities this workspace needs and arrange that access in one sitting. Optional capabilities stay optional; a granted token permission does not authorize every action it can perform.
 
 ## 1. The tools on your computer
 git, Python 3, Node.js and the GitHub CLI, signed in with `gh auth login`. See GETTING_STARTED step 3. Without Python 3 or Node.js some safety checks are skipped silently, and `start` warns you.
@@ -21,9 +21,11 @@ git, Python 3, Node.js and the GitHub CLI, signed in with `gh auth login`. See G
 |---|---|---|
 | The founder | Owner or admin of the repository, with two-factor sign-in on | Card: [Turn on GitHub 2FA](docs/human_steps/turn_on_github_2fa.md) |
 | Each operator | **Write** on this repository, with 2FA on; their GitHub username in `.aios/config.json` with their role | A founder edits `.aios/config.json` (a founder-only file) |
-| Your provider's agent app (if you have a provider) | Installed on **this repository only**, with the permissions it lists | GitHub: your organization's Settings, then GitHub Apps |
+| Your company's agent App | Installed on **only the selected client repositories**, with the Builder and merge checks profile plus the options you choose | Card: [Configure the GitHub agent App](docs/human_steps/configure_github_agent_app.md) |
 | Vercel (if you deploy a site) | Access to this repository | Card: [Connect Vercel to a GitHub repository](docs/human_steps/connect_vercel_to_a_repo.md) |
 | Supabase (if you have a database) | A token scoped to the one project and the permissions named | Card: [Create a Supabase access token](docs/human_steps/create_a_supabase_token.md) |
+
+The App card separates CI operation (Actions write), workflow authoring, team code-owner reads and check publishing. Accept installation changes, then verify a fresh App token can read the required evidence. An owner-reported acceptance alone is not a successful readback.
 
 When someone leaves: [Remove an org member](docs/human_steps/remove_an_org_member.md), then change any shared secret they knew.
 
@@ -41,7 +43,7 @@ Every key in this Starter is optional:
 `start` and `verify` list which ones are set.
 
 ## 5. The pull-request reviewer
-Follow `docs/PR_REVIEWER_SETUP.md`. It reviews every pull request and never blocks you.
+Follow `docs/PR_REVIEWER_SETUP.md`. It reviews every pull request. A real danger found by its deterministic check (leaked secrets or env files, destructive or security-weakening SQL, file names with spaces, or a broken symlink under `.claude/`), an error-level finding from the AI review when one is set up, or a check that did not finish, fails the `pr-gate` status; everything else is advice.
 
 ## 6. A site, if you have one
 A new site lives in `03_RevOps/site/`, and Vercel's Root Directory is `03_RevOps/site`. A site that came across from Starter 2.x stays at `02_Team_Ops/projects/<site>/` until you choose to move it. Either way, the site deploys from `main` only, and Vercel's Root Directory must name its folder exactly.

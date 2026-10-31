@@ -6,6 +6,7 @@ One card for each thing a person has to do by hand. When Claude needs you to act
 |---|---|
 | [run_a_terminal_command_from_claude.md](run_a_terminal_command_from_claude.md) | Running a command Claude gives you |
 | [turn_on_github_2fa.md](turn_on_github_2fa.md) | Two-factor sign-in on GitHub |
+| [configure_github_agent_app.md](configure_github_agent_app.md) | Selected-repository App permissions, installation acceptance and fresh-token readback |
 | [remove_an_org_member.md](remove_an_org_member.md) | Taking someone out of your GitHub organization |
 | [create_a_supabase_token.md](create_a_supabase_token.md) | A scoped Supabase access token |
 | [download_a_supabase_backup.md](download_a_supabase_backup.md) | A backup of a Supabase database on your computer |

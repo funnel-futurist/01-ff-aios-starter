@@ -1,0 +1,7 @@
+pin b84d1380b175a31aa4263532c0c1c354c7fc95f8
+ls-tree files 166 managed 105 seed 61
+record files 166 managed 105 seed 61
+only in ls-tree [] | only in record []
+class or sha256 differs []
+skills 24 record skills 24 equal True
+RESULT MATCH

@@ -62,7 +62,7 @@ That's the on-ramp. New to GitHub or Claude Code, or want every click spelled ou
 
 **`CLAUDE.md` is your constitution.** It's the file the brain reads first, every session. Your rules, your voice, your non-negotiables live here. When you want the system to behave differently, you don't nag it every time. You change the constitution once. Edit this file as you learn how you actually want to work.
 
-**The PR reviewer that never blocks.** When you make changes, a reviewer checks them and tells you what it sees. It advises. It does not gatekeep. You're the owner. It's a second set of eyes that respects that you have the final call. (Two-minute setup: [docs/PR_REVIEWER_SETUP.md](docs/PR_REVIEWER_SETUP.md).)
+**The PR reviewer that advises.** When you make changes, a reviewer checks them and tells you what it sees. Its checks fail the pull request's `pr-gate` status for leaked secrets or env files, destructive or security-weakening SQL, file names with spaces, or a broken symlink under `.claude/`, and so does an error-level finding from the AI review when one is set up, or a check that did not finish; whether that stops a merge depends on your branch protection. Everything else is advice. You're the owner, and it's a second set of eyes that respects that you have the final call. (Two-minute setup: [docs/PR_REVIEWER_SETUP.md](docs/PR_REVIEWER_SETUP.md).)
 
 **The unstuck protocol.** Everyone hits a wall. When you do, tell the brain you're stuck and what you were trying to do. It's built to help you name the problem, find the thread, and move again. Stuck is a step, not a stop. ([docs/UNSTUCK_PROTOCOL.md](docs/UNSTUCK_PROTOCOL.md).)
 
