@@ -13,14 +13,14 @@
     "aios_release": null
   },
   "counts": {
-    "files": 167,
-    "managed": 106,
+    "files": 169,
+    "managed": 108,
     "seed": 61,
     "skills": 25
   },
   "created_from": {
     "branch": "claude/explain-starter-carrier-20261031",
-    "git_rev": "65423b01e8f66d2e4faddd620c829420d91dda64"
+    "git_rev": "006fd6f853ff1c7fbeae1722156df1a1efbadd73"
   },
   "credentials": [
     {
@@ -132,7 +132,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/README.md",
-      "sha256": "11b5d983c02b5a83d9beb03a0348ab5166d31404a337e5cc52e1b81e6764a7a9"
+      "sha256": "5d3b93c0200e7af3e7cbf706b904282d0cfebbd58d6f392ec8f425c4a4d3abd5"
     },
     {
       "class": "managed",
@@ -270,7 +270,19 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/start-my-day/SKILL.md",
-      "sha256": "59ffad8f7191ef42d38b4774c06757a592d35f6e9be900e9b2c87e7bf2eda3a5"
+      "sha256": "aaaef64275d3a8e700dfdf39d255bc3d999ae9636b3bccff6f6d2aca40a4a2e0"
+    },
+    {
+      "class": "managed",
+      "mode": "100644",
+      "path": ".claude/skills/start-my-day/references/reconciliation.md",
+      "sha256": "51614f71f0716b88b9b98ab0aa1568b36c6e86f6776f3a13b5bb19c8ce06fc48"
+    },
+    {
+      "class": "managed",
+      "mode": "100755",
+      "path": ".claude/skills/start-my-day/scripts/reconcile_local.py",
+      "sha256": "40374e0cebe5dbfbf0dea3983a8e53b719ba51208877966fcbbaec58137d1408"
     },
     {
       "class": "managed",
@@ -294,7 +306,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/wrap-up/SKILL.md",
-      "sha256": "d136c4d11ea8763e6771f540eb0b775387494b9121b66de474450a103478be7d"
+      "sha256": "0d805a8780c9b6123632905f9d14ff4bc2c3d8de871c2ca3697b6d36256b2e86"
     },
     {
       "class": "managed",
@@ -678,13 +690,13 @@
       "class": "managed",
       "mode": "100644",
       "path": "AGENTS.md",
-      "sha256": "205a51b74157cb19904ec1fce767ecf7ec9f4a9d9dc74fa67146e3deacca0591"
+      "sha256": "c2d677ae1f353d8e7455886e1a40cd82d40849325ca2a80aee5f2c0a65ba669b"
     },
     {
       "class": "seed",
       "mode": "100644",
       "path": "CLAUDE.md",
-      "sha256": "cd62caad9078545a2acebace3b869853ff5b128d7a2f01b07371369e2f52a3b1"
+      "sha256": "7f4f68fb9bb45c6912ef381a095d2447b2648155edc07fc439be2a1fc4443d56"
     },
     {
       "class": "managed",
@@ -732,7 +744,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "START_HERE.md",
-      "sha256": "3d45959f6c3f4c44bffd9cc7132b048c649c4bc8cddfe320be35670024d1d5ba"
+      "sha256": "4bb4d3443b02ab7d1719a5c78eaad45eceb3d50d7307b5383ed7c605481029f6"
     },
     {
       "class": "managed",
