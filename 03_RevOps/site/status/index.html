@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Your work, with its evidence</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root { color-scheme:light; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:#172b37; background:#eef2f2; line-height:1.5; }
+    * { box-sizing:border-box; } body { margin:0; } main { max-width:1160px; padding:40px 24px 64px; margin:auto; }
+    .eyebrow,.unit-id { font-size:.75rem; letter-spacing:.08em; text-transform:uppercase; font-weight:700; color:#3b6362; }
+    h1 { font-size:clamp(2rem,5vw,3.25rem); letter-spacing:-.045em; line-height:1.1; margin:10px 0 16px; max-width:740px; }
+    h2 { font-size:1.25rem; line-height:1.3; letter-spacing:-.02em; margin:0 0 12px; } h3 { font-size:.9rem; margin:24px 0 10px; }
+    p { margin:0 0 14px; } .intro { max-width:660px; color:#455d68; font-size:1.05rem; }
+    .picker { background:#173e43; color:white; border-radius:16px; padding:22px; margin:24px 0 16px; } label { display:block; font-weight:650; margin-bottom:10px; }
+    input { max-width:100%; font:inherit; font-size:.9rem; } input::file-selector-button { font:inherit; background:#e0eeeb; color:#173e43; padding:10px 14px; border:0; border-radius:7px; margin-right:14px; cursor:pointer; }
+    input:focus-visible,a:focus-visible { outline:3px solid #d89231; outline-offset:4px; } .picker p { margin:12px 0 0; color:#c9dedc; font-size:.85rem; }
+    .notice { border-left:4px solid #658f87; padding:14px 18px; background:#e2ece8; border-radius:4px; font-size:.9rem; margin-bottom:14px; }
+    .error { border-color:#a74f2d; background:#fff0e3; color:#75361f; } .timestamps { color:#5b6b74; font-size:.75rem; display:flex; gap:8px 24px; flex-wrap:wrap; margin-bottom:26px; }
+    .panel { background:white; border:1px solid #d5dfdf; border-radius:16px; padding:24px; min-width:0; box-shadow:0 2px 3px #193b4205; }
+    .provenance { margin-bottom:22px; } .section-heading { display:flex; gap:10px; justify-content:space-between; align-items:flex-start; margin-bottom:14px; flex-wrap:wrap; }
+    .section-heading h2 { margin:0; } .badge { display:inline-block; padding:4px 10px; background:#e8f0ed; border:1px solid #d1e0da; border-radius:20px; font-size:.72rem; font-weight:650; }
+    .warning { background:#fff0da; border-color:#e7d2b3; color:#76501f; } .muted { color:#62717a; font-size:.85rem; } .fictional { color:#835523; font-size:.85rem; font-weight:650; }
+    dl { display:grid; grid-template-columns:minmax(110px,1fr) minmax(0,2fr); gap:8px 16px; margin:12px 0 0; font-size:.85rem; } dt { color:#65747b; } dd { margin:0; overflow-wrap:anywhere; }
+    a { color:#236f71; text-underline-offset:3px; overflow-wrap:anywhere; } small { display:block; color:#63747a; font-size:.75rem; margin-top:4px; overflow-wrap:anywhere; }
+    ul { padding-left:20px; margin:0; } li { padding:7px 0; overflow-wrap:anywhere; } .work-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+    .receipt { border-top:1px solid #e2e8e7; padding:12px 0; font-size:.85rem; } .receipt p { margin:4px 0; } footer { margin-top:28px; max-width:760px; color:#61727b; font-size:.8rem; }
+    @media(max-width:700px) { main { padding:28px 16px 40px; } .work-grid { grid-template-columns:1fr; } .panel { padding:20px; } dl { grid-template-columns:minmax(90px,1fr) minmax(0,1.7fr); gap:8px 12px; } }
+  </style>
+  <script src="status.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Local work reader</div>
+    <h1>Your work, with its evidence.</h1>
+    <p class="intro">See what the supplied records say, who acts next, and what remains unknown. Your plan and work records stay in their existing home.</p>
+  </header>
+  <section class="picker" aria-label="Select a local projection">
+    <label for="projection">Choose a Coordinator projection</label>
+    <input id="projection" type="file" accept=".json,application/json" aria-describedby="file-help">
+    <p id="file-help">Local JSON file, up to 1 MiB. Start with example_status.json. Nothing is uploaded or saved by this page.</p>
+  </section>
+  <div id="load-outcome" class="notice" role="status" aria-live="polite"></div>
+  <div class="timestamps"><span>Last load attempt: <time id="attempted">Unknown</time></span><span>Rendered: <time id="rendered">Unknown</time></span></div>
+  <div id="snapshot"></div>
+  <footer>This local candidate does not verify source authority, run work or establish owner acceptance. Hosting, audience and access protection require their own setup and verification. Reopening the page clears its in-memory snapshot.</footer>
+</main>
+</body>
+</html>
