@@ -19,8 +19,8 @@
     "skills": 25
   },
   "created_from": {
-    "branch": "claude/explain-starter-carrier-20261031",
-    "git_rev": "006fd6f853ff1c7fbeae1722156df1a1efbadd73"
+    "branch": "codex/244-consumer-correction-1031",
+    "git_rev": "85b5f7956dd71013632a6c0684b70abb39c6f54b"
   },
   "credentials": [
     {
@@ -270,13 +270,13 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/start-my-day/SKILL.md",
-      "sha256": "aaaef64275d3a8e700dfdf39d255bc3d999ae9636b3bccff6f6d2aca40a4a2e0"
+      "sha256": "c2ae29ee7e8f606abdd0d1203b235193645891c07c87b2cf56bdf38a8cbbffe2"
     },
     {
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/start-my-day/references/reconciliation.md",
-      "sha256": "51614f71f0716b88b9b98ab0aa1568b36c6e86f6776f3a13b5bb19c8ce06fc48"
+      "sha256": "0890ab9154b33b155b3bb038293dddc1fcd324a029665f7e3bc75ad403d23a4e"
     },
     {
       "class": "managed",
@@ -306,7 +306,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/wrap-up/SKILL.md",
-      "sha256": "0d805a8780c9b6123632905f9d14ff4bc2c3d8de871c2ca3697b6d36256b2e86"
+      "sha256": "c05576c44f9f74ef5a5c37cf0f6689e48cd88ad0eec0b4cf71c8c9c38af99b01"
     },
     {
       "class": "managed",
