@@ -20,9 +20,9 @@ Ask: **"Are you the founder, a co-founder, or a cyborg VA / operator?"**
 
 ## Step 2: Core access setup (caveman, in order, confirm each before the next)
 1. **Claude subscription**, Pro or Max (Max if you'll use it heavily).
-2. **Your private AIOS repo.** For first-time setup, follow [the install guide](../../../docs/INSTALL_AND_UPGRADE.md): create an empty private repository, select the newest approved release, check its tag, and run that release's installer. The installer pins and verifies the files it writes.
-3. **Pick your surface:** Web (easiest, no install) / Desktop / **VS Code (recommended, full control + you see your files)**.
-4. **If local (Desktop/VS Code):** install **git** once (search "install git for [your OS]" if needed); then **clone your repo into a folder on your computer, that folder IS your AIOS.**
+2. **Set up on your computer:** use the **Claude Code desktop app or VS Code**. The web version may lack a signed-in GitHub CLI, which the installer needs to identify you.
+3. **Install the tools and sign in first:** **git**, **Python 3**, **Node.js** and the **GitHub CLI** (`gh`). Follow [GETTING_STARTED steps 3–7](../../../GETTING_STARTED.md#the-critical-path-do-these-in-order), starting with the tools and `gh auth login` before installation. Confirm that the four version commands there work before continuing.
+4. **Your private AIOS repo.** Continue those steps: create an empty private repository and clone it into a folder on your computer. Follow [the install guide](../../../docs/INSTALL_AND_UPGRADE.md): select the newest approved release, check its tag, and run that release's installer into that folder. The installer pins and verifies the files it writes. That folder is your AIOS.
 5. **Open Claude Code** in that folder and run your first session (load your foundational docs). When Claude Code asks whether you trust this folder, say yes - that is what turns on the safety settings.
    - **Install your document skills** (Word, PDF, PowerPoint, Excel). They are made by Anthropic and installed from Anthropic, not copied into your repo. Type `/plugin install document-skills@anthropic-agent-skills` and confirm. If Claude Code says the marketplace is unknown, first type `/plugin marketplace add anthropics/skills`. **Check it worked:** type `/plugin` and look for `document-skills` as installed.
 6. **Secure it (airlocks), before anyone else gets access:** turn on **2FA**; keep keys in `.env` (it's gitignored, so it never reaches GitHub); set a **spend limit** on your API key.
