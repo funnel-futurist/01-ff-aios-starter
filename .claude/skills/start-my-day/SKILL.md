@@ -24,7 +24,7 @@ Read the `KEY=VALUE` output. You now know: branch, on-main?, clean?, behind/ahea
 
 ## Step 2 - See where your local work stands (read-only)
 Before you move anything, find out what exists only on this computer. This step reads; it never changes anything.
-- **One folder, one repository:** Step 0's output is enough. Say plainly what it shows: `DIRTY_FILES` (edits not yet saved), `AHEAD_MAIN` (saved commits that exist nowhere else), and any branch other than `main`.
+- **One folder, one repository:** say what Step 0 actually shows: `DIRTY_FILES` (uncommitted changes), `AHEAD_MAIN` (commits ahead of the recorded `origin/main`), and the current branch. `AHEAD_MAIN` is not an unpushed-commit count: a fully pushed task branch can still be ahead of main. If publication status matters, use the helper below even for one repository. Its ahead/behind counts compare HEAD with the branch's last-fetched configured upstream, not every remote or backup. Missing upstream or a failed comparison means unknown, never zero or "exists nowhere else."
 - **More than one folder, nested repositories, or you've been away:** run the bundled read-only helper and name each folder you want checked. Nothing is scanned unless you name it, and your home folder is refused:
   ```bash
   python3 .claude/skills/start-my-day/scripts/reconcile_local.py \
@@ -32,19 +32,19 @@ Before you move anything, find out what exists only on this computer. This step 
     --out-dir /absolute/path/to/a/private/folder/outside/any/repo
   ```
   It reads each repository's branch, last commit, ahead/behind from the last fetch, stash count and the counts of changed, staged, untracked, ignored and conflicted files, and writes one private receipt. It never fetches, switches, pulls, stashes, cleans or deletes. Read its coverage limits out loud: a folder it could not reach, or a depth it did not enter, is not an empty result. Details and a throwaway check: `.claude/skills/start-my-day/references/reconciliation.md`.
-- Tell the operator in plain English what lives only on this laptop: local-only commits, edits not yet saved, ignored originals, drafts and nested repositories. A name like `scratch` or `old` is not a reason to delete anything.
+- Report observed local work and publication status separately: uncommitted changes, ignored originals, drafts, nested repositories and commits ahead of a verified recorded upstream. State which comparison was checked, when its refs were fetched if known, and which publication or backup facts remain unknown. None of these counts proves a file or commit exists nowhere else. A name like `scratch` or `old` is not a reason to delete anything.
 
 ## Step 3 - New work, or continue something?
 - If `ON_MAIN=true`: explain *"`main` is the official timeline - we never work directly on it,"* then go to Step 5 to make a branch.
 - If on a task branch already: tell them which one and ask *"continue this, or start something new?"* New → Step 4 then 5. Continue → Step 4 (offer to bring main's latest into it via a safe `git merge origin/main`, only when the checkout is clean), then Step 6.
 
 ## Step 4 - Bring in the latest official version (only when it is safe)
-- If `WORKTREE_CLEAN=true`, `BEHIND_MAIN > 0`, this is the operator's own checkout (not a folder someone else or another session is using), and Step 2 showed no saved work that exists only on the branch you'd leave: bring the official version current. Explain *"pulling the latest so you're not building on something old,"* then:
+- If `WORKTREE_CLEAN=true`, `BEHIND_MAIN > 0`, this is the operator's own checkout (not a folder someone else or another session is using), and preservation of the work on the branch you'd leave is verified: bring the official version current. `AHEAD_MAIN` alone neither proves unpushed work nor triggers a refusal. Explain *"pulling the latest so you're not building on something old,"* then:
   ```bash
   git checkout main && git pull --ff-only origin main
   ```
   (Fast-forward only — never a merge commit, never force. If git refuses with "not possible to fast-forward," that's fine — it just means local `main` diverged; tell them and don't force it.)
-- If `WORKTREE_CLEAN=false` (uncommitted work), or the checkout is shared, or the branch holds saved work that exists nowhere else: **do NOT switch branches, pull, merge or stash.** Say *"you have work that only exists here - let's not move anything until it's safe."* Offer (a) finish + run `/wrap-up` first, or (b) leave this checkout exactly as it is and start from a separate checkout. A stash only if they ask for it and understand that it hides their work until they bring it back. **Never discard.**
+- If `WORKTREE_CLEAN=false` (uncommitted work), the checkout is shared, or preservation of the branch's work is not verified: **do NOT switch branches, pull, merge or stash.** Name the observed reason and any unknown comparison; do not label unknown publication status as unpushed work. Offer (a) verify only the missing preservation or upstream fact, or finish and run `/wrap-up`, or (b) leave this checkout exactly as it is and start from a separate checkout. A stash only if they ask for it and understand that it hides their work until they bring it back. **Never discard.**
 - **If any pull/merge reports a CONFLICT** (`CONFLICT`, `<<<<<<<`, "fix conflicts and then commit"): stop and run **`/resolve-conflict`** — do not try to fix it by hand or with `git reset`. Reassure them it's normal and nothing is lost.
 
 ## Step 5 - Make today's branch
@@ -88,9 +88,9 @@ If a `/context_load` skill exists (template repos), run it to load the foundatio
 
 ## Definition of done
 
-- [ ] **D-1 - You know what exists only on this computer.**
-  - **Example:** "You have 3 saved commits that aren't pushed, 2 edited files not yet saved, and a nested repo in `nested/inner`."
-  - **Counter-example:** Calling the checkout "up to date" because `main` is current, while a branch holds unpushed work.
+- [ ] **D-1 - Local work and verified or unknown publication facts are distinguished.**
+  - **Example:** "Your branch is ahead of recorded main by 1 but matches its last-fetched upstream. Two files have uncommitted edits; I have not checked backups elsewhere."
+  - **Counter-example:** Calling `AHEAD_MAIN` an unpushed count, or treating missing upstream as zero unpushed commits.
 - [ ] **D-2 - Nothing was moved, deleted or published without being said.**
   - **Example:** The checkout had unsaved edits, so the sync was skipped and the reason was given.
   - **Counter-example:** Running `git pull` or `git stash` in a dirty checkout "to make it current".

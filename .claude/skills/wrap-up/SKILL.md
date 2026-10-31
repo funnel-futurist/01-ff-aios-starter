@@ -49,8 +49,10 @@ git add <intended paths>
 git commit -m "<message you wrote>"
 ```
 
-## Step 5 - Push YOUR branch (never main)
-A saved commit is safe from a mistake but only a push shares it, so ask: *"Want me to push this branch so the team can see it?"* Push only your own branch, and only when they say so or their standing instructions do. Never push everything as a backup, and never to `main`.
+## Step 5 - Check publication effects, then push YOUR branch (never main)
+Before any first push, later push/update or PR creation, check the current base branch, open PRs touching the same files, and what both push and PR workflows will run. A push can update an existing PR and trigger its synchronize workflow before Step 6; push workflows can run even when no PR exists. If a paid or external step could run and you cannot establish its effect or authority, keep the branch local and resolve only that uncertainty.
+
+Push only your own branch under the operator's current or standing publication instructions. If they already authorized it, proceed without asking again. Otherwise ask: *"Want me to push this branch so the team can see it?"* A push shares the named commits; it is not a backup of every local file. Never push everything as a backup, and never to `main`.
 ```bash
 git push -u origin HEAD
 ```
@@ -58,7 +60,7 @@ git push -u origin HEAD
 If the push is **rejected because the branch is behind**, don't force it - in your own clean checkout bring the latest in first (`git merge origin/main`), and if that conflicts, run **`/resolve-conflict`**, then push again.
 
 ## Step 6 - Open or update the PR (fill the template, don't skip it)
-Before you publish, check the base branch and any open PR touching the same files, and look at what the repo's PR workflow will run. If a paid or external step could run and you can't tell, keep the branch local and ask.
+Use Step 5's preflight before creating the PR. If the base, affected files, open PRs or workflow effects have changed, refresh that affected check before the next push/update or PR creation. Existing publication authority still applies; ask only for a genuinely missing decision or access.
 - No PR yet → create one and **populate the PR template** (don't rely on `--fill`, which only copies the commit and skips the checklist / AI-disclosure). Write the body to match `.github/pull_request_template.md`, then:
   ```bash
   gh pr create --base main --title "<type(scope): summary>" --body-file <(printf '%s' "<filled template body>")
@@ -105,8 +107,8 @@ If `git status` still shows uncommitted or unpushed changes, say so plainly: *"Y
   - **Example:** Adding only the one file you changed, by name, then writing `docs(offer): tighten the guarantee section`.
   - **Counter-example:** `git add -A`, which commits logs and scratch files.
 - [ ] **D-4 - Publishing matches what was said.**
-  - **Example:** The branch was pushed after a yes, to the operator's own branch, with the PR template filled in.
-  - **Counter-example:** A push to `main`, or a push nobody asked for.
+  - **Example:** The base, open PRs and push/PR workflow effects were checked before the first push, then the operator's own branch was published under an existing instruction or a new yes, with the PR template filled in.
+  - **Counter-example:** Pushing before checking the workflows that push can trigger, a push to `main`, or a push nobody authorized.
 - [ ] **D-5 - The next step is written down.**
   - **Example:** "Next step: review comment on the pricing page, then re-run the check."
   - **Counter-example:** A handoff that says only "done for today".
