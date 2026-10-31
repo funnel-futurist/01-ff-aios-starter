@@ -1,89 +1,80 @@
 # Your AIOS
 
-**This repo is yours.**
+**This workspace is yours.** AIOS Starter installs a reviewed operating layer into your own private repository. It gives your assistant a place to find company context, follow your rules, capture decisions and keep work moving. You own the company information and outputs you put here.
 
-Not rented. Not a login you lose when a subscription lapses. Not a tool some company can change or take away on a Tuesday. It's installed into your own private repository, and you own the machine.
+The Starter supplies the structure and tools. You and your team supply the business knowledge, choose the work and judge the result. Installing it does not run your business, grant access to FF's private methods or prove that an integration is live.
 
-This is your business's second brain. It runs on Claude Code. It holds your context, your decisions, your systems, your voice. And every day you use it, it gets sharper, because you're the one shaping it. The version you start today is the dumbest it will ever be. Tomorrow it knows more. That's the compound, and it's working for you.
+## Start here
 
-Most operators rent their thinking. They live inside other people's apps, other people's logic, other people's limits. They build their business on ground they don't own. You're about to do the opposite.
+1. **Install an approved release into an empty private repository.** You need git, Python 3, Node.js and the GitHub CLI. [GETTING_STARTED.md](GETTING_STARTED.md) steps 3 to 7 cover account creation, the repository and installation. Use the release installer rather than GitHub's green “Use this template” button: that button copies mutable `main`, without the installer's release and founder checks.
+2. **Open your workspace in Claude Code and run `/onboard_wizard`.** It walks through setup, team access and your business context, then hands off to `/intake`. An operator joining later runs it too. Codex reads the managed `AGENTS.md`; the [install guide](docs/INSTALL_AND_UPGRADE.md) explains which instructions an upgrade replaces and which stay yours.
+3. **Give it one real job.** “Help me plan this week,” “Draft this email in my voice,” or “What did we decide about pricing?” Check the result and keep the useful context. You can start with incomplete answers and add detail as you work.
 
-You own the brain. You shape it. You answer to no one for how it works.
+For a first install, upgrade or rollback, follow [Install and upgrade](docs/INSTALL_AND_UPGRADE.md). Copying this repository's current branch is not an approved-release install.
 
-That's rare. Hold onto it.
+## Where this repository fits
 
----
+The company architecture uses four repository roles. A **company instance** is that company's own working context, records, configuration and outputs. It can span these repositories while keeping one coherent system through explicit references and permissions.
 
-## The shift
+These are roles, not prescribed GitHub names. Use your company's actual repository map and configured destinations. This Starter installs one AIOS workspace; it does not create the other repositories, move existing records or establish their connections. If a destination is missing or inaccessible, report that and stop that send. Do not guess another repository or create one as a fallback.
 
-You're not learning a tool. You're changing seats.
+| Company repository role | Purpose and what belongs there | Keep outside it |
+|---|---|---|
+| **AIOS** | Company context, the system map, routing and integration references. Keep the context the assistant needs to understand the business and links to the authoritative domain records. | Duplicate copies of every domain's records, other companies' private material, or FF's protected method source. |
+| **Delegation** | Company roles, tasks, projects, planning and operating evidence: who owns the work, what happens next and what proves completion. | The authoritative financial record, the full creative asset library, or a second copy of company context maintained independently. Personnel records keep their actual access restrictions. |
+| **Profit OS** | Company commercial, revenue and financial operations and data, including the authoritative offer and pricing records. | Unrelated company data, reusable FF method source, or credentials committed as ordinary records. Restricted commercial and financial information keeps its access boundary. |
+| **Authority/Attention** | Company positioning, content, ads, creative inputs and finished assets, plus publishing and performance references. | FF's reusable writing or production implementation, another company's assets, or an assumption that a saved asset has been published. |
 
-Before today, you were in the work. Answering the thing, fixing the thing, remembering the thing. Your business lived in your head, and the day you stopped, it stopped.
+A repository link grants no access. Before a write, show the actual repository and path and why that destination fits. If the destination was already explicit and authorized, use it without asking the same question again. If it was not, settle the destination before sending company material.
 
-That's key-man risk. You are the key. It's fragile, and you feel it.
+### Company work and FF intelligence
 
-Your AIOS moves the system out of your head and into a place you own. Now the context lives in the repo. The decisions live in the repo. The way you do things lives in the repo. You stop being the person who holds it all and start being the operator who sees the whole board.
+Your brief, voice, scripts, brand inputs, configuration and finished outputs stay in the owning company instance. FF maintains reusable methods in its intelligence repositories. Copy Brain owns persuasive writing methods; Creation owns production methods and code. A company does not need extra Copy Brain or Creation repositories just to use those capabilities, and owning an instance does not grant access to the private intelligence source.
 
-Captain flies the plane. You're the admiral now. You decide where it goes.
+Where an entitled capability is available, the authorized Core interface carries a scoped request and returns its result to the company instance. The Starter includes an optional thin client, not the private method or engine. [The Core Bridge client guide](.aios/core_bridge/README.md) and [the install guide's capability section](docs/INSTALL_AND_UPGRADE.md#optional-ff-intelligence-capability) explain its configuration and refusals. An installed client does not establish entitlement, a live endpoint or an available writing or production capability.
 
-The work doesn't disappear. It moves to a system that remembers, so you can spend your attention on the few things only you can do.
+### Follow a request to its home
 
----
+| Request | Route and result |
+|---|---|
+| “What price did we approve?” | AIOS uses its system map to find the authoritative offer or pricing record in Profit OS. Link that record rather than maintaining a conflicting price in several repositories. |
+| “Plan next week's launch work.” | Delegation owns the plan, roles, tasks and completion evidence. Refer to Profit OS's commercial decisions and Authority/Attention's assets instead of copying their full records into the plan. |
+| “Create a campaign from our approved offer.” | Profit OS supplies the approved offer; Authority/Attention owns the company brief, audience, voice and assets. Where the relevant capabilities are available and authorized, the handoff is Attention brief → Copy Brain script → Creation asset → Attention scheduling and performance. Retain company inputs and outputs in their company destinations and verify each handoff. This example does not establish those connections or authorize publication. |
+| “Improve the reusable video-layout checker.” | Route a method or code correction to the existing FF Creation intelligence owner, using a bounded example that does not disclose company material. Do not change private method source from a client instance or copy company assets into shared intelligence. |
 
-## What this is honest about
+For projects, tasks, issues, reviewers and delivery states, use [How AIOS work reaches use](docs/how_aios_work_reaches_use.md). It explains those terms through one job. The repository roles above describe where information belongs; they do not replace that work model.
 
-This template hands you the system and the discipline to run it. It does not hand you the outcome.
+## What the Starter installs
 
-It won't write your offer for you. It won't run your ads. It won't replace judgment with a button. The done-for-you craft (copy that converts, funnels that hold up under traffic, media buying, CRO, a placed operator on your team) is its own discipline, earned, and it's there when you want the work done instead of just the system to do it in.
+**A workspace with seven domain folders.** `00_AIOS` holds company context, routing, decisions and the review queue. `01_Creation`, `02_Team_Ops`, `03_RevOps` and `04_Attention` organize work inside this workspace; `05_Jobs` holds recurring-job records and `99_Archive` holds finished material. [The routing map](00_AIOS/routing.md) gives request-to-folder examples and the old-to-new folder map.
 
-What this gives you is the operating layer underneath all of it: a brain that holds your context so every move you make compounds instead of resetting. The value is the system plus your judgment. Claude is fast and tireless and confident, even when it's wrong. You're the one who knows when it's wrong. That never changes. Keep yourself in the loop and this thing gets dangerous in the best way. Take yourself out and it drifts.
+Those seven folders are the shipped workspace layout, not seven repositories or proof that the four-repository company structure has been provisioned. Keep existing records in their current homes until their owner completes a reviewed transition and verifies the receiving consumers.
 
-You own the machine. You're also responsible for it. Same coin.
+**Skills you can run by name.** Type `/` in Claude Code or use [the skill index](.claude/skills/README.md). `/onboard_wizard` starts setup, `/intake` captures business context, and `/start` reports the role, installed release and workspace checks. A skill is instructions that run with your access, so read one before trusting it.
 
----
+**Files with clear ownership.** `README.md` and `CLAUDE.md` are starter files you can shape for your business. An upgrade preserves existing copies, so a template README update does not replace your company's README. `AGENTS.md` and other managed system files follow the release's ownership list and are replaced on upgrade. Use [the install guide](docs/INSTALL_AND_UPGRADE.md) before changing or upgrading the managed layer; editing one instruction file does not automatically update every tool's instructions.
 
-## Start here (3 steps)
+**A pull-request reviewer.** Its deterministic floor fails the `pr-gate` status for leaked secrets or env files, destructive or security-weakening SQL, file names with spaces, or a broken symlink under `.claude/`. An error-level AI finding, when AI review is configured, or an unfinished deterministic check also fails that status. Whether a failed status stops a merge depends on branch protection; other findings are advice. [PR reviewer setup](docs/PR_REVIEWER_SETUP.md) explains configuration. Paid review is disabled for FF-owned repositories; a client-owned installation needs its own authorized configuration.
 
-**1. Install it into your own private repository.** Install git, Python 3, Node.js and the GitHub CLI, create an empty private repo, and run the installer with the newest approved release. [GETTING_STARTED.md](GETTING_STARTED.md) steps 3 to 7 spell out every click. Please don't use the green "Use this template" button: it copies whatever is on the main branch that day, not an approved release, and the copy doesn't know who its founder is.
+## Keep the system yours
 
-**2. Open it in Claude Code and run `/onboard_wizard`.** This is the only command you need on day one. It walks you through setup, asks about your business, and fills your brain with real context. Don't skip it. An empty brain is a generic brain. And don't aim for complete, aim for started: a rough version today beats a perfect version next month.
+- **Keep secrets out of Git.** Put keys, passwords and tokens in the approved local secret store or ignored `.env`, never in committed company records. Set spend limits and use two-factor authentication. Private company records belong only in their authorized destinations.
+- **Make reversible changes.** Work on a branch, commit useful progress and review changes before they reach shared use. Follow the separate owner gates for access, spending, publication and irreversible work.
+- **Keep one authoritative record.** Use pointers when another repository owns the fact. Archive stale working material through the existing process rather than leaving several competing versions.
+- **Review the result.** Source complete, reviewed, merged, installed, deployed and accepted in use are different stages. Use the existing work guide and receipts to say which one has actually happened.
+- **Stay current through releases.** Run `/start` to see your installed release and verification result. Follow the approved-version upgrade and rollback route; do not overwrite company work with a copy of mutable `main`.
 
-**3. Go.** Ask it something real. "Help me plan this week." "Draft this email in my voice." "What did we decide about pricing last month?" The more you use it, the more it knows. Momentum starts on the first real task, not the perfect one.
+When a step fails, record what happened and follow [the unstuck protocol](docs/UNSTUCK_PROTOCOL.md). Keep working on independent tasks while the specific access, destination or technical problem is resolved.
 
-That's the on-ramp. New to GitHub or Claude Code, or want every click spelled out (including creating your GitHub account first)? **[GETTING_STARTED.md](GETTING_STARTED.md)** is the full step-by-step. Everything below is here when you want it. You don't need it to begin.
+## Guides to use next
 
----
-
-## What's inside
-
-**The workspace (seven domain folders).** `00_AIOS` is who you are and where work goes; `01_Creation`, `02_Team_Ops`, `03_RevOps` and `04_Attention` are the four ways the business runs; `05_Jobs` holds recurring jobs; `99_Archive` holds what's finished. Every company's instance uses the same seven, so anyone who has seen one can find their way around yours. You don't have to memorize it: `00_AIOS/routing.md` says which folder takes which request, or just ask.
-
-**Skills (type `/`).** Pre-built moves you run by name. Type `/` in Claude Code to see what's available: `/onboard_wizard` to load up, plus skills to review a doc, run a status check, audit your files, and more. Each one is a packaged way of doing a job well. When you catch yourself explaining the same task twice, make it a skill. Now it's permanent.
-
-**`CLAUDE.md` is your constitution.** It's the file the brain reads first, every session. Your rules, your voice, your non-negotiables live here. When you want the system to behave differently, you don't nag it every time. You change the constitution once. Edit this file as you learn how you actually want to work.
-
-**The PR reviewer that advises.** When you make changes, a reviewer checks them and tells you what it sees. Its checks fail the pull request's `pr-gate` status for leaked secrets or env files, destructive or security-weakening SQL, file names with spaces, or a broken symlink under `.claude/`, and so does an error-level finding from the AI review when one is set up, or a check that did not finish; whether that stops a merge depends on your branch protection. Everything else is advice. You're the owner, and it's a second set of eyes that respects that you have the final call. (Two-minute setup: [docs/PR_REVIEWER_SETUP.md](docs/PR_REVIEWER_SETUP.md).)
-
-**The unstuck protocol.** Everyone hits a wall. When you do, tell the brain you're stuck and what you were trying to do. It's built to help you name the problem, find the thread, and move again. Stuck is a step, not a stop. ([docs/UNSTUCK_PROTOCOL.md](docs/UNSTUCK_PROTOCOL.md).)
-
----
-
-## The guardrails
-
-Five rules keep this thing yours and safe. They're not red tape. They're how operators stay in command.
-
-- **Secrets stay out of the repo.** API keys, passwords, tokens, client data you wouldn't want leaked: those go in a local `.env` file or a password manager, never committed. Set a spend limit on every key and turn on 2FA. The repo holds your system, not your keys.
-- **Reversible by default.** This brain works in small, undoable steps. It plans before it acts on anything serious, and you approve. Commit often. If a move was wrong, you back it out. Bias toward changes you can take back.
-- **Lean beats bloated.** A tight brain is a sharp brain. Don't hoard files you'll never read. Cut what's dead. The system gets dumber when it's stuffed with noise, sharper when it's clean.
-- **Never run skills you don't trust.** A skill is instructions the brain will follow with your access. Treat one from somewhere else the way you'd treat a stranger's USB stick. Read it first. If you don't understand it, don't run it.
-- **You stay in the loop.** The point is leverage, not autopilot. Review what matters before it ships. Your judgment is the part that can't be downloaded. Guard it.
-
----
-
-## What happens now
-
-Run `/onboard_wizard`. Ask it one real thing. Watch it remember.
-
-That's the moment it stops being a template and starts being yours.
-
-You own the machine. Go build the version of your business that runs on it.
+| Need | Existing guide |
+|---|---|
+| First-time setup and team onboarding | [Getting started](GETTING_STARTED.md) and [Setup](SETUP.md) |
+| Install, upgrade, ownership or rollback | [Install and upgrade](docs/INSTALL_AND_UPGRADE.md) |
+| Choose a folder in this workspace | [Workspace routing](00_AIOS/routing.md) |
+| Understand the work and its review stages | [How AIOS work reaches use](docs/how_aios_work_reaches_use.md) |
+| Find a skill | [Skill index](.claude/skills/README.md) |
+| Configure the optional authorized capability client | [Core Bridge client](.aios/core_bridge/README.md) |
+| Configure a repository reviewer | [PR reviewer setup](docs/PR_REVIEWER_SETUP.md) |
+| Resolve a failed step | [Unstuck protocol](docs/UNSTUCK_PROTOCOL.md) |

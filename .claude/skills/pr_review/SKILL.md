@@ -1,6 +1,6 @@
 ---
 name: pr_review
-description: Automated PR review, a senior code reviewer that checks for secrets, bugs, broken builds, content quality, and cross-file safety. Reviews every PR, fixes safe issues when you run it yourself (in CI it suggests them and never changes the branch), approves good work, suggests improvements, and only stops genuinely-dangerous changes. Never blocks you.
+description: Automated PR review, a senior code reviewer that checks for secrets, bugs, broken builds, content quality, and cross-file safety. Reviews every PR, fixes safe issues when you run it yourself (in CI it suggests them and never changes the branch), approves good work, and suggests improvements. Its pr-gate status fails for a real danger, an error-level AI finding when review is configured, or an unfinished deterministic check; other findings are advice. NOT for planning new work, changing access, merging or deployment; use the planning skill or the existing owner execution route.
 ---
 
 ## Skill Metadata
@@ -33,6 +33,25 @@ This skill activates when:
 - Triggered manually via `/pr_review` or "review this PR"
 - Auto-triggered by the GitHub Actions workflow on PR open/sync
 
+## Boundaries and routing
+
+| Request | Use | Boundary |
+|---|---|---|
+| Review an existing PR or branch | `pr_review` | Read the actual change and give its review verdict. CI writes only the generated review outputs described below. |
+| Plan or assign new work | `project_management` | A review does not create an implementation claim or replace the work plan. |
+| Audit the workspace beyond this diff | `file_audit` or `security_check` | Route the wider inventory or security investigation to its existing skill. Keep this review tied to its PR. |
+| Merge, deploy, change access or install a release | The existing owner execution route | An approving review does not perform or authorize these separate actions. |
+
+## Source references
+
+Use `.github/workflows/pr-review.yml` for the actual CI inputs, outputs and gate, and
+`scripts/pr_review/static_checks.mjs` for the deterministic floor. The existing fixture cases in
+scripts/pr_review/static_checks.test.mjs provide positive and negative controls; they are not
+actual customer reviews.
+
+This skill has no approved gold-standard review artifact. The verdict format below is a template,
+not evidence that a review happened. Check each real PR against its diff and the source contracts.
+
 ## EXECUTION PROTOCOL
 
 ### Step 1: Identify the PR
@@ -60,7 +79,7 @@ For each check, assign: **PASS**, **FLAG** (warning, can still merge), or **BLOC
 #### Check 1: Secrets Scan
 - Search the diff for API keys, tokens, passwords, connection strings.
 - Look for patterns like `sk-`, `xoxb-`, `Bearer `, `password`, `secret`, `ANTHROPIC_API_KEY=`, `postgresql://`, any base64 strings > 40 chars.
-- Check if any `.env`, `.pem`, `.key`, or `credentials.json` files are in the diff.
+- Check whether the diff adds an env file, private-key file or credential export, including a file named credentials.json. These are inspection patterns, not required repository source files.
 - **BLOCK** if any secret is found in an added line. Instruct: revoke the key immediately, remove it from history with BFG or `git filter-repo`, then re-push. (Removing a hardcoded secret is a *positive*, never flag a deletion.)
 
 #### Check 2: Correctness & Bugs
@@ -144,7 +163,7 @@ someone over nits.
 **Inputs and outputs in CI.** The workflow hands you the pull request as files: `./.pr_context/pr.json`
 (title, body, author, files, size) and `./.pr_context/diff.txt`. You have no shell and no GitHub access,
 and the only files you can write are `./review.md` and `./verdict.json` (the workflow's tool list enforces
-it). A later, deterministic workflow step posts `review.md` as the review: an approval when
+it). A later, deterministic workflow step posts `./review.md` as the review: an approval when
 `has_error_severity` is false, a request for changes when it is true.
 
 **Output discipline in CI:**
@@ -155,7 +174,7 @@ it). A later, deterministic workflow step posts `review.md` as the review: an ap
    comment so the author applies it in one step. NEVER propose a quiet fix for a hard-block
    (secrets/destructive): block and comment.
 3. **Approve good work by the verdict.** When there's no `error`-severity issue and the floor is clean,
-   keep `has_error_severity` false and open `review.md` with a one-line affirmation (suggestions are
+   keep `has_error_severity` false and open `./review.md` with a one-line affirmation (suggestions are
    non-blocking); the workflow posts it as an approval. When something is genuinely unsafe, mark the
    issue `error` with the exact fix; the workflow requests changes. Reserve that for real problems
    (secrets, destructive migrations, clear correctness bugs), never nits.
@@ -190,6 +209,25 @@ Field rules:
 Slack notification and the actual merge are handled by the workflow's `gate` job, you do not post to
 Slack or merge in CI mode.
 
+## Definition of done
+
+These checks use existing floor fixtures and workflow branches, not invented review receipts.
+The workflow generates ./review.md and ./verdict.json in its runner checkout; neither output is a
+committed source reference or an approved example.
+
+- [ ] **D-1 - Match a finding to the actual added content.**
+  - **Example:** the existing process.env-reference fixture passes Secrets Scan; referencing an environment variable is not a committed credential.
+  - **Counter-example:** the existing added-real-key fixture returns BLOCK. Do not approve it as though it were the environment-reference case.
+  - **Resource:** [Existing floor fixtures](../../../scripts/pr_review/static_checks.test.mjs)
+- [ ] **D-2 - Distinguish a removal from a new leak.**
+  - **Example:** the existing deleted-secret-line fixture passes Secrets Scan because the diff removes the credential-bearing line.
+  - **Counter-example:** the existing real-env-file fixture blocks an added .env file. Removal and new disclosure need different verdicts.
+  - **Resource:** [Existing floor fixtures](../../../scripts/pr_review/static_checks.test.mjs)
+- [ ] **D-3 - Report the actual review and gate state.**
+  - **Example:** the workflow's no-credential branch reports that AI review is not configured; it does not claim a completed model review or enable auto-merge.
+  - **Counter-example:** when review is configured, the existing valid-verdict check rejects a missing or invalid verdict. A successful-looking job without that verdict is not a completed review.
+  - **Resource:** [Existing CI workflow](../../../.github/workflows/pr-review.yml)
+
 ## FORBIDDEN
 
 - Never approve a PR with secrets in the diff, no exceptions.
@@ -200,6 +238,6 @@ Slack or merge in CI mode.
 
 ## EVOLUTION
 
-This skill improves over time. Each review emits a one-line `learning` in `verdict.json` that surfaces
+This skill improves over time. Each review emits a one-line `learning` in `./verdict.json` that surfaces
 in the PR comment / run log. Periodically fold recurring patterns into the checks above and into the
 deterministic floor (`scripts/pr_review/static_checks.mjs`).
