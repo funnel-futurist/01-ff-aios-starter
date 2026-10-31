@@ -7,8 +7,8 @@ Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to
 | Skill | What it does | Trigger |
 |---|---|---|
 | **start** | The role-based way in: who you are, what your role may do, which release is installed and whether it still matches, and which files are the founder's. | `/start` |
-| **start-my-day** | Begin a session safely: syncs you to the latest, puts you on your own branch, loads your brain. | `/start-my-day` |
-| **wrap-up** | End a session safely: self-review, save, push, open the review request, write a plain-English handover. | `/wrap-up` |
+| **start-my-day** | Begin a session safely: reads where your work stands first (including work only on this computer), brings the latest in only when that is safe, puts you on your own branch, loads your brain. | `/start-my-day` |
+| **wrap-up** | End a session safely: preserve your local work, self-review, save, and when you say so push your branch, open the review request and write a plain-English handover. | `/wrap-up` |
 | **review-queue** | The reviewer's live queue: every open change, sorted into ready, waiting on you, stuck and stale. | `/review-queue` |
 | **resolve-conflict** | A calm, plain-English path through a merge conflict, when two people changed the same lines. | `/resolve-conflict` |
 | **onboard_wizard** | First-run setup walk: tool → repo → keys → invite team; captures your vision / mission / values; proves the brain works. Run it first, and again when a teammate joins. | `/onboard_wizard` |

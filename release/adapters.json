@@ -48,6 +48,8 @@
         ".claude/skills/review-queue/SKILL.md",
         ".claude/skills/security_check/SKILL.md",
         ".claude/skills/start-my-day/SKILL.md",
+    ".claude/skills/start-my-day/references/reconciliation.md",
+    ".claude/skills/start-my-day/scripts/reconcile_local.py",
         ".claude/skills/start/SKILL.md",
         ".claude/skills/upskill/SKILL.md",
         ".claude/skills/workspace_health/SKILL.md",
