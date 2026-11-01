@@ -76,12 +76,14 @@ Example: "/explain-from-the-ground-up Why does anything need a second reviewer b
 - [ ] **D-5 - Compare the choices, including doing nothing.**
   - **Example:** Each option states what it changes, who gains or loses, and what happens if nothing changes.
   - **Counter-example:** One recommendation presented as if it were already approved.
-- [ ] **D-6 - The reader explains the decision back.**
-  - **Example:** The answer closes by asking the reader to say the decision back in their own words, or quotes their answer.
-  - **Counter-example:** Ending on another pile of terminology, or pressing for a yes while the reader is still working out the question.
+- [ ] **D-6 - Finish with the practical meaning and next action.**
+  - **Example:** The answer says what the choice changes in practice and what happens next within the existing authority, then answers any follow-up questions.
+  - **Counter-example:** Requiring a founder or operator to repeat the explanation before continuing already-authorized work, or ending on another pile of terminology.
 
 ## QC gate
 
-Check D-1 to D-6 before you finish. If the reader still cannot describe the job, the scope and the consequence, go one layer further back (D-1) instead of adding terms. If they are being asked to approve something they still cannot describe, hand the decision to its owner and say what is still unexplained.
+Check D-1 to D-6 before you finish. When the reader asks for more background, go one layer further back (D-1) instead of adding terms. In normal founder/operator conversation, finish with the practical meaning and next action, answer follow-up questions, and continue otherwise authorized work without requiring a repeat-back.
+
+Use teach-back only in an explicitly requested learning or coaching exercise, or an adopted competency assessment. Preserve that exercise's or assessment's required checks. A written demonstration does not establish that a real reader understood it.
 
 No approved gold standard yet.
