@@ -1,0 +1,38 @@
+{
+  "schema": "learner-status/1",
+  "fictional": true,
+  "writer": "Practice Coordinator",
+  "as_of": "2026-10-31T22:00:00Z",
+  "freshness_minutes": 1440,
+  "sources": [
+    { "label": "Fictional accepted plan", "ref": "02_Team_Ops/projects/example/PROJECT.md", "revision": "practice-plan-v1", "verification": "Fictional example only" },
+    { "label": "Fictional work records", "ref": "02_Team_Ops/projects/example/work_records.json", "revision": "practice-records-v1", "verification": "Fictional example only" }
+  ],
+  "coverage": {
+    "declared_ids": ["PRACTICE-01", "PRACTICE-02", "PRACTICE-03"],
+    "omitted_ids": ["PRACTICE-03"],
+    "note": "One example unit is omitted because its current work record has not been supplied. These source paths are invented illustrations, not files this page creates."
+  },
+  "units": [
+    {
+      "id": "PRACTICE-01", "title": "Prepare the welcome guide", "outcome": "A new teammate can find their first task and the person who can help.",
+      "pocket": "Setup", "project": "Practice onboarding", "round": "First usable draft",
+      "owner": "Practice builder", "reviewer": "Practice reviewer", "next_actor": "Practice reviewer",
+      "state": "source_complete", "entered_at": "2026-10-31T21:15:00Z",
+      "agent_effort": "20 minutes estimated", "human_effort": null,
+      "ref": "02_Team_Ops/projects/example/work_records.json#PRACTICE-01",
+      "evidence": [
+        { "kind": "source_complete", "ref": "02_Team_Ops/projects/example/welcome_draft.md", "revision": "practice-draft-v1", "observed_at": "2026-10-31T21:15:00Z" }
+      ]
+    },
+    {
+      "id": "PRACTICE-02", "title": "Share the guide with the team", "outcome": "The intended readers can open the approved guide.",
+      "pocket": "Setup", "project": "Practice onboarding", "round": "Reader access",
+      "owner": "Practice publisher", "reviewer": null, "next_actor": "Practice owner",
+      "state": "blocked", "entered_at": "2026-10-31T21:30:00Z",
+      "ref": "02_Team_Ops/projects/example/work_records.json#PRACTICE-02",
+      "blocker": { "stage": "deploying", "dependency": "Approved audience and access method", "next_actor": "Practice owner", "clearing_evidence": "Named readers and a verified access configuration", "next_look": "No date supplied; trigger: audience decision recorded" },
+      "evidence": []
+    }
+  ]
+}
