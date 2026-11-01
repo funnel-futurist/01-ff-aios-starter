@@ -115,7 +115,12 @@ def read_source(repo, now):
         source = source / part
         if source.is_symlink():
             raise Refused('the selected tracker path must not contain symlinks')
-    descriptor = os.open(str(source), os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0))
+    initial = source.lstat()
+    if not stat.S_ISREG(initial.st_mode) or initial.st_size > MAX_BYTES:
+        raise Refused('the selected tracker must be a regular file of at most 1 MiB')
+    # Nonblocking open also bounds a regular-file-to-FIFO race after the precheck.
+    descriptor = os.open(str(source), os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) |
+                         getattr(os, 'O_NONBLOCK', 0))
     with os.fdopen(descriptor, 'rb') as stream:
         before = os.fstat(stream.fileno())
         if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_BYTES:

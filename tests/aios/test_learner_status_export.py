@@ -201,6 +201,50 @@ console.log(JSON.stringify({snapshot: view.snapshot, units: view.units}));
         with self.assertRaisesRegex(EXPORTER.Refused, '2000'):
             EXPORTER.parse_tracker(text)
 
+    @unittest.skipUnless(hasattr(os, 'mkfifo'), 'FIFO refusal applies on platforms with named pipes')
+    def test_actual_cli_fifo_refuses_promptly_and_preserves_last_good(self):
+        self.export_ok()
+        good = self.output.read_bytes()
+        self.source.unlink()
+        os.mkfifo(self.source, 0o600)
+        result = subprocess.run([sys.executable, str(SCRIPT), '--repo', str(self.workspace),
+                                 '--output', str(self.output), '--freshness-minutes', '1440'],
+                                capture_output=True, text=True, timeout=2)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('regular file', result.stderr)
+        self.assertEqual(self.output.read_bytes(), good)
+        self.assertEqual(list(self.workspace.glob('.practice_status.json.*.tmp')), [])
+
+    @unittest.skipUnless(hasattr(os, 'mkfifo') and hasattr(os, 'O_NONBLOCK'),
+                         'nonblocking FIFO race control applies on supported platforms')
+    def test_file_to_fifo_race_after_precheck_is_refused_without_hanging(self):
+        self.export_ok()
+        good = self.output.read_bytes()
+        # A disposable subprocess simulates the source changing immediately before the real open.
+        # It invokes the actual CLI entry and actual os.open, with a timeout that reaps any hung child.
+        program = r'''
+import importlib.util, os, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('exporter_race', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+source = Path(sys.argv[2]).resolve() / module.TRACKER
+real_open = os.open
+def race(path, flags, *args, **kwargs):
+    if Path(path) == source:
+        source.unlink()
+        os.mkfifo(source, 0o600)
+    return real_open(path, flags, *args, **kwargs)
+module.os.open = race
+raise SystemExit(module.main(['--repo', sys.argv[2], '--output', sys.argv[3], '--freshness-minutes', '1440']))
+'''
+        result = subprocess.run([sys.executable, '-c', program, str(SCRIPT), str(self.workspace), str(self.output)],
+                                capture_output=True, text=True, timeout=2)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('regular file', result.stderr)
+        self.assertEqual(self.output.read_bytes(), good)
+        self.assertEqual(list(self.workspace.glob('.practice_status.json.*.tmp')), [])
+
 
 if __name__ == '__main__':
     unittest.main()
