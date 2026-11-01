@@ -2,13 +2,13 @@
 
 Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to see them live. Here's the full list with a one-line description and how to trigger each.
 
-## The core set (24 ship in this repo, plus Anthropic's four document skills)
+## The core set (25 ship in this repo, plus Anthropic's four document skills)
 
 | Skill | What it does | Trigger |
 |---|---|---|
 | **start** | The role-based way in: who you are, what your role may do, which release is installed and whether it still matches, and which files are the founder's. | `/start` |
-| **start-my-day** | Begin a session safely: syncs you to the latest, puts you on your own branch, loads your brain. | `/start-my-day` |
-| **wrap-up** | End a session safely: self-review, save, push, open the review request, write a plain-English handover. | `/wrap-up` |
+| **start-my-day** | Begin a session safely: reads where your work stands first (including work only on this computer), brings the latest in only when that is safe, puts you on your own branch, loads your brain. | `/start-my-day` |
+| **wrap-up** | End a session safely: preserve your local work, self-review, save, and when you say so push your branch, open the review request and write a plain-English handover. | `/wrap-up` |
 | **review-queue** | The reviewer's live queue: every open change, sorted into ready, waiting on you, stuck and stale. | `/review-queue` |
 | **resolve-conflict** | A calm, plain-English path through a merge conflict, when two people changed the same lines. | `/resolve-conflict` |
 | **onboard_wizard** | First-run setup walk: tool → repo → keys → invite team; captures your vision / mission / values; proves the brain works. Run it first, and again when a teammate joins. | `/onboard_wizard` |
@@ -16,6 +16,7 @@ Skills are pre-built moves your AIOS can run by name. Type `/` in Claude Code to
 | **context_load** | Reads your whole workspace and gives you a session brief (what's here, what's active). | `/context_load` |
 | **dashboard** | Quick status: open tasks, what's in the review queue, what's coming up. | `/dashboard` |
 | **grill_me** | Pressure-tests your thinking before you act. DECIDE mode runs the Define-Before-You-Build gate so you never build the wrong thing; CAPTURE mode interviews you and writes a process/offer/decision into a clean doc so nothing tacit gets lost. Sparring partner, not answer machine. | `/grill_me` |
+| **explain-from-the-ground-up** | Explains an unfamiliar topic or decision from the background up: why it exists, each term in plain words, one mapped metaphor, and what each choice changes. Use it before you approve something you cannot yet describe. | `/explain-from-the-ground-up` |
 | **project_management** | Break-glass clarity when your plate is overwhelming. Dump everything on it; it triages the whole plate on a value x energy 2x2, tags each by acquisition/fulfillment/operations, flags what you're avoiding, names the one lever, and hands back own/delegate/automate/eliminate + a single "do this next." Pairs with grill_me (grill_me = one decision; this = the whole plate). | `/project_management` |
 | **upskill** | Researches what Claude Code + the ecosystem now offer for YOUR workflows, grills you on skill-bloat (you can have 500 skills and use 10), and proposes what to add, update, or retire. Stay current and lean. | `/upskill` |
 | **pr_review** | Your guardian. Reviews every pull request, suggests exact fixes for safe issues (in CI it never changes the branch), flags real risk, approves good work. A real danger, an error-level AI finding when review is configured, or an unfinished deterministic check fails its `pr-gate` status; the rest is advice. | runs on PRs |
