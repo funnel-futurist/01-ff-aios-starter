@@ -7,6 +7,8 @@ description: The safe end-of-session closeout + handoff ritual. Use when finishi
 
 Calm, plain-English, one step at a time. Protect the operator's work **and** the team's time.
 
+If you are explicitly assigned as programme lead or coordinator, read the [coordination closeout rule](../start-my-day/references/reconciliation.md#assignment-closeout-and-programme-coordination) before reporting the authorised portfolio exhausted, even for one repository. Other workers close and hand back only their assigned work.
+
 ## Step 0 - Read the situation
 ```bash
 bash scripts/team/git-safety-check.sh

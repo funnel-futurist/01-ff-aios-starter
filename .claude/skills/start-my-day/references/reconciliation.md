@@ -30,6 +30,14 @@ Use this prompt for a session you start by hand in Claude Code or Codex. MODE (i
 >
 > For start, tell me what changed, what is unfinished or exists only on this computer, and what is next. For end, preserve the intended work and its test results, and update my restart note. For closeout, only propose what could be archived or removed and what would need recovery; do nothing until I say exactly which. Keep "prepared", "registered", "enabled", "ran" and "someone used it" as separate facts. Stay quiet when nothing changed. Finish with the real receipt or a bounded finding and one next step.
 
+## Assignment closeout and programme coordination
+
+Ordinary workers close only their assigned unit, preserve its evidence and return unresolved or downstream actions through the existing handoff. That role carries no authority to inspect another portfolio or broaden access.
+
+An explicitly assigned programme lead or coordinator has one additional check before saying the authorised portfolio is exhausted: refresh the current canonical queue, source revisions and active claims across its declared scope. Reconcile ready and unassigned work, returned candidates, source-only completed work with unfinished downstream actions, and deferred work whose restart trigger has fired. Check each `unit + head + action` against its current owner and previous dispatch, then route the next eligible action through the existing authorised handoff and record actual dispatch and receiving evidence.
+
+Keep owner, access, review, release and capacity holds attached to the step they affect, and continue eligible independent work. A portfolio-exhaustion claim requires fresh, complete source dispositions with no pending routing edge. Name any stale or missing evidence and its next clearing action. When only genuine holds remain, report their exact gate, next actor and clearing event; wait through the existing mechanism without idle polling or invented dispatch. Assignment closeout, passing checks, full seats or the local inventory helper's exit status do not establish portfolio exhaustion. This source procedure does not establish installed or observed adoption.
+
 ## Cadence
 
 Run it by hand when you start and end a session, or pick a cadence that suits your working hours. This skill does not create a schedule. A saved prompt, an open session or a hook is not a schedule: if you later want one, set it up with the tool that supports it and read back its real configuration before you call it enabled. On a failed run, keep the receipt, the scope it covered and the last good state, then try the one dependency that failed again rather than repeating everything.
