@@ -53,11 +53,20 @@ class NativeEntries(unittest.TestCase):
 
     def test_missing_or_malformed_source_refuses_before_rendering(self):
         source = ".claude/skills/review-queue/SKILL.md"
-        for text in ("# no frontmatter", "---\nname: wrong\ndescription: Trigger\n---\n", "---\nname: review-queue\ndescription: >\n  hidden\n---\n"):
+        invalid = ["# no frontmatter", "---\nname: wrong\ndescription: Trigger\n---\n",
+                   "---\nname: review-queue\ndescription: >\n  hidden\n---\n"]
+        invalid += ["---\nname: review-queue\ndescription: %s\n---\n" % value
+                    for value in ("null", "[]", "{bad: value}", "|+", ">+", "true", "42", "&alias text")]
+        for text in invalid:
             harness.write(self.root, source, text)
             with self.assertRaises(util.Refusal):
                 self.generate()
             self.assertFalse(os.path.exists(os.path.join(self.root, ".agents")))
+            result = subprocess.run([sys.executable, os.path.join(harness.AIOS_DIR, "aios.py"),
+                                     "adapters", "render-skills", "--repo", self.root],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, util.EXIT_PACKAGE, result.stdout + result.stderr)
+            self.assertFalse(os.path.exists(os.path.join(self.root, ".agents")), "CLI wrote a partial batch")
         os.remove(os.path.join(self.root, source))
         with self.assertRaises(util.Refusal):
             self.generate()
@@ -82,6 +91,14 @@ class NativeEntries(unittest.TestCase):
             harness.write(self.root, source, text)
             with self.assertRaises(util.Refusal):
                 self.generate()
+
+    def test_quoted_literals_remain_strings_instead_of_yaml_values(self):
+        source = ".claude/skills/start/SKILL.md"
+        for value in ('"null"', '"[]"', '"{bad: value}"', '"|+"', "'Bob''s queue'"):
+            harness.write(self.root, source, "---\nname: start\ndescription: %s\n---\nBody\n" % value)
+            entries = adapters.render_codex_skills(self.root)
+            self.assertEqual(len(entries), 8)
+            self.assertIn(source, entries[".agents/skills/start/SKILL.md"])
 
     def test_authoring_command_refuses_an_installed_target_without_changing_it(self):
         paths = self.generate()
