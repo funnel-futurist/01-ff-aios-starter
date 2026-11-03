@@ -74,10 +74,10 @@ def decision(event, root=None, identify=None):
             raise ValueError("patch working directory is outside this workspace or unavailable")
         paths = []
         for path in patch_paths(event["tool_input"].get("command")):
-            if (path != path.strip() or not path or "\\" in path or os.path.isabs(path) or
-                    re.match(r"^[A-Za-z]:", path) or ".." in path.split("/")):
-                raise ValueError("patch path is absolute, ambiguous or contains traversal")
-            full = os.path.join(cwd, path)
+            if (path != path.strip() or not path or "\\" in path or
+                    (re.match(r"^[A-Za-z]:", path) and not os.path.isabs(path)) or ".." in path.split("/")):
+                raise ValueError("patch path is ambiguous or contains traversal")
+            full = path if os.path.isabs(path) else os.path.join(cwd, path)
             if not inside(root, full) or os.path.realpath(full) == str(root):
                 raise ValueError("patch path resolves outside this workspace")
             paths.append(full)

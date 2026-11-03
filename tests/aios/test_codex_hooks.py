@@ -157,11 +157,55 @@ class RoleAdapter(Denial):
         self.assertDenied(edit.decision(native, root=self.root, identify=lambda _root: "synthetic-operator"))
         self.assertIsNone(self.decide(update("file.txt"), cwd=self.root / "ordinary/nested"))
 
-    def test_absolute_traversal_and_ambiguous_paths_are_denied(self):
-        for path in ("../escape", "ordinary/../protected/file", str(self.root / "ordinary/a"),
+    def test_traversal_and_ambiguous_paths_are_denied(self):
+        for path in ("../escape", "ordinary/../protected/file",
                      "C:/ordinary/a", "ordinary\\a", " ordinary/a", "ordinary/a ", "."):
             with self.subTest(path=path):
                 self.assertDenied(self.decide(update(path), "synthetic-founder"))
+
+    def test_native_absolute_add_and_update_inside_root_are_allowed(self):
+        target = str(self.root / "ordinary/a file.txt")
+        for body in ("*** Add File: " + target + "\n+new", update(target)):
+            native = event("apply_patch", patch(body), self.root / "ordinary/nested")
+            def forbidden(_root):
+                self.fail("ordinary absolute target must not look up identity")
+            self.assertIsNone(edit.decision(native, root=self.root, identify=forbidden))
+
+    def test_absolute_protected_targets_use_canonical_role_permissions(self):
+        target = str(self.root / "protected/file.txt")
+        for body in ("*** Add File: " + target + "\n+new", update(target)):
+            for login in ("synthetic-operator", None, "synthetic-stranger"):
+                self.assertDenied(self.decide(body, login))
+            self.assertIsNone(self.decide(body, "synthetic-founder"))
+
+    def test_absolute_and_relative_move_endpoints_share_policy(self):
+        for source, destination in ((str(self.root / "ordinary/a"), "protected/b"),
+                                    ("ordinary/a", str(self.root / "protected/b")),
+                                    (str(self.root / "protected/a"), "ordinary/b")):
+            body = "*** Update File: " + source + "\n*** Move to: " + destination + "\n@@\n-a\n+b"
+            self.assertDenied(self.decide(body))
+            self.assertIsNone(self.decide(body, "synthetic-founder"))
+
+    def test_absolute_outside_or_late_move_escape_refuses_before_policy(self):
+        outside = str(self.root.parent / (self.root.name + "-outside") / "a")
+        bodies = (update(outside),
+                  update("protected/first") + "\n*** Update File: ordinary/a\n*** Move to: " + outside + "\n@@\n-a\n+b",
+                  "*** Update File: " + outside + "\n*** Move to: ordinary/a\n@@\n-a\n+b")
+        for body in bodies:
+            with mock.patch.object(boundary, "check_edit", side_effect=AssertionError("partial policy check")) as check:
+                self.assertDenied(self.decide(body, "synthetic-founder"))
+                check.assert_not_called()
+
+    def test_absolute_symlinks_reuse_role_policy_and_refuse_escape(self):
+        link = self.root / "ordinary/alias"
+        link.symlink_to(self.root / "protected/target")
+        self.assertDenied(self.decide(update(str(link))))
+        self.assertIsNone(self.decide(update(str(link)), "synthetic-founder"))
+        escape = self.root / "ordinary/escape"
+        escape.symlink_to(self.root.parent)
+        for body in (update(str(escape / "a")),
+                     "*** Update File: ordinary/a\n*** Move to: " + str(escape / "b") + "\n@@\n-a\n+b"):
+            self.assertDenied(self.decide(body, "synthetic-founder"))
 
     def test_outside_missing_and_nonabsolute_cwd_are_denied(self):
         for cwd in (self.root.parent, self.root / "absent", "ordinary", None):
