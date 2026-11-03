@@ -33,6 +33,8 @@ Positive receiving used a separate local source with the literal `fixture-approv
 
 Exact commands, logs, fixture approval boundaries and hashes are frozen in the candidate receipts under #244. Existing source/hook/review evidence is reused. No broad old suite, native skill discovery, hook trust/events, assistant/model task, independent teammate profile, complete onboarding or real customer use was run here. Claude/profile authorization and actual-use acceptance remain separate. The historical FF checkout and its hold were not touched.
 
+The maintainer's full protected-text fingerprint scan is **NOT RUN** in this source-only preparation. `release/PROTECTED_TEXT_SCAN.md` requires a scan against the private real list at each release cut before approval, with findings, classifications and the list SHA256 recorded in the brief. That remains an explicit maintainer gate; changed-file outgoing checks are not a substitute. No private list or protected source content was read, copied or treated as clean. The seven existing public-method pins are unchanged source inputs, not new disclosure approval.
+
 ## Carrier and next release gates
 
 This source change adds only the draft manifest and this brief under excluded `releases/`. Its carrier must descend from the exact payload pin and preserve all package tuples. The unchanged official checker accepts a full carrier commit ID; a tree-equivalent commit without payload ancestry is insufficient.
