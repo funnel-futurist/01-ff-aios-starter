@@ -147,7 +147,7 @@ def render_codex_skills(repo):
             "Resolve its relative references and scripts from `.claude/skills/%s/`, "
             "not from this native entry. The canonical workflow owns permissions, refusals "
             "and outputs; this entry adds Codex discovery only.\n"
-        ) % (name, json.dumps(metadata["description"], ensure_ascii=False), source, name)
+        ) % (name, json.dumps(metadata["description"].replace("\u2014", ","), ensure_ascii=False), source, name)
     return rendered
 
 
