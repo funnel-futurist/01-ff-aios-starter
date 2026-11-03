@@ -1,6 +1,6 @@
 {
   "schema": "ff-aios-starter/adapters@1",
-  "_comment": "Which shipped files work with only one AI tool, and which work with any. The Starter's instructions, skills, hooks, safety settings and AI reviewer are built on Claude Code. The one exception is Codex, which gets the sound hook and a generated AGENTS.md (see its `scope`). No other tool is supported or verified: nothing here claims otherwise. `signatures` are the places a tool's files live: any tracked file matching them must be listed under that tool's `files`, so a new tool-specific file cannot arrive undeclared (tests/aios/test_adapters.py). `verified` needs evidence, and each piece of evidence must resolve to a real test. Verified here means the named tests exercise the file layout and the hook contract with simulated hook input and the real hook command; it is not a recording of a live session. Declared in the Starter's own repository only: release/** is not shipped to client workspaces.",
+  "_comment": "Tool-specific files are declared individually; signatures detect undeclared files. Supported Claude and Codex source contracts have named evidence. Verified here means file layout, offline adapter contracts and registered command tests, not native hook trust, complete workflow use or owner acceptance. Synthetic native observations keep their exact source scope. Other tools remain not verified. This manifest is source-only and is not shipped to client workspaces.",
   "tools": {
     "claude-code": {
       "status": "verified",
@@ -63,19 +63,23 @@
     },
     "codex": {
       "status": "verified",
-      "scope": "Managed AGENTS.md is a thin startup bootstrap: a normal tools-enabled Codex session must read the current client-owned CLAUDE.md and its permitted context imports before workspace work, and stop when required context cannot be read. This is an instructed tool read, not native @ imports, no-tools autoload, a client snapshot or a runtime security hook. Eight generated .agents/skills entries provide native discovery for shared .claude/skills workflows; discovery is not completed workflow use. Shared sound hooks remain Stop/SubagentStop/PermissionRequest, requiring normal project/hook trust. No Codex destructive-command or founder-lane session guard ships; server-side PR boundaries remain separate. The recorded synthetic fresh-session proof covers current client context reads and an instrumented unreadable-file refusal, not eight completed workflows or actual Claude behavior.",
+      "scope": "Managed AGENTS is a thin tool-read bootstrap for current client-owned CLAUDE and permitted imports, not a snapshot, native @ import or security boundary. Eight native entries share canonical workflows; onboard_wizard maps selected-Codex setup and explicit intake/F6 dependencies without new entries. Startup-only SessionStart collects local status without fetch/release queries. PreToolUse Bash and apply_patch adapters reuse the existing command detector and canonical role policy, with supported Codex deny and unchanged Claude ask. Simulations and registered-command tests qualify source contracts, not trusted native enforcement. Sounds remain Stop/SubagentStop/PermissionRequest. Normal project/exact-hook trust, available runtimes and actual supported tool paths are required; skipped/failed hooks, arbitrary shell writes, connectors and hosted tools are not proven covered. GitHub PR/branch boundaries remain separate. Full onboarding, independent teammate/Claude parity, real-host install and acceptance are unproved. Founder-profile global instructions/context are not isolated by these files; a no-outside-tool-read canary is not an independent client profile.",
       "evidence": [
         "tests/aios/test_sound_hook.py::Wiring::test_codex_runs_the_same_sound_hook_from_the_repo_root",
         "tests/aios/test_sound_hook.py::RealHook::test_the_real_codex_command_is_silent_and_exits_0_while_paused_from_a_subfolder",
         "tests/aios/test_agents_md.py::Rendering::test_shipped_file_matches_managed_bootstrap",
         "tests/aios/test_native_codex_skills.py::ShippedEntries::test_all_eight_entries_ship_managed_and_are_declared",
         "tests/aios/test_agents_md.py::Drift::test_client_customization_does_not_drift_or_resnapshot_bootstrap",
-        "evidence/dispatch/p22-starter/codex-compatibility/CODEX_RUN_2026-11-03.md"
+        "evidence/dispatch/p22-starter/codex-compatibility/CODEX_RUN_2026-11-03.md",
+        "tests/aios/test_sound_hook.py::Wiring::test_registered_codex_guards_consume_input_without_running_it",
+        "tests/aios/test_sound_hook.py::Wiring::test_registered_codex_startup_uses_only_local_status",
+        "tests/aios/test_codex_hooks.py::RoleAdapter::test_native_absolute_add_and_update_inside_root_are_allowed"
       ],
       "signatures": [
         "AGENTS.md",
         ".codex/**",
-        ".agents/**"
+        ".agents/**",
+        "scripts/aios/codex-*"
       ],
       "files": [
         ".codex/hooks.json",
@@ -87,7 +91,10 @@
         ".agents/skills/onboard_wizard/SKILL.md",
         ".agents/skills/project_management/SKILL.md",
         ".agents/skills/wrap-up/SKILL.md",
-        ".agents/skills/review-queue/SKILL.md"
+        ".agents/skills/review-queue/SKILL.md",
+        "scripts/aios/codex-dangerous-git.js",
+        "scripts/aios/codex-pre-edit.py",
+        "scripts/aios/codex-session-start.js"
       ]
     },
     "cursor": {

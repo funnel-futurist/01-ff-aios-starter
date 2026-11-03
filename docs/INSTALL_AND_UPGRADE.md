@@ -439,9 +439,12 @@ are, even one with a Starter 2.x name, and your `CLAUDE.md` is never edited.
    it into a file the release doesn't manage. For `.claude/settings.json` that file is
    `.claude/settings.local.json` (see "Your own settings" below).
 3. Refuses if the new release ships a path that already exists as your own file. The likeliest
-   one is `AGENTS.md`, which the Starter generates for Codex from `CLAUDE.md` and the operator
-   core. If you wrote your own, move your rules to `~/.codex/AGENTS.md` (Codex reads it in every
-   project) or to an `AGENTS.md` inside one of your folders, delete the root one, then upgrade.
+   one is `AGENTS.md`, the managed Codex bootstrap that tells a tools-enabled session to read
+   the current client-owned `CLAUDE.md` and its permitted imports. It does not snapshot them.
+   If you wrote your own root instructions, keep them and stop for an explicit reconciliation:
+   company rules belong in your client-owned constitution or permitted context, while a root
+   override can replace the normal bootstrap. Preserve your rules, then verify actual startup
+   reads after the owner has reconciled them; do not delete custom instructions to force an upgrade.
 4. Snapshots every managed file and writes a journal **before** changing anything.
 5. Replaces managed files. Adds new seed files only where they do not already exist.
    **Seed files are never upgraded:** `CLAUDE.md` and the foundation folders are written once and
@@ -569,6 +572,28 @@ condition.
 | Pull request that touches the founder lane shows red | GitHub Actions runs (server-side, independent of the laptop) | Always runs; it can only **block** a merge with branch protection on |
 | Branch protection | The repository belongs to a paid plan, or is public | A private repository on a personal free account can't have it. GitHub answers "Upgrade to GitHub Pro or make this repository public" |
 | Installed files match the release | `verify --repo` against the source | Without `--repo`, `verify` only checks the local record, which a local editor could also change |
+
+### Codex hook checks
+
+For the selected Codex host, onboarding checks its actual version and login route; a Claude
+subscription or Claude-only marketplace command is not a Codex prerequisite. Git, Python 3,
+Node.js, GitHub identity/role, approved installation and secure-access gates still apply.
+A test-only fixture approval or a successful local status command does not approve a release.
+
+The source wires a local-only startup status check and two PreToolUse adapters. The command
+adapter reuses the existing dangerous-command detector and returns Codex's supported denial;
+Claude keeps its confirmation behavior. The native patch adapter checks every target and both
+sides of a move through the existing role policy, including permitted absolute paths inside the
+workspace. It does not claim arbitrary shell writes, connectors or hosted tools are protected.
+The startup handler reads local Git state only; it does not fetch or query releases.
+
+Project and exact hook definitions must receive normal Codex trust before these handlers can
+run. Use `/hooks` to inspect their source, current hash, enabled state and trust state. A changed
+or untrusted definition is skipped; source files, offline tests and installer verification are
+not native execution. Do not bypass trust or edit a global trust database to make a test pass.
+Missing Node/Python, a skipped/failed hook or an excluded tool path leaves enforcement unavailable.
+Keep the server-side PR and branch protections as separate checks. Current supported events and
+trust rules are documented in [Codex hooks](https://learn.chatgpt.com/docs/hooks).
 
 ## Two questions `verify` can answer
 
