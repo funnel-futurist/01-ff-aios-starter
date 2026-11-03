@@ -13,6 +13,7 @@ import json
 import os
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -62,7 +63,7 @@ class Wiring(unittest.TestCase):
 
     def test_codex_runs_the_same_sound_hook_from_the_repo_root(self):
         hooks = codex_hooks()
-        self.assertEqual(set(hooks), set(CODEX_WIRED), "Codex gets the sound hook and nothing else")
+        self.assertEqual(set(hooks), set(CODEX_WIRED) | {"SessionStart", "PreToolUse"})
         for event, arg in CODEX_WIRED.items():
             commands = [h["command"] for group in hooks[event] for h in group["hooks"]]
             self.assertEqual(
@@ -70,11 +71,80 @@ class Wiring(unittest.TestCase):
                 ['node "$(git rev-parse --show-toplevel)/.claude/hooks/notify-sound.js" ' + arg],
                 event)
 
+    def test_codex_guard_wiring_uses_canonical_native_matchers(self):
+        hooks = codex_hooks()
+        self.assertEqual([g["matcher"] for g in hooks["PreToolUse"]], ["^Bash$", "^apply_patch$"])
+        self.assertEqual(hooks["SessionStart"][0]["matcher"], "^startup$")
+        expected = {"^Bash$": "node", "^apply_patch$": "python3"}
+        for group in hooks["PreToolUse"]:
+            self.assertEqual(len(group["hooks"]), 1)
+            handler = group["hooks"][0]
+            self.assertEqual(handler["type"], "command")
+            self.assertTrue(handler["command"].startswith(expected[group["matcher"]] + " "))
+            self.assertIn('"$(git rev-parse --show-toplevel)/scripts/aios/codex-', handler["command"])
+            self.assertNotIn("async", handler)
+
+    def run_registered(self, command, payload, env=None):
+        safe = {k: os.environ[k] for k in ("PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG", "SHELL")
+                if k in os.environ}
+        if env:
+            safe.update(env)
+        result = subprocess.run(["sh", "-c", command], input=json.dumps(payload), text=True,
+                                capture_output=True, cwd=os.path.join(REAL_ROOT, "docs"),
+                                env=safe, timeout=20)
+        self.assertEqual((result.returncode, result.stderr), (0, ""))
+        return json.loads(result.stdout) if result.stdout else None
+
+    @unittest.skipUnless(shutil.which("node") and shutil.which("sh"), "Node and sh required")
+    def test_registered_codex_guards_consume_input_without_running_it(self):
+        groups = {g["matcher"]: g["hooks"][0]["command"] for g in codex_hooks()["PreToolUse"]}
+        event = {"hook_event_name": "PreToolUse", "cwd": REAL_ROOT, "tool_name": "Bash",
+                 "tool_input": {"command": "git() { printf AIOS_WIRING_EXECUTED; } && git reset --hard CANARY"}}
+        denied = self.run_registered(groups["^Bash$"], event)
+        self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertNotIn("AIOS_WIRING_EXECUTED", json.dumps(denied))
+        event["tool_input"]["command"] = "printf allowed"
+        self.assertIsNone(self.run_registered(groups["^Bash$"], event))
+        event.update(tool_name="apply_patch", tool_input={"command": "not a patch"})
+        denied = self.run_registered(groups["^apply_patch$"], event)
+        self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
+        target = os.path.join(REAL_ROOT, "ordinary-wiring-canary.txt")
+        existed = os.path.exists(target)
+        event["tool_input"]["command"] = "*** Begin Patch\n*** Add File: " + target + "\n+inert input\n*** End Patch\n"
+        self.assertIsNone(self.run_registered(groups["^apply_patch$"], event))
+        self.assertEqual(os.path.exists(target), existed, "the adapter applied its input patch")
+
+    @unittest.skipUnless(shutil.which("node") and shutil.which("sh"), "Node and sh required")
+    def test_registered_codex_startup_uses_only_local_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            forbidden = os.path.join(tmp, "forbidden")
+            git = os.path.join(tmp, "git")
+            real_git = shlex.quote(shutil.which("git"))
+            with open(git, "w") as fh:
+                fh.write("#!/bin/sh\nfor arg do\ncase \"$arg\" in fetch|push|pull|ls-remote) "
+                         "echo forbidden >> " + shlex.quote(forbidden) + "; exit 77;; esac\ndone\nexec " +
+                         real_git + ' "$@"\n')
+            os.chmod(git, 0o755)
+            gh = os.path.join(tmp, "gh")
+            with open(gh, "w") as fh:
+                fh.write("#!/bin/sh\necho identity >> " + shlex.quote(forbidden) + "\nexit 77\n")
+            os.chmod(gh, 0o755)
+            command = codex_hooks()["SessionStart"][0]["hooks"][0]["command"]
+            output = self.run_registered(command, {"hook_event_name": "SessionStart", "cwd": os.path.join(REAL_ROOT, "docs")},
+                                         {"PATH": tmp + os.pathsep + os.environ.get("PATH", "")})
+            context = output["hookSpecificOutput"]["additionalContext"]
+            self.assertTrue(context)
+            self.assertLessEqual(len(context), 6000)
+            self.assertNotIn("permissionDecision", output["hookSpecificOutput"])
+            self.assertFalse(os.path.exists(forbidden), "startup attempted remote or identity work")
+
     def test_both_hook_files_and_the_script_are_founder_lane(self):
         # A command that runs on its own every turn: an operator's PR may not change it alone.
         with open(os.path.join(REAL_ROOT, ".aios", "roles.json")) as fh:
             denied = json.load(fh)["roles"]["operator"]["paths_denied"]
-        for path in (".claude/settings.json", ".claude/hooks/notify-sound.js", ".codex/hooks.json"):
+        for path in (".claude/settings.json", ".claude/hooks/notify-sound.js", ".codex/hooks.json",
+                     "scripts/aios/codex-dangerous-git.js", "scripts/aios/codex-pre-edit.py",
+                     "scripts/aios/codex-session-start.js"):
             self.assertTrue(util.match_any(denied, path), path)
 
 

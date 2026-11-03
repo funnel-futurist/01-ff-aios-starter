@@ -1,54 +1,70 @@
 #!/usr/bin/env node
-/*
- * SessionStart hook — git staleness nudge.
- * Read-only from the user's perspective: does a bounded `git fetch` (updates remote-tracking
- * refs = git metadata only, NEVER touches working files), then prints a one-line nudge IF the
- * operator is on `main` or behind `origin/main`. On a clean, synced task branch it stays quiet.
- *
- * FAIL-OPEN: any error / offline / nothing-to-say → no output, exit 0. Never blocks a session.
- */
-const { execSync } = require('child_process');
-function sh(cmd, ms) {
+/* Shared read-only status collection. The Claude command entry retains its bounded fetch and
+ * release notice; the Codex adapter explicitly disables both. This is a nudge, never a gate. */
+const { execFileSync } = require('child_process');
+
+function run(program, args, ms) {
   try {
-    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: ms || 4000 }).trim();
-  } catch (_) { return ''; }
+    return execFileSync(program, args, {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: ms || 4000,
+    }).trim();
+  } catch (_) { return null; }
 }
-try {
-  const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  if (sh(`git -C "${root}" rev-parse --is-inside-work-tree`, 3000) !== 'true') process.exit(0);
 
-  const branch = sh(`git -C "${root}" rev-parse --abbrev-ref HEAD`, 3000);
-  sh(`git -C "${root}" fetch --quiet origin main`, 8000); // bounded; ignore failure (offline)
-
-  const onMain = branch === 'main';
-  const nBehind = parseInt(sh(`git -C "${root}" rev-list --count HEAD..origin/main`, 3000) || '0', 10) || 0;
-  const dirtyOut = sh(`git -C "${root}" status --porcelain`, 3000);
-  const nDirty = dirtyOut ? dirtyOut.split('\n').filter(Boolean).length : 0;
-
+function collectStatus(root, options = {}) {
+  const execute = options.run || run;
+  const git = (args, ms) => execute('git', ['-C', root, ...args], ms);
+  if (git(['rev-parse', '--is-inside-work-tree'], 3000) !== 'true') return { isRepo: false };
+  const branch = git(['rev-parse', '--abbrev-ref', 'HEAD'], 3000);
+  if (options.refresh !== false) git(['fetch', '--quiet', 'origin', 'main'], 8000);
+  const behindText = git(['rev-list', '--count', 'HEAD..origin/main'], 3000);
+  const behind = typeof behindText === 'string' && /^\d+$/.test(behindText) ? Number(behindText) : null;
+  const dirtyText = git(['status', '--porcelain'], 3000);
+  const dirty = dirtyText === null ? null : dirtyText.split('\n').filter(Boolean).length;
   let who = '';
   try {
-    const fs = require('fs');
-    const p = root + '/.aios/local-operator.json';
-    if (fs.existsSync(p)) {
-      const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-      who = j.display_name || j.operator || '';
-    }
-  } catch (_) { /* ignore */ }
-  const hi = who ? `${who} — ` : '';
+    const readOperator = options.readOperator || (() => {
+      const fs = require('fs');
+      const p = require('path').join(root, '.aios/local-operator.json');
+      return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
+    });
+    const operator = readOperator();
+    who = operator.display_name || operator.operator || '';
+  } catch (_) { /* optional greeting */ }
+  const newer = options.releaseNotice === false ? '' : execute('python3', [
+    require('path').join(root, 'scripts/aios/aios.py'), 'release', 'notice', '--target', root,
+  ], 15000);
+  return { isRepo: true, branch, behind, dirty, who, newer };
+}
 
+function formatStatus(state, options = {}) {
+  if (!state.isRepo) return '';
+  const start = options.startMyDay || '/start-my-day';
+  const wrap = options.wrapUp || '/wrap-up';
+  const hi = state.who ? `${state.who} \u2014 ` : '';
   const lines = [];
-  if (onMain) {
-    lines.push(`⚠️  ${hi}you're on **main** (the official timeline). Don't work here — run \`/start-my-day\` to start safely on your own branch.`);
-  } else if (nBehind > 0) {
-    lines.push(`👋 ${hi}branch \`${branch}\` is **${nBehind} commit${nBehind === 1 ? '' : 's'} behind main**. Run \`/start-my-day\` to sync before you work.`);
+  if (state.branch === 'main') {
+    lines.push(`⚠️  ${hi}you're on **main** (the official timeline). Don't work here \u2014 run \`${start}\` to start safely on your own branch.`);
+  } else if (state.behind > 0) {
+    lines.push(`👋 ${hi}branch \`${state.branch}\` is **${state.behind} commit${state.behind === 1 ? '' : 's'} behind main**. Run \`${start}\` to sync before you work.`);
   }
-  if (nDirty > 0 && !onMain) {
-    lines.push(`   You have ${nDirty} uncommitted change${nDirty === 1 ? '' : 's'} — \`/wrap-up\` will commit + push them cleanly so they're not stranded.`);
+  if (state.dirty > 0 && state.branch !== 'main') {
+    lines.push(`   You have ${state.dirty} uncommitted change${state.dirty === 1 ? '' : 's'} \u2014 \`${wrap}\` will commit + push them cleanly so they're not stranded.`);
   }
-  // Release notice (LW-22): read-only, at most one network check a day, silent offline or on any error.
-  const newer = sh(`python3 "${root}/scripts/aios/aios.py" release notice --target "${root}"`, 15000);
-  if (newer) lines.push(`📦 ${newer}`);
+  if (state.newer) lines.push(`📦 ${state.newer}`);
+  if (options.localOnly) {
+    lines.push(state.behind === null ? 'Remote comparison unavailable; remote freshness was not checked.' :
+      'Uses locally cached origin/main; remote freshness was not checked.');
+    if (state.branch === null) lines.push('Current branch is unavailable.');
+    if (state.dirty === null) lines.push('Working-tree status is unavailable.');
+  }
+  return lines.length ? `[git status check]\n${lines.join('\n')}\n` : '';
+}
 
-  if (lines.length) process.stdout.write(`[git status check]\n${lines.join('\n')}\n`);
-} catch (_) { /* fail-open */ }
-process.exit(0);
+module.exports = { collectStatus, formatStatus };
+if (require.main === module) {
+  try {
+    const root = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+    process.stdout.write(formatStatus(collectStatus(root)));
+  } catch (_) { /* Claude startup remains nonblocking. */ }
+}

@@ -136,12 +136,19 @@ class TheRealManifest(Sandbox):
         self.assertEqual(len(found), 1, found)
         self.assertIn(".claude/hooks/undeclared.js", found[0])
 
+    def test_a_new_codex_helper_in_the_real_tree_would_fail(self):
+        found = adapters.problems(REPO, self.files() + ["scripts/aios/codex-undeclared.py"])
+        self.assertEqual(len(found), 1, found)
+        self.assertIn("codex-undeclared.py", found[0])
+
     def test_only_declared_claude_and_codex_support_is_shipped(self):
         tools = self.manifest()["tools"]
         self.assertEqual(tools["claude-code"]["status"], "verified")
         # Codex adds eight native entries; workflow bodies still have one canonical home.
         self.assertEqual(tools["codex"]["status"], "verified")
-        self.assertEqual(set(tools["codex"]["files"]), {".codex/hooks.json", "AGENTS.md"} | {
+        self.assertEqual(set(tools["codex"]["files"]), {".codex/hooks.json", "AGENTS.md",
+            "scripts/aios/codex-dangerous-git.js", "scripts/aios/codex-pre-edit.py",
+            "scripts/aios/codex-session-start.js"} | {
             ".agents/skills/%s/SKILL.md" % name for name in adapters.NATIVE_CODEX_SKILLS})
         for name, tool in tools.items():
             if name not in ("claude-code", "codex"):
