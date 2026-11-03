@@ -63,13 +63,14 @@
     },
     "codex": {
       "status": "verified",
-      "scope": "Managed AGENTS.md is a thin startup bootstrap: a normal tools-enabled Codex session must read the current client-owned CLAUDE.md and its permitted context imports before workspace work, and stop when required context cannot be read. This is an instructed tool read, not native @ imports, no-tools autoload, a client snapshot or a runtime security hook. Eight generated .agents/skills entries provide native discovery for shared .claude/skills workflows; discovery is not completed workflow use. Shared sound hooks remain Stop/SubagentStop/PermissionRequest, requiring normal project/hook trust. No Codex destructive-command or founder-lane session guard ships; server-side PR boundaries remain separate. Actual fresh-session behavior requires its own evidence.",
+      "scope": "Managed AGENTS.md is a thin startup bootstrap: a normal tools-enabled Codex session must read the current client-owned CLAUDE.md and its permitted context imports before workspace work, and stop when required context cannot be read. This is an instructed tool read, not native @ imports, no-tools autoload, a client snapshot or a runtime security hook. Eight generated .agents/skills entries provide native discovery for shared .claude/skills workflows; discovery is not completed workflow use. Shared sound hooks remain Stop/SubagentStop/PermissionRequest, requiring normal project/hook trust. No Codex destructive-command or founder-lane session guard ships; server-side PR boundaries remain separate. The recorded synthetic fresh-session proof covers current client context reads and an instrumented unreadable-file refusal, not eight completed workflows or actual Claude behavior.",
       "evidence": [
         "tests/aios/test_sound_hook.py::Wiring::test_codex_runs_the_same_sound_hook_from_the_repo_root",
         "tests/aios/test_sound_hook.py::RealHook::test_the_real_codex_command_is_silent_and_exits_0_while_paused_from_a_subfolder",
         "tests/aios/test_agents_md.py::Rendering::test_shipped_file_matches_managed_bootstrap",
         "tests/aios/test_native_codex_skills.py::ShippedEntries::test_all_eight_entries_ship_managed_and_are_declared",
-        "tests/aios/test_agents_md.py::Drift::test_client_customization_does_not_drift_or_resnapshot_bootstrap"
+        "tests/aios/test_agents_md.py::Drift::test_client_customization_does_not_drift_or_resnapshot_bootstrap",
+        "evidence/dispatch/p22-starter/codex-compatibility/CODEX_RUN_2026-11-03.md"
       ],
       "signatures": [
         "AGENTS.md",
