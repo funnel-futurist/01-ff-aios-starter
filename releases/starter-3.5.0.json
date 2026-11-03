@@ -1,7 +1,8 @@
 {
   "approval": {
-    "approved_at": null,
-    "approved_by": null
+    "approved_at": "2026-11-03T20:11:05Z",
+    "approved_by": "phoenix-ship-it",
+    "basis": "Phoenix direct authorization in root chat 01a183e1-c634-7f63-b6b0-f629fdf2501e, user message 01a1a309-6d54-77d1-b6e2-7e02d38b2773, turn 01a1a309-6b43-7572-8315-9bf414972dea: “Authorize Starter 3.5.0 at a792330a, payload fe8d115a, through reviewed metadata, App PR, required GitHub approval/checks, merge and verified tag. No default, host install or trust changes.” The approved_at value is the recorded user-turn start (Unix 1793736665), not an inferred speech or finer message time. This approval binds reviewed draft a792330a and the unchanged 185-file fe8d115a payload. The actual current-head GitHub approval and checks remain separate."
   },
   "compatibility": {
     "breaking": [
@@ -1309,6 +1310,6 @@
     "workspace_health",
     "wrap-up"
   ],
-  "status": "draft",
+  "status": "approved",
   "version": "3.5.0"
 }
