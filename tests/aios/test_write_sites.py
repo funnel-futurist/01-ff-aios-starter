@@ -318,6 +318,7 @@ def scan(root):
 
 WRITES = {
     'aios:cmd_adapters_render': {'open:w': 1},
+    'aios:cmd_adapters_render_skills': {'util.write_file': 1},
     'aios:cmd_governance_render': {'open:w': 1, 'util.ensure_parent': 1},
     'aios:cmd_install': {'os.makedirs': 1},
     'aios:cmd_protected_fingerprint': {'util.write_json': 1},
@@ -381,6 +382,7 @@ _READ_GIT = "runs only read-only git (%s); its command is built in a variable in
 _RELEASE = "release tooling, run in the Starter's own repository: writes the file named with --out"
 TABLE = {
     "aios:cmd_adapters_render": ("allowlist", "writes the rendered adapter file to the path given with --out"),
+    "aios:cmd_adapters_render_skills": ("own", "inside_another_repository"),
     "aios:cmd_governance_render": ("allowlist", "writes the rendered CODEOWNERS to the path given with --out"),
     "aios:cmd_install": ("allowlist", "makes the workspace folder itself when it doesn't exist; install() then checks "
                                       "every path under it before its first write"),

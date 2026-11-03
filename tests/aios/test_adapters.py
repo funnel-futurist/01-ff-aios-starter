@@ -136,12 +136,13 @@ class TheRealManifest(Sandbox):
         self.assertEqual(len(found), 1, found)
         self.assertIn(".claude/hooks/undeclared.js", found[0])
 
-    def test_claude_code_is_the_only_tool_with_anything_shipped_or_verified(self):
+    def test_only_declared_claude_and_codex_support_is_shipped(self):
         tools = self.manifest()["tools"]
         self.assertEqual(tools["claude-code"]["status"], "verified")
-        # The one exception: Codex gets the sound hook and the generated AGENTS.md, and nothing else.
+        # Codex adds eight native entries; workflow bodies still have one canonical home.
         self.assertEqual(tools["codex"]["status"], "verified")
-        self.assertEqual(tools["codex"]["files"], [".codex/hooks.json", "AGENTS.md"])
+        self.assertEqual(set(tools["codex"]["files"]), {".codex/hooks.json", "AGENTS.md"} | {
+            ".agents/skills/%s/SKILL.md" % name for name in adapters.NATIVE_CODEX_SKILLS})
         for name, tool in tools.items():
             if name not in ("claude-code", "codex"):
                 self.assertEqual(tool["status"], "not verified", name)
