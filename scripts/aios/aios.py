@@ -672,6 +672,11 @@ def cmd_adapters_render_skills(args):
     if os.path.lexists(os.path.join(repo, ".aios", "install.json")):
         raise Refusal(util.EXIT_STATE, "render-skills is a Starter source authoring command, not an installed-workspace update")
     entries = adapters.render_codex_skills(repo)
+    links = util.gitlinks(repo)
+    for path in entries:
+        foreign = util.inside_another_repository(repo, path, links)
+        if foreign:
+            raise Refusal(util.EXIT_STATE, "native skill authoring would write inside another repository; nothing was changed", [foreign])
     for path, text in entries.items():
         util.write_file(repo, path, text.encode("utf-8"), "100644")
     _say("wrote %d native Codex entries from canonical .claude/skills metadata" % len(entries))

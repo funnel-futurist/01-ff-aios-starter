@@ -100,6 +100,29 @@ class NativeEntries(unittest.TestCase):
             self.assertEqual(len(entries), 8)
             self.assertIn(source, entries[".agents/skills/start/SKILL.md"])
 
+    def test_legacy_inline_colon_prose_becomes_quoted_native_metadata_without_source_edits(self):
+        source = ".claude/skills/start/SKILL.md"
+        description = "The task: choose its owner. Follow-up: keep the approved source."
+        original = ("---\nname: start\ndescription: %s\n---\nCanonical body.\n" % description).encode()
+        harness.write(self.root, source, original)
+        entry = adapters.render_codex_skills(self.root)[".agents/skills/start/SKILL.md"]
+        value = next(line.split(": ", 1)[1] for line in entry.splitlines() if line.startswith("description: "))
+        self.assertEqual(json.loads(value), description)
+        self.assertEqual(Path(self.root, source).read_bytes(), original)
+
+    def test_authoring_refuses_a_late_nested_repository_before_any_entry_write(self):
+        nested = os.path.join(self.root, ".agents/skills/review-queue")
+        subprocess.run(["git", "init", "-q", nested], check=True, capture_output=True)
+        original = b"This file belongs to the nested fixture repository.\n"
+        harness.write(nested, "SKILL.md", original)
+        result = subprocess.run([sys.executable, os.path.join(harness.AIOS_DIR, "aios.py"),
+                                 "adapters", "render-skills", "--repo", self.root],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, util.EXIT_STATE, result.stdout + result.stderr)
+        self.assertIn("another repository", result.stderr)
+        self.assertEqual(Path(nested, "SKILL.md").read_bytes(), original)
+        self.assertFalse(Path(self.root, ".agents/skills/start/SKILL.md").exists())
+
     def test_authoring_command_refuses_an_installed_target_without_changing_it(self):
         paths = self.generate()
         before = {path: Path(self.root, path).read_bytes() for path in paths}

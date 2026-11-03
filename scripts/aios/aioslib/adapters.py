@@ -85,8 +85,9 @@ def render_codex_skills(repo):
 
     Only these eight workflows are currently supported. Validate every source before the
     authoring command writes anything; missing or unsupported metadata is not a blank skill.
-    The supported scalar subset is quoted text or single-line plain text beginning with a
-    letter. Other YAML forms must be quoted as text or are refused, never coerced to strings.
+    The existing source convention supports quoted text or word-leading single-line prose,
+    including inline colon punctuation. Native YAML metadata is always emitted as a quoted
+    string. Typed/null/flow/block/alias forms are refused, not coerced into discovery text.
     """
     rendered = {}
     for name in NATIVE_CODEX_SKILLS:
@@ -124,7 +125,7 @@ def render_codex_skills(repo):
                 value = value[1:-1].replace("''", "'")
             elif (not value or not value[0].isalpha() or
                   value.casefold() in ("null", "true", "false", "yes", "no", "on", "off") or
-                  re.search(r"(?:^|\s)#|:\s", value) or
+                  re.search(r"(?:^|\s)#", value) or
                   re.search(r"^%s:[^\n]*\n[ \t]+[^#\s]" % key, front[1], re.M)):
                 raise Refusal(EXIT_PACKAGE, "%s needs a supported string scalar for %s; quote literal text" % (source, key))
             if not isinstance(value, str) or not value.strip():
