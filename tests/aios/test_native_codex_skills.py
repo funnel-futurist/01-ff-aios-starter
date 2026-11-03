@@ -22,9 +22,11 @@ class NativeEntries(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = self.tmp.name
-        for name in adapters.NATIVE_CODEX_SKILLS:
+        for name in adapters.NATIVE_CODEX_SKILLS + ("intake", "f6_completeness_check"):
             harness.write(self.root, ".claude/skills/%s/SKILL.md" % name,
                           "---\nname: %s\ndescription: Use for %s.\n---\n\nCanonical body.\n" % (name, name))
+
+        harness.write(self.root, ".claude/skills/intake/questions.md", "# Synthetic intake questions\n")
 
     def generate(self):
         entries = adapters.render_codex_skills(self.root)
@@ -109,6 +111,58 @@ class NativeEntries(unittest.TestCase):
         value = next(line.split(": ", 1)[1] for line in entry.splitlines() if line.startswith("description: "))
         self.assertEqual(json.loads(value), description)
         self.assertEqual(Path(self.root, source).read_bytes(), original)
+
+    def test_onboarding_routes_exact_canonical_dependencies_despite_lookalikes(self):
+        for path in ("other/skills/intake/SKILL.md", ".agents/skills/intake/SKILL.md"):
+            harness.write(self.root, path, "---\nname: intake\ndescription: Lookalike.\n---\nWRONG SOURCE\n")
+        entries = adapters.render_codex_skills(self.root)
+        self.assertEqual(len(entries), 8)
+        onboarding = entries[".agents/skills/onboard_wizard/SKILL.md"]
+        for dependency in ("intake", "f6_completeness_check"):
+            self.assertIn("`.claude/skills/%s/SKILL.md`" % dependency, onboarding)
+        self.assertIn("`.claude/skills/intake/questions.md`", onboarding)
+        self.assertNotIn("WRONG SOURCE", onboarding)
+        self.assertNotIn(".agents/skills/intake/SKILL.md", entries)
+
+    def test_missing_or_wrong_name_dependency_cannot_fall_back_to_a_lookalike(self):
+        for dependency in ("intake", "f6_completeness_check"):
+            source = ".claude/skills/%s/SKILL.md" % dependency
+            original = Path(self.root, source).read_bytes()
+            harness.write(self.root, "other/skills/%s/SKILL.md" % dependency, original)
+            for replacement in (None, b"---\nname: lookalike\ndescription: Wrong identity.\n---\n"):
+                if replacement is None:
+                    Path(self.root, source).unlink()
+                else:
+                    harness.write(self.root, source, replacement)
+                result = subprocess.run([sys.executable, os.path.join(harness.AIOS_DIR, "aios.py"),
+                                         "adapters", "render-skills", "--repo", self.root],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, util.EXIT_PACKAGE, result.stdout + result.stderr)
+                self.assertIn(source, result.stderr)
+                self.assertFalse(Path(self.root, ".agents").exists(), "dependency refusal wrote a partial batch")
+                harness.write(self.root, source, original)
+
+    def test_linked_dependency_and_missing_or_linked_questions_refuse_before_writes(self):
+        with tempfile.TemporaryDirectory() as outside:
+            source = Path(self.root, ".claude/skills/intake/SKILL.md")
+            original = source.read_bytes()
+            foreign = Path(outside, "SKILL.md")
+            foreign.write_bytes(original)
+            source.unlink()
+            source.symlink_to(foreign)
+            with self.assertRaises(util.Refusal):
+                self.generate()
+            source.unlink()
+            source.write_bytes(original)
+            questions = Path(self.root, ".claude/skills/intake/questions.md")
+            questions.unlink()
+            for linked in (False, True):
+                if linked:
+                    questions.symlink_to(foreign)
+                with self.assertRaises(util.Refusal):
+                    self.generate()
+                self.assertFalse(Path(self.root, ".agents").exists())
+            self.assertEqual(foreign.read_bytes(), original)
 
     def test_authoring_refuses_a_late_nested_repository_before_any_entry_write(self):
         nested = os.path.join(self.root, ".agents/skills/review-queue")
