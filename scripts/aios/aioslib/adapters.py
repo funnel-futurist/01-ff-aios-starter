@@ -171,6 +171,37 @@ def render_codex_skills(repo):
                 "If a required canonical file is missing, unreadable or has a different "
                 "declared name, stop and report it; do not fall back to a lookalike.\n"
             )
+            rendered[path] += (
+                "\nFor a selected Codex host, map the canonical Step 2 host-specific setup "
+                "requirements as follows; all common permissions, release, identity, role, "
+                "access and QC gates still apply.\n"
+                "- Step 2.1: check the installed Codex version and `codex login status` "
+                "for this actual profile. Report the observed account route and command outcome, "
+                "never a credential value. Stop if the host/account route is unavailable or "
+                "unverified. A Codex customer does not need a Claude subscription merely because "
+                "the shared workflow names Claude. This mapping authorizes no new plan, API "
+                "spend or provider fallback.\n"
+                "- Steps 2.2 and 2.5: open Codex in the actual workspace and use its managed "
+                "AGENTS bootstrap and native entries. Preserve normal project and exact-hook "
+                "trust requirements; do not auto-confirm or bypass them. Claude-only document "
+                "marketplace commands are not Codex setup commands. Verify an actual supported "
+                "Codex document capability if the requested work needs it; otherwise keep that "
+                "capability NOT RUN, and never count a founder/global skill as client proof.\n"
+                "- Step 2.3: retain the git, Python 3, Node.js and GitHub CLI checks, then use "
+                "the native `$start` route backed by `.claude/skills/start/SKILL.md` for this workspace. Do not infer "
+                "GitHub identity or founder permission from the Codex login.\n"
+                "- Step 2.4: retain the approved-release installer and verification checks. "
+                "Read the actual release and approval evidence; a development checkout, a "
+                "test-only fixture approval or a passing local record is not an approved "
+                "customer release. Stop on an unpinned, drifted or otherwise unqualified "
+                "release/role/governance result, even if a status command exits successfully.\n"
+                "- Steps 2.6 and 2.7: retain secure access, applicable provider spend controls "
+                "and no team invitation before readiness. Do not request or read key values, "
+                "require an unnecessary API key for an existing ChatGPT login, or perform an "
+                "account, settings, trust or access change without its actual authority. "
+                "All other canonical steps still need their real inputs and evidence. "
+                "Keep the original Claude path unchanged when Claude is selected.\n"
+            )
     return rendered
 
 
