@@ -41,15 +41,15 @@ function formatStatus(state, options = {}) {
   if (!state.isRepo) return '';
   const start = options.startMyDay || '/start-my-day';
   const wrap = options.wrapUp || '/wrap-up';
-  const hi = state.who ? `${state.who} — ` : '';
+  const hi = state.who ? `${state.who} \u2014 ` : '';
   const lines = [];
   if (state.branch === 'main') {
-    lines.push(`⚠️  ${hi}you're on **main** (the official timeline). Don't work here — run \`${start}\` to start safely on your own branch.`);
+    lines.push(`⚠️  ${hi}you're on **main** (the official timeline). Don't work here \u2014 run \`${start}\` to start safely on your own branch.`);
   } else if (state.behind > 0) {
     lines.push(`👋 ${hi}branch \`${state.branch}\` is **${state.behind} commit${state.behind === 1 ? '' : 's'} behind main**. Run \`${start}\` to sync before you work.`);
   }
   if (state.dirty > 0 && state.branch !== 'main') {
-    lines.push(`   You have ${state.dirty} uncommitted change${state.dirty === 1 ? '' : 's'} — \`${wrap}\` will commit + push them cleanly so they're not stranded.`);
+    lines.push(`   You have ${state.dirty} uncommitted change${state.dirty === 1 ? '' : 's'} \u2014 \`${wrap}\` will commit + push them cleanly so they're not stranded.`);
   }
   if (state.newer) lines.push(`📦 ${state.newer}`);
   if (options.localOnly) {

@@ -12,7 +12,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parent.parent.parent
 NODE = shutil.which("node")
 DANGEROUS = ROOT / "scripts/aios/codex-dangerous-git.js"
 STARTUP = ROOT / "scripts/aios/codex-session-start.js"
@@ -78,7 +78,7 @@ class DangerousAdapter(Denial):
     def test_missing_canonical_dependency_emits_denial(self):
         with tempfile.TemporaryDirectory() as folder:
             copied = Path(folder) / "scripts/aios/adapter.js"
-            copied.parent.mkdir(parents=True)
+            os.makedirs(copied.parent)
             shutil.copyfile(DANGEROUS, copied)
             self.assertDenied(self.run_hook(json.dumps(event("Bash", "git status")), copied))
 
@@ -86,10 +86,10 @@ class DangerousAdapter(Denial):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             copied = root / "scripts/aios/adapter.js"
-            copied.parent.mkdir(parents=True)
+            os.makedirs(copied.parent)
             shutil.copyfile(DANGEROUS, copied)
             canonical = root / ".claude/hooks/guard-dangerous-git.js"
-            canonical.parent.mkdir(parents=True)
+            os.makedirs(canonical.parent)
             canonical.write_text("module.exports = {analyze: () => 'canonical synthetic reason'};")
             output = self.run_hook(json.dumps(event("Bash", "synthetic command")), copied)
             self.assertIn("canonical synthetic reason", output["hookSpecificOutput"]["permissionDecisionReason"])
@@ -109,7 +109,7 @@ class RoleAdapter(Denial):
         self.root = Path(self.tmp.name)
         (self.root / ".aios").mkdir()
         (self.root / "protected").mkdir()
-        (self.root / "ordinary/nested").mkdir(parents=True)
+        os.makedirs(self.root / "ordinary/nested")
         (self.root / ".aios/roles.json").write_text(json.dumps({"roles": {
             "operator": {"paths_denied": ["protected/**"]}, "founder": {"paths_denied": []}}}))
         (self.root / ".aios/config.json").write_text(json.dumps({"people": [
@@ -305,7 +305,7 @@ process.stdout.write(JSON.stringify({result,calls}));
         result = self.run_status({"branch": "topic", "behind": "1", "dirty": " M one\n?? two", "newer": "Synthetic release"}, local=False)
         self.assertEqual(result["result"]["text"], "[git status check]\n"
                          "👋 branch `topic` is **1 commit behind main**. Run `/start-my-day` to sync before you work.\n"
-                         "   You have 2 uncommitted changes — `/wrap-up` will commit + push them cleanly so they're not stranded.\n"
+                         "   You have 2 uncommitted changes \u2014 `/wrap-up` will commit + push them cleanly so they're not stranded.\n"
                          "📦 Synthetic release\n")
         self.assertTrue(any("fetch" in c[1] and c[2] == 8000 for c in result["calls"]))
         self.assertTrue(any(c[0] == "python3" and c[2] == 15000 for c in result["calls"]))
