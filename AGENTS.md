@@ -3,7 +3,7 @@
 
 This workspace is set up for Claude Code. This file gives any other tool the same instructions: the workspace's `CLAUDE.md` as shipped, then each file it imports, starting with the AIOS Operator Core (`.aios/operator_core/OPERATOR_CORE.md`), which every session follows.
 
-- A skill named like `/start` is a folder under `.claude/skills/`. Open its `SKILL.md` and follow it.
+- Codex discovers eight Starter workflows under `.agents/skills/`; invoke them as `$start`, `$start-my-day`, `$context_load`, `$grill_me`, `$onboard_wizard`, `$project_management`, `$wrap-up` or `$review-queue`. Their canonical instructions and resources remain under `.claude/skills/`. Other workflows still require opening their canonical `SKILL.md`.
 - Your own rules: Claude Code reads them from `CLAUDE.md`, and Codex doesn't. Put rules for Codex in your personal `~/.codex/AGENTS.md`, or in an `AGENTS.md` inside one of your folders. Don't edit this file.
 
 ---

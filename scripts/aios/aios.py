@@ -667,6 +667,17 @@ def cmd_adapters_render(args):
     return EXIT_OK
 
 
+def cmd_adapters_render_skills(args):
+    repo = os.path.abspath(args.repo)
+    if os.path.lexists(os.path.join(repo, ".aios", "install.json")):
+        raise Refusal(util.EXIT_STATE, "render-skills is a Starter source authoring command, not an installed-workspace update")
+    entries = adapters.render_codex_skills(repo)
+    for path, text in entries.items():
+        util.write_file(repo, path, text.encode("utf-8"), "100644")
+    _say("wrote %d native Codex entries from canonical .claude/skills metadata" % len(entries))
+    return EXIT_OK
+
+
 def cmd_governance_check(args):
     root = os.path.abspath(args.root)
     config = None
@@ -893,6 +904,9 @@ def build_parser():
     adr = adsub.add_parser("render", help="write AGENTS.md from CLAUDE.md and the files it imports")
     adr.add_argument("--repo", default=_repo_root())
     adr.set_defaults(func=cmd_adapters_render)
+    ads = adsub.add_parser("render-skills", help="write thin native Codex entries for the eight supported workflows")
+    ads.add_argument("--repo", default=_repo_root())
+    ads.set_defaults(func=cmd_adapters_render_skills)
 
     pr = sub.add_parser("protected", help="protected-text scan of the public tree")
     prsub = pr.add_subparsers(dest="subcommand")
