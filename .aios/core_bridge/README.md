@@ -23,7 +23,8 @@ Nothing to do for an existing instance:
 - **`instance.json`:** your 0.1.5 file keeps working unchanged for `repository-health`, and for 0.3 capabilities. `outputs_dir` and `receipts_dir` are optional and default to `outputs` and `receipts` next to the file.
 - **`default_repo`:** now needed only for a 0.1 call made without `--repo`.
 - **Saved files:** reports you already saved stay where they are. The new `outputs/` and `receipts/` folders are ignored by git, like `reports/`, and an upgrade never touches them.
-- **One stricter rule:** a key-shaped value anywhere in `instance.json` is now refused. Move any such value into the secret store and keep only `key_env` in the file.
+- **One stricter rule:** a key-shaped value anywhere in `instance.json` is now refused, with `MISSING_CREDENTIAL` and exit 4, even when `FF_CORE_KEY` is set. Move any such value into the secret store and keep only `key_env` in the file.
+- **New for 0.3 calls only:** `--ref` is sent only together with `--repo`. A `repository-health` call still defaults `--ref` to `main`.
 
 The organization check happens on FF's side: the service refuses a key used for another organization (`ORG_MISMATCH`). The 0.3 client does not yet compare the organization named in a receipt with your `instance.json`; that check would be added in the source first.
 

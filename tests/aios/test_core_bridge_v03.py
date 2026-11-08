@@ -113,7 +113,9 @@ class CoreBridgeV03(unittest.TestCase):
                 Service.response = artifact_response(tamper=field, request_id="req_tamper%s" % field[:3])
                 result = self.call("example.echo-artifact@1")
                 self.assertEqual(result.returncode, 3, result.stdout)
-                self.assertEqual(json.loads(result.stdout)["error"]["code"], "INVALID_SERVICE_RESPONSE")
+                error = json.loads(result.stdout)["error"]
+                self.assertEqual(error["code"], "INVALID_SERVICE_RESPONSE")
+                self.assertIn("receipt's %s does not match" % field, error["message"])
                 self.assertEqual(self.saved_files(), [])
 
     def test_a_saved_file_is_never_overwritten(self):
@@ -124,7 +126,8 @@ class CoreBridgeV03(unittest.TestCase):
         self.assertIn("nothing was overwritten", json.loads(again.stdout)["error"]["message"])
         self.assertEqual(self.saved_files(), before)
 
-    def test_wrong_organization_is_refused_and_nothing_is_kept(self):
+    def test_the_service_refusing_the_organization_keeps_nothing_and_sends_the_instance_org(self):
+        # The org check is the service's (ORG_MISMATCH); the 0.3 client passes the refusal through.
         Service.status = 403
         Service.response = {"ok": False, "error": {"code": "ORG_MISMATCH", "message": "this key belongs to a different organization"}}
         for capability in ("example.echo-artifact@1", "repository-health"):
