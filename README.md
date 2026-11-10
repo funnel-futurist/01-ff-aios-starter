@@ -6,6 +6,8 @@ The Starter supplies the structure and tools. You and your team supply the busin
 
 ## Start here
 
+> **Done-for-you (DFY) client? You can skip this page.** FF hosts and protects your repository in FF's GitHub organization, sets up its apps, and installs and verifies this release. You grant the access FF asks for and can ask for a transfer or for access to be removed at any time. This page is the **advanced self-install** path for technical teams.
+
 1. **Install an approved release into an empty private repository.** You need git, Python 3, Node.js and the GitHub CLI. [GETTING_STARTED.md](GETTING_STARTED.md) steps 3 to 7 cover account creation, the repository and installation. Use the release installer rather than GitHub's green “Use this template” button: that button copies mutable `main`, without the installer's release and founder checks.
 2. **Open your workspace in Claude Code and run `/onboard_wizard`.** It walks through setup, team access and your business context, then hands off to `/intake`. An operator joining later runs it too. Codex reads the managed `AGENTS.md`; the [install guide](docs/INSTALL_AND_UPGRADE.md) explains which instructions an upgrade replaces and which stay yours.
 3. **Give it one real job.** “Help me plan this week,” “Draft this email in my voice,” or “What did we decide about pricing?” Check the result and keep the useful context. You can start with incomplete answers and add detail as you work.
