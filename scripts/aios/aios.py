@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from aioslib import governance, install as install_mod, orgconfig, release as release_mod  # noqa: E402
 from aioslib import adapters, boundary, notice, protected, roles, sanitize, util, workspace  # noqa: E402
 from aioslib import layout as layout_mod  # noqa: E402
+from aioslib import delegation as delegation_mod  # noqa: E402
 from aioslib.util import (EXIT_ERROR, EXIT_GOVERNANCE, EXIT_OK, EXIT_SANITIZE, Refusal)  # noqa: E402
 
 
@@ -149,7 +150,11 @@ def cmd_install(args):
     if policy is None:
         raise Refusal(util.EXIT_ROLE, "the release ships no %s, so no role can be checked"
                       % roles.POLICY_PATH)
-    login, role = roles.require_lifecycle(policy, config, "install")
+    if args.delegation:
+        # A founder's grant in the config, bound to the real gh identity, this repository and this release.
+        login, role = delegation_mod.require_delegated_install(policy, config, manifest, args.delegation)
+    else:
+        login, role = roles.require_lifecycle(policy, config, "install")
 
     record, creds = install_mod.install(target, manifest, repo, config,
                                         _aios_lookup_from(args.aios_releases))
@@ -842,6 +847,8 @@ def build_parser():
     ins.add_argument("--config", required=True)
     ins.add_argument("--repo", default=_repo_root())
     ins.add_argument("--aios-releases", dest="aios_releases")
+    ins.add_argument("--delegation", help="install as a founder's named delegate: the grant_id in the "
+                                          "config's install_delegations (no identity override exists)")
     ins.set_defaults(func=cmd_install)
 
     ad = sub.add_parser("adopt", help="pin a workspace that already matches a release")
