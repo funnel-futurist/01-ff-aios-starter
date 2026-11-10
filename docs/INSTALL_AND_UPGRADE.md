@@ -190,6 +190,24 @@ The Starter does not imply entitlement or a live endpoint. A missing optional ke
 explicit not-configured state, and the caller refuses insecure remote endpoints, oversized
 responses and output paths that escape the instance.
 
+#### Core Bridge client 0.1.5 to 0.3
+
+The managed client is now version 0.3 (contract 0.3). It still runs `repository-health`
+exactly as 0.1.5 did, and it adds 0.3 capability ids (`domain.name@major`):
+
+- **Saving:** it keeps an output and its receipt only when every hash in the receipt agrees,
+  and it never overwrites a file.
+- **Your existing `instance.json` works unchanged.** The new `outputs_dir` and `receipts_dir`
+  are optional and default to `outputs` and `receipts`. `default_repo` is now needed only for
+  `repository-health` without `--repo`.
+- **Saved reports stay where they are.** The new folders are ignored by git, like `reports/`,
+  and an upgrade never touches them.
+- **One stricter rule:** a key-shaped value anywhere in `instance.json` is refused. Keep the
+  key in the secret store and only its variable name in the file.
+
+A key used for another organization is refused by the service (`ORG_MISMATCH`, exit 2), and
+nothing is saved. Details are in `.aios/core_bridge/README.md`.
+
 ## Already have a workspace from "Use this template"?
 
 That button copies whatever was on the default branch that day, so nothing records which
