@@ -1,5 +1,6 @@
 """Delegated install (03a #259, scope 5): a founder lets one named person install one approved release
-into one repository, once, until an expiry, revocable.
+into one repository until an expiry (at most 30 days), revocable. A grant is reusable within that window;
+use is not recorded here.
 
 The grant lives in the client's `.aios/config.json` under `install_delegations` - the same founder-lane,
 code-owner-reviewed file that already holds the people map. So a grant has exactly the trust of the people
@@ -19,7 +20,7 @@ Grant shape:
      "revoked_at": null}
 """
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import roles
 from .util import EXIT_ROLE, Refusal
@@ -84,7 +85,7 @@ def check_grant(policy, config, manifest, grant, login, now=None):
     if grant.get("revoked_at"):
         raise Refusal(EXIT_ROLE, "delegation %s was revoked at %s" % (grant["grant_id"], grant["revoked_at"]))
     granted, expires = _when(grant["granted_at"], "granted_at"), _when(grant["expires_at"], "expires_at")
-    if not granted < expires or (expires - granted).days > MAX_DAYS:
+    if not granted < expires or expires - granted > timedelta(days=MAX_DAYS):
         raise Refusal(EXIT_ROLE, "delegation must expire after it is granted and within %d days" % MAX_DAYS)
     if now < granted:
         raise Refusal(EXIT_ROLE, "delegation %s is not valid yet" % grant["grant_id"])

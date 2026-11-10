@@ -78,6 +78,8 @@ class DelegatedInstall(Sandbox):
         self.assertIn("expired", self.refused(now=datetime(2026, 11, 16, 12, 0, 0, tzinfo=timezone.utc)))
         self.assertIn("not valid yet", self.refused(now=datetime(2026, 11, 8, 0, 0, 0, tzinfo=timezone.utc)))
         self.assertIn("within 30 days", self.refused(grant=self.with_(expires_at="2027-01-01T00:00:00Z")))
+        self.assertIn("within 30 days", self.refused(grant=self.with_(granted_at="2026-11-01T00:00:00Z",
+                                                                      expires_at="2026-12-01T23:00:00Z")))
         self.assertIn("ISO-8601", self.refused(grant=self.with_(expires_at="next week")))
 
     def test_missing_fields_and_unknown_or_duplicate_grant(self):
