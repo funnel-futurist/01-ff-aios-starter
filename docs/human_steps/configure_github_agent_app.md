@@ -2,7 +2,7 @@
 
 **What it's for:** your company's agent can prepare changes and inspect the evidence needed before a merge. Missing read permissions can make a valid check look unavailable. Broad write permissions can also let a token do more than the job requires. Choose the capabilities once, then verify what the installation actually received.
 
-**Who acts:** the owner of your company's GitHub App and an owner of the organization where it is installed. An authorized operator can do supported steps; use an owner only where GitHub requires that account. A private App owned by the client organization keeps its credentials and installation separate from other clients.
+**Who acts:** for a done-for-you (DFY) client, FF's operator does this within the access the client granted; the client is not asked to configure an App. For a self-install, the owner of your company's GitHub App and an owner of the organization where it is installed. An authorized operator can do supported steps; use an owner only where GitHub requires that account. A private App owned by the client organization keeps its credentials and installation separate from other clients.
 
 **Where:** open your organization's GitHub **Settings**, then **Developer settings > GitHub Apps** to configure its App. Open **Settings > GitHub Apps > Installed GitHub Apps** to configure the installation. For an App owned by a personal account, use that account's Developer settings instead. Use your own organization and App, not a provider's internal identifiers.
 
