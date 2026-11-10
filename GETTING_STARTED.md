@@ -1,6 +1,6 @@
 # Getting Started: from nothing to operating (caveman mode, no skipped steps)
 
-> **Done-for-you (DFY) client? You can skip this page.** FF creates and protects your repository, configures its GitHub Apps and keys, installs this release and verifies it. You grant the access FF asks for, keep ownership and can revoke it. This page is the **advanced self-install** path for technical teams.
+> **Done-for-you (DFY) client? You can skip this page.** FF hosts and protects your repository in FF's GitHub organization, sets up its apps, and installs and verifies this release. You grant the access FF asks for and can ask for a transfer or for access to be removed at any time. This page is the **advanced self-install** path for technical teams.
 
 > Fastest path once you're in: open this repo in Claude Code and run **`/onboard_wizard`**, it walks you through the rest interactively. This page is the full written reference. If any step is fuzzy, use the unstuck protocol ([docs/UNSTUCK_PROTOCOL.md](docs/UNSTUCK_PROTOCOL.md)) or search YouTube for the exact step (a video from the **last 1-2 months**, the tools change fast).
 
