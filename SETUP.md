@@ -9,11 +9,7 @@ git, Python 3, Node.js and the GitHub CLI, signed in with `gh auth login`. See G
 - Card: [Run a terminal command Claude gives you](docs/human_steps/run_a_terminal_command_from_claude.md)
 
 ## 2. The name and the registry row
-- **Name:**
-  - `<company>-os` in your own GitHub organization;
-  - `client-<slug>-os` while a provider holds it for you;
-  - `ff-00-instance` for Funnel Futurist's own.
-  - A deployed site's Vercel project uses the repository's exact name.
+- **Name:** use one private company-owned repository in the company's own account or organization. `<company>-os` is an example, not a required name. Keep an existing repository's registered name; this setup does not authorize a rename or transfer. Record any deployed site's actual repository and build path.
 - **Registry row:** fill in `estate.yaml`. If a provider runs a registry for you, send them the file. They add the row before anything new is created.
 
 ## 3. Access to grant (all at once)
@@ -21,16 +17,16 @@ git, Python 3, Node.js and the GitHub CLI, signed in with `gh auth login`. See G
 |---|---|---|
 | The founder | Owner or admin of the repository, with two-factor sign-in on | Card: [Turn on GitHub 2FA](docs/human_steps/turn_on_github_2fa.md) |
 | Each operator | **Write** on this repository, with 2FA on; their GitHub username in `.aios/config.json` with their role | A founder edits `.aios/config.json` (a founder-only file) |
-| Your company's agent App | Installed on **only the selected client repositories**, with the Builder and merge checks profile plus the options you choose | Card: [Configure the GitHub agent App](docs/human_steps/configure_github_agent_app.md) |
+| Your existing assistant integration | Access to this company repository for the agreed work; separately authorized Read access to Evergreen | Card: [Verify assistant GitHub access](docs/human_steps/configure_github_agent_app.md) |
 | Vercel (if you deploy a site) | Access to this repository | Card: [Connect Vercel to a GitHub repository](docs/human_steps/connect_vercel_to_a_repo.md) |
 | Supabase (if you have a database) | A token scoped to the one project and the permissions named | Card: [Create a Supabase access token](docs/human_steps/create_a_supabase_token.md) |
 
-The App card separates CI operation (Actions write), workflow authoring, team code-owner reads and check publishing. Accept installation changes, then verify a fresh App token can read the required evidence. An owner-reported acceptance alone is not a successful readback.
+Use the assistant provider's existing integration on the selected repositories. Verify the actual executing identity and the capabilities the job needs. Do not build or install a custom FF App for ordinary client setup. A custom App needs a decision recorded by the client's owner. An account-owner acceptance alone is not a successful method read.
 
 When someone leaves: [Remove an org member](docs/human_steps/remove_an_org_member.md), then change any shared secret they knew.
 
 ## 4. Secrets
-Secret **values** live in `.env` (Git never uploads it) or in the tool that uses them. `.aios/config.json` records only *where* each one lives, for example `env:ANTHROPIC_API_KEY`.
+Secret **values** live in the approved secret store, ignored local `.env` or the tool that uses them. Verify that no secret is staged before committing; an ignore rule does not prevent a forced add. `.aios/config.json` records only *where* each one lives, for example `env:ANTHROPIC_API_KEY`.
 
 Every key in this Starter is optional:
 

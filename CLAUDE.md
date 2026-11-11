@@ -9,7 +9,7 @@ Run **`/onboard_wizard`**, it walks you through setup (your tool, this repo, you
 Edit this `CLAUDE.md` freely as your business and workflow evolve, it's your brain, not a cage. Put your identity, your priorities, and a map to where things live. Keep it **lean** (a map, not a manual, detail belongs in your folders and skills). The only thing we ask: follow the best practices below.
 
 ## Best practices (the guardrails)
-- **Secrets stay out of the repo.** Keys live in `.env` (it's gitignored, so it never reaches GitHub). Set a spend limit on each key; turn on 2FA. (Airlocks: scope access, contain the blast radius.)
+- **Secrets stay out of the repo.** Keys live in the approved secret store or ignored local `.env`. Check staged changes before committing; an ignore rule is not an access boundary. Set a spend limit on each key; turn on 2FA. (Airlocks: scope access, contain the blast radius.)
 - **Reversible by default.** Commit early and often, git is your safety net. Don't delete important work or force-push.
 - **Review follows risk.** Keep deterministic checks. Use one meaningful independent review for nonproduction code; batch irreversible actions for the owner. Paid review is disabled unless separately authorized. Check the actual CI configuration before publishing; this instruction alone does not disable a workflow.
 - **When you're stuck, use the unstuck protocol** (`docs/UNSTUCK_PROTOCOL.md`): Claude in caveman mode → screenshot + AI → YouTube (last 1–2 months) → NotebookLM → escalate. You'll solve ~99% yourself.
@@ -30,6 +30,16 @@ Before asking a new person (founder or operator) to make a workflow decision, ex
 - Investigations name the expected result and a stop condition. Finish with a fix, escalation package, one bounded next experiment or evidence exhausted. No polling/holding posts.
 - Report source complete, installed, deployed and accepted in use separately. Batch owner QC at pocket completion; using daily tools counts as acceptance. Preserve every commitment as delivered, cancelled, replaced, active, deferred with a watched restart, or unresolved.
 - Sensitivity follows the data: goals/workouts/tasks low, company operating records medium, credentials/payments/client personal data high. Keep baseline security and privacy boundaries; do not assume every personal record is low sensitivity.
+
+## Shared methods and your company instance
+
+This private repository is the company's AIOS instance. Company-specific delegation, commercial systems, Attention work and recurring-job configuration live in its domain folders. Use existing external stores only where an actual deployment or data-access boundary requires them.
+
+FF's five reusable brains belong in the planned Evergreen repository. For a method task, read `00_AIOS/routing.md`, then the [Evergreen contract](docs/architecture/evergreen_aios.md) and the company-owned `00_AIOS/evergreen.json`. That reference starts unverified. Confirm the actual source and read access, resolve the method to an exact commit and record its revision with the private output. Use only the company's permitted inputs. Do not send them to shared intelligence.
+
+Read access to Evergreen does not grant write access. Do not set up the deprecated hosted Core or create another instance repository to finish ordinary company work. When the source cannot be read, report the missing method and keep working on independent tasks; never label an old or unread method current. Secrets stay outside committed context.
+
+Use the customer journey for the business handoffs and the operator journey for a person's development. Each activation ends with an owned 90-day roadmap, evidence and next actions. These maps organize work; they do not authorize publishing, payments, access changes or other external actions.
 
 ## Your workspace
 Seven domain folders, the same in every company's instance (`00_AIOS/routing.md` says which one takes which request):

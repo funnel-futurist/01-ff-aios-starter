@@ -2,11 +2,11 @@
 
 **This workspace is yours.** AIOS Starter installs a reviewed operating layer into your own private repository. It gives your assistant a place to find company context, follow your rules, capture decisions and keep work moving. You own the company information and outputs you put here.
 
-The Starter supplies the structure and tools. You and your team supply the business knowledge, choose the work and judge the result. Installing it does not run your business, grant access to FF's private methods or prove that an integration is live.
+The Starter supplies the structure and tools. You and your team supply the business knowledge, choose the work and judge the result. Installing it does not run your business, grant access to Evergreen or prove that an integration is live.
 
 ## Start here
 
-> **Done-for-you (DFY) client? You can skip this page.** FF hosts and protects your repository in FF's GitHub organization, sets up its apps, and installs and verifies this release. You grant the access FF asks for and can ask for a transfer or for access to be removed at any time. This page is the **advanced self-install** path for technical teams.
+> **Getting implementation help from FF?** Your private AIOS repository belongs to your own GitHub account or organization. Give FF only the access agreed for installation, maintenance and support. Connect your own assistant through its existing GitHub integration. The steps below also support teams installing the workspace themselves.
 
 1. **Install an approved release into an empty private repository.** You need git, Python 3, Node.js and the GitHub CLI. [GETTING_STARTED.md](GETTING_STARTED.md) steps 3 to 7 cover account creation, the repository and installation. Use the release installer rather than GitHub's green “Use this template” button: that button copies mutable `main`, without the installer's release and founder checks.
 2. **Open your workspace in Claude Code and run `/onboard_wizard`.** It walks through setup, team access and your business context, then hands off to `/intake`. An operator joining later runs it too. Codex reads the managed `AGENTS.md`; the [install guide](docs/INSTALL_AND_UPGRADE.md) explains which instructions an upgrade replaces and which stay yours.
@@ -16,41 +16,52 @@ For a first install, upgrade or rollback, follow [Install and upgrade](docs/INST
 
 ## Where this repository fits
 
-The company architecture uses four repository roles. A **company instance** is that company's own working context, records, configuration and outputs. It can span these repositories while keeping one coherent system through explicit references and permissions.
+A **company instance** is one private, company-owned AIOS repository. Its folders hold company context, people, projects, configuration, work and evidence. Delegation, commercial operations and Attention are domains inside that workspace. They do not require separate instance repositories.
 
-These are roles, not prescribed GitHub names. Use your company's actual repository map and configured destinations. This Starter installs one AIOS workspace; it does not create the other repositories, move existing records or establish their connections. If a destination is missing or inaccessible, report that and stop that send. Do not guess another repository or create one as a fallback.
+**FF's private Evergreen repository (shared with entitled clients)** is the planned shared source for five reusable brains. It holds methods, skills, jobs, operating instructions and quality controls. An authorized assistant reads the needed method, applies it to private company context and writes the result into this AIOS. Evergreen does not receive that private context.
 
-| Company repository role | Purpose and what belongs there | Keep outside it |
+| Brain | Owns the reusable method for | Typical company home |
 |---|---|---|
-| **AIOS** | Company context, the system map, routing and integration references. Keep the context the assistant needs to understand the business and links to the authoritative domain records. | Duplicate copies of every domain's records, other companies' private material, or FF's protected method source. |
-| **Delegation** | Company roles, tasks, projects, planning and operating evidence: who owns the work, what happens next and what proves completion. | The authoritative financial record, the full creative asset library, or a second copy of company context maintained independently. Personnel records keep their actual access restrictions. |
-| **Profit OS** | Company commercial, revenue and financial operations and data, including the authoritative offer and pricing records. | Unrelated company data, reusable FF method source, or credentials committed as ordinary records. Restricted commercial and financial information keeps its access boundary. |
-| **Authority/Attention** | Company positioning, content, ads, creative inputs and finished assets, plus publishing and performance references. | FF's reusable writing or production implementation, another company's assets, or an assumption that a saved asset has been published. |
+| Copy Brain | Offers, persuasion, messaging, scripts and funnels | `00_AIOS/company/`, `01_Creation/outputs/copy/` or the owning campaign |
+| Creation Brain | Design, documents, media and production quality | `01_Creation/` |
+| AI-Augmented Team | Hiring, delegation, operator development, SOPs and jobs | `02_Team_Ops/` and `05_Jobs/` |
+| Profit OS | Capture, conversion, close, commercial handoff and revenue operations | `03_RevOps/` |
+| Attention | The authentic authority flywheel, distribution, publishing and performance | `04_Attention/` |
 
-A repository link grants no access. Before a write, show the actual repository and path and why that destination fits. If the destination was already explicit and authorized, use it without asking the same question again. If it was not, settle the destination before sending company material.
+The five brains describe who owns a method. The seven workspace folders describe where this company's work lives. [Workspace routing](00_AIOS/routing.md) joins those two maps.
 
-### Company work and FF intelligence
+A separate deployed application or restricted data store can retain its existing home where there is a concrete deployment or access requirement. Record that dependency instead of inventing another instance.
 
-Your brief, voice, scripts, brand inputs, configuration and finished outputs stay in the owning company instance. FF maintains reusable methods in its intelligence repositories. Copy Brain owns persuasive writing methods; Creation owns production methods and code. A company does not need extra Copy Brain or Creation repositories just to use those capabilities, and owning an instance does not grant access to the private intelligence source.
+### Read shared methods and keep company work private
 
-**Deprecated (decision 0002):** FF runs no hosted Core. FF's methods will live once, in the FF Evergreen Intelligence repository (not yet created); your assistant reads the current method read-only through your existing GitHub integration and records the method's commit SHA in each output (03a #81 6795553235). Executable or breaking automation may be pinned in your repository and upgraded by reviewed PR. The text below describes the optional thin client, which is kept unchanged but should not be set up for new workspaces. Where an entitled capability is available, the authorized Core interface carries a scoped request and returns its result to the company instance. The Starter includes an optional thin client, not the private method or engine. [The Core Bridge client guide](.aios/core_bridge/README.md) and [the install guide's capability section](docs/INSTALL_AND_UPGRADE.md#optional-ff-intelligence-capability) explain its configuration and refusals. An installed client does not establish entitlement, a live endpoint or an available writing or production capability.
+The [Evergreen reference](00_AIOS/evergreen.json) starts **planned and unverified**. Its candidate repository and entry paths are a target structure, not a working connection. Confirm the actual published repository, access and method paths before using it. The [read contract](docs/architecture/evergreen_aios.md) explains the setup and evidence.
+
+For new work, resolve the current method to an exact commit, read it and record that commit in the output's provenance. A running task keeps the revision it started with. Executable integrations that could break an existing workflow stay pinned and change through reviewed PRs.
+
+Entitlement and GitHub Read access are separate records. Read access applies to the repository, including its readable folders and history; branches do not create private customer tiers. The client's agreement governs access and continuity. This Starter grants no entitlement.
+
+**Hosted Core is deprecated.** There is no required FF service, endpoint or `FF_CORE_KEY` in the new-workspace path. The old thin client remains unchanged for compatibility under [decision 0002](docs/decisions/0002-hosted-core-thin-client-deprecated.md). Do not configure it for a new workspace.
+
+If Evergreen is unavailable, continue work that can be completed from authorized company context. State which method read is unavailable. Do not claim to have used the latest method, silently invent it or treat a cached revision as current.
 
 ### Follow a request to its home
 
 | Request | Route and result |
 |---|---|
-| “What price did we approve?” | AIOS uses its system map to find the authoritative offer or pricing record in Profit OS. Link that record rather than maintaining a conflicting price in several repositories. |
-| “Plan next week's launch work.” | Delegation owns the plan, roles, tasks and completion evidence. Refer to Profit OS's commercial decisions and Authority/Attention's assets instead of copying their full records into the plan. |
-| “Create a campaign from our approved offer.” | Profit OS supplies the approved offer; Authority/Attention owns the company brief, audience, voice and assets. Where the relevant capabilities are available and authorized, the handoff is Attention brief → Copy Brain script → Creation asset → Attention scheduling and performance. Retain company inputs and outputs in their company destinations and verify each handoff. This example does not establish those connections or authorize publication. |
-| “Improve the reusable video-layout checker.” | Route a method or code correction to the existing FF Creation intelligence owner, using a bounded example that does not disclose company material. Do not change private method source from a client instance or copy company assets into shared intelligence. |
+| “What price did we approve?” | Read the company's authoritative offer and economics records in `00_AIOS/company/`. Link the approval; do not generate another price. |
+| “Plan next week's launch work.” | Put the plan, owners and evidence in `02_Team_Ops/projects/`, using the Team brain when its method is available. Link the approved offer and existing campaign. |
+| “Create a campaign from our approved offer.” | Attention defines the campaign; Copy supplies the writing method; Creation supplies production methods; Attention owns the publishing plan and performance. Company artifacts stay in their designated folders. A saved campaign is not a published campaign. |
+| “Activate this new customer.” | Profit OS supplies the commercial handoff method. The company [journey map](03_RevOps/customer_journey/journey_map.md) leads to an owned [90-day roadmap](03_RevOps/customer_journey/activation_roadmap_90_days.md). |
+| “Bring this operator up to speed.” | Use the [operator journey](02_Team_Ops/onboarding/operator_journey.md) to connect the person's role, access, skills and first accepted result. |
+| “Improve a reusable method.” | Prepare a sanitized finding for its FF brain owner. Company work does not grant permission to change Evergreen or disclose private inputs. |
 
-For projects, tasks, issues, reviewers and delivery states, use [How AIOS work reaches use](docs/how_aios_work_reaches_use.md). It explains those terms through one job. The repository roles above describe where information belongs; they do not replace that work model.
+For projects, PRs, reviews and evidence of actual use, read [How AIOS work reaches use](docs/how_aios_work_reaches_use.md). A PR is a proposed change; merging it does not prove that a deployment or business action happened.
 
 ## What the Starter installs
 
 **A workspace with seven domain folders.** `00_AIOS` holds company context, routing, decisions and the review queue. `01_Creation`, `02_Team_Ops`, `03_RevOps` and `04_Attention` organize work inside this workspace; `05_Jobs` holds recurring-job records and `99_Archive` holds finished material. [The routing map](00_AIOS/routing.md) gives request-to-folder examples and the old-to-new folder map.
 
-Those seven folders are the shipped workspace layout, not seven repositories or proof that the four-repository company structure has been provisioned. Keep existing records in their current homes until their owner completes a reviewed transition and verifies the receiving consumers.
+These seven folders are the company instance. Existing workspaces keep their current records until a reviewed adoption change maps the old paths and verifies their consumers. The Starter does not move existing repositories or provision Evergreen access.
 
 **Skills you can run by name.** Type `/` in Claude Code or use [the skill index](.claude/skills/README.md). `/onboard_wizard` starts setup, `/intake` captures business context, and `/start` reports the role, installed release and workspace checks. A skill is instructions that run with your access, so read one before trusting it.
 
@@ -62,7 +73,7 @@ Those seven folders are the shipped workspace layout, not seven repositories or 
 
 - **Keep secrets out of Git.** Put keys, passwords and tokens in the approved local secret store or ignored `.env`, never in committed company records. Set spend limits and use two-factor authentication. Private company records belong only in their authorized destinations.
 - **Make reversible changes.** Work on a branch, commit useful progress and review changes before they reach shared use. Follow the separate owner gates for access, spending, publication and irreversible work.
-- **Keep one authoritative record.** Use pointers when another repository owns the fact. Archive stale working material through the existing process rather than leaving several competing versions.
+- **Keep one authoritative record.** Link the authoritative company or provider record instead of keeping competing copies. Archive stale working material through the existing process rather than leaving several competing versions.
 - **Review the result.** Source complete, reviewed, merged, installed, deployed and accepted in use are different stages. Use the existing work guide and receipts to say which one has actually happened.
 - **Stay current through releases.** Run `/start` to see your installed release and verification result. Follow the approved-version upgrade and rollback route; do not overwrite company work with a copy of mutable `main`.
 
@@ -77,6 +88,7 @@ When a step fails, record what happened and follow [the unstuck protocol](docs/U
 | Choose a folder in this workspace | [Workspace routing](00_AIOS/routing.md) |
 | Understand the work and its review stages | [How AIOS work reaches use](docs/how_aios_work_reaches_use.md) |
 | Find a skill | [Skill index](.claude/skills/README.md) |
-| Configure the optional authorized capability client | [Core Bridge client](.aios/core_bridge/README.md) |
+| Read the shared brains | [Evergreen and AIOS](docs/architecture/evergreen_aios.md) |
+| Map customer and team progress | [Customer journey](03_RevOps/customer_journey/journey_map.md) and [operator journey](02_Team_Ops/onboarding/operator_journey.md) |
 | Configure a repository reviewer | [PR reviewer setup](docs/PR_REVIEWER_SETUP.md) |
 | Resolve a failed step | [Unstuck protocol](docs/UNSTUCK_PROTOCOL.md) |

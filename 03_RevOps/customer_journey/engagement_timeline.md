@@ -2,7 +2,7 @@
 
 > Works two ways: **standalone** (you own and run your AIOS yourself) or **agency-managed** (an agency like Funnel Futurist set it up with you). Where this says "your agency," that means them, or you if you're solo.
 
-> Key dates and deliverable schedule.
+> Key dates and deliverable schedule. Use the [journey map](journey_map.md) for stage handoffs and the [90-day roadmap](activation_roadmap_90_days.md) for outcomes and acceptance evidence.
 
 ---
 
@@ -48,6 +48,6 @@ Calls below are common engagement types. Include the ones that apply to your set
 
 ## Notes on Repo Setup
 
-This repo was created from the ff-aios-starter template. If your agency created the repo for you, they may have invited you to it instead. Either way, you own your copy.
+This company-owned private workspace uses an approved AIOS Starter release. Helpers receive the access agreed for setup or support. Record the actual account, release and access evidence in the existing setup record.
 
 For setup steps, see `GETTING_STARTED.md` and the `/onboard_wizard` skill as the canonical starting point.
