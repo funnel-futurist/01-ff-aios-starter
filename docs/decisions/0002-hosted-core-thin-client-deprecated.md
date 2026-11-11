@@ -14,10 +14,11 @@ The Starter ships `.aios/core_bridge/core_call.py`, a thin client for a hosted F
 Option 2.
 - **What ships unchanged:** `core_call.py`, its README, `instance.example.json`, the manifest and the optional `FF_CORE_KEY` entry. There is no code removal and no behaviour change, so an upgrade breaks nothing.
 - **Notices:** the install guide's "Optional FF Intelligence capability" section and the README carry a deprecation notice.
-- **Next release notes** (the next `releases/starter-X.Y.Z.BRIEF.md`) state: "`.aios/core_bridge/core_call.py` and `FF_CORE_KEY` are deprecated: no hosted Core exists. Client-facing FF methods ship in your repository through the toolkit, scoped to your entitlement."
+- **Next release notes** (the next `releases/starter-X.Y.Z.BRIEF.md`) state: "`.aios/core_bridge/core_call.py` and `FF_CORE_KEY` are deprecated: no hosted Core exists. Client-facing FF methods will ship in your repository through the toolkit, scoped to your entitlement, once the methods pack is released."
 - **Removal**, if ever, is a later release decision of its own.
+- **Release follow-up:** the next release record lists this decision, as every record lists 0001, and carries the notes line above.
 
 ## Why
 - **No surprises:** removing managed files in an upgrade would surprise workspaces that configured them.
 - **Matches the architecture:** Option 3 would recreate the runtime dependency the architecture removes.
-- **Where the value moves:** client-facing methods, including the premium workflows that apply, now ship into the client's own repository, scoped by the purchased entitlement (01-ff-aios `11_Operations/core_bridge/ref_methods_pack_entitlement_2026_11_11.md`).
+- **Where the value moves:** client-facing methods, including the premium workflows that apply, will ship into the client's own repository as an entitlement-scoped methods pack in a future release. Each pack is pinned and approved with the release like any managed file, and installs only for a purchased entitlement. That pack is not built yet.
