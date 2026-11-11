@@ -14,11 +14,11 @@ The Starter ships `.aios/core_bridge/core_call.py`, a thin client for a hosted F
 Option 2.
 - **What ships unchanged:** `core_call.py`, its README, `instance.example.json`, the manifest and the optional `FF_CORE_KEY` entry. There is no code removal and no behaviour change, so an upgrade breaks nothing.
 - **Notices:** the install guide's "Optional FF Intelligence capability" section and the README carry a deprecation notice.
-- **Next release notes** (the next `releases/starter-X.Y.Z.BRIEF.md`) state: "`.aios/core_bridge/core_call.py` and `FF_CORE_KEY` are deprecated: no hosted Core exists. Client-facing FF methods will ship in your repository through the toolkit, scoped to your entitlement, once the methods pack is released."
+- **Next release notes** (the next `releases/starter-X.Y.Z.BRIEF.md`) state: "`.aios/core_bridge/core_call.py` and `FF_CORE_KEY` are deprecated: no hosted Core exists. FF methods are read live from FF Evergreen Intelligence by your assistant, which records the method SHA in each output."
 - **Removal**, if ever, is a later release decision of its own.
 - **Release follow-up:** the next release record lists this decision, as every record lists 0001, and carries the notes line above.
 
 ## Why
 - **No surprises:** removing managed files in an upgrade would surprise workspaces that configured them.
 - **Matches the architecture:** Option 3 would recreate the runtime dependency the architecture removes.
-- **Where the value moves:** client-facing methods, including the premium workflows that apply, will ship into the client's own repository as an entitlement-scoped methods pack in a future release. Each pack is pinned and approved with the release like any managed file, and installs only for a purchased entitlement. That pack is not built yet.
+- **Where the value moves:** client-facing methods are not copied into client repositories (the earlier methods-pack plan, D2 = B, is superseded by 03a #81 6795553235). FF's methods live once, in the FF Evergreen Intelligence repository; your assistant reads the current method read-only through your existing GitHub integration and records the method's commit SHA in each output (03a #81 6795553235). Executable or breaking automation may be pinned in your repository and upgraded by reviewed PR. The Starter remains the toolkit for the client's own AIOS repository.

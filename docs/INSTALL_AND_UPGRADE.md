@@ -181,7 +181,7 @@ with a workspace that looks fine and quietly does half its job.
 
 ### Optional FF Intelligence capability
 
-> **Deprecated (decision 0002, 2026-11-11).** FF runs no hosted Core, so there is no endpoint for this client to call. `core_call.py` and the optional `FF_CORE_KEY` stay in the release unchanged, with no code removed. Don't set them up for new workspaces. Client-facing FF methods will ship into your repository through the toolkit, scoped to your purchased entitlement, once the methods pack is released ([decision 0002](decisions/0002-hosted-core-thin-client-deprecated.md)).
+> **Deprecated (decision 0002, 2026-11-11).** FF runs no hosted Core, so there is no endpoint for this client to call. `core_call.py` and the optional `FF_CORE_KEY` stay in the release unchanged, with no code removed. Don't set them up for new workspaces. No methods are copied into your repository: FF's methods live once, in the FF Evergreen Intelligence repository; your assistant reads the current method read-only through your existing GitHub integration and records the method's commit SHA in each output (03a #81 6795553235). Executable or breaking automation may be pinned in your repository and upgraded by reviewed PR. ([decision 0002](decisions/0002-hosted-core-thin-client-deprecated.md)).
 
 An entitled workspace can use the managed thin client at `.aios/core_bridge/core_call.py`.
 The private method stays on FF's side. Copy its example configuration to the ignored,
