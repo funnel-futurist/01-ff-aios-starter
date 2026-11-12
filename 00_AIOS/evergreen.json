@@ -1,0 +1,34 @@
+{
+  "format": "evergreen-source-reference@1",
+  "status": "planned_unverified",
+  "repository": null,
+  "planned_repository": null,
+  "read_ref": "main",
+  "brains": [
+    {
+      "id": "copy",
+      "name": "Copy"
+    },
+    {
+      "id": "creation",
+      "name": "Creation"
+    },
+    {
+      "id": "team",
+      "name": "AI-Augmented Team"
+    },
+    {
+      "id": "profit",
+      "name": "Profit OS"
+    },
+    {
+      "id": "attention",
+      "name": "Attention"
+    }
+  ],
+  "access_owner": null,
+  "read_identity": null,
+  "verification_receipt": null,
+  "verified_at": null,
+  "notes": "Company-owned reference for assistants and operators. No runtime reads or enforcement are implemented by this file. The source is FF's private Evergreen repository (shared with entitled clients). Set the actual repository and its entry paths only after its published structure and authorized Read access are verified. Never store tokens, keys, passwords or private inputs here."
+}

@@ -9,6 +9,12 @@ Your workspace has two kinds of file, and everything here follows from the diffe
 
 An upgrade changes the machine. It never touches your work.
 
+## Evergreen and company adoption
+
+The company instance is one private, company-owned AIOS repository with domain folders. Reusable FF methods are read from the separately authorized Evergreen source. Follow [Evergreen and AIOS](architecture/evergreen_aios.md) to verify that read route; do not configure the deprecated hosted-Core client for a new workspace.
+
+The company reference `00_AIOS/evergreen.json`, root README/CLAUDE and customer/team journey files are **seeds** under the existing package specification. New installations receive them once; upgrades preserve existing company versions. This change adds no managed overwrite, folder move or installer behavior. Existing workspaces need a separate reviewed adoption PR for their instructions and maps. A source merge or package verification alone does not establish Evergreen access.
+
 ## Why a release and not just "pull main"
 
 A release is a **pin**: one exact commit, plus the sha256 of every file in it, plus a human's
