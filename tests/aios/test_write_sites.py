@@ -358,7 +358,7 @@ WRITES = {
     'layout:remove_emptied': {'os.rmdir': 1},
     'layout:reverse': {'layout._link_move': 2, 'os.makedirs': 1, 'os.rmdir': 1},
     'protected:pin_allowlist': {'open:w': 1},
-    'phase_unlock:unlock': {'os.makedirs': 1, 'open:w': 1},
+    'phase_unlock:unlock': {'os.makedirs': 1, 'open:w': 1, 'os.replace': 1},
     'util:create_new': {'open:wb': 1, 'os.chmod': 1, 'os.link': 1, 'os.remove': 1, 'util.ensure_parent': 1, 'util.private_temp': 1},
     'util:ensure_parent': {'os.makedirs': 1},
     'util:git': {'git ?': 1},

@@ -35,6 +35,8 @@ MESSAGES = {
     "unknown_phase": "There is no phase called {phase}.",
     "rate_limited": "Too many attempts with this key. Wait an hour, then try again.",
     "bad_request": "The request was rejected as malformed. Check the phase name and your key.",
+    "unavailable": "The unlock service is temporarily unavailable. Try again later.",
+    "error": "The unlock service hit an error. Try again later, and tell Funnel Futurist if it repeats.",
 }
 
 
@@ -79,6 +81,16 @@ def read_url(root, environ):
     return url
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Never follow a redirect: it would carry the license key header to another address."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _post(url, key, phase, opener):
     req = urllib.request.Request(url, data=json.dumps({"phase": phase}).encode("utf-8"), method="POST",
                                  headers={"content-type": "application/json", "x-license-key": key})
@@ -101,16 +113,24 @@ def unlock(root, phase, environ=None, opener=None):
         raise Refusal(EXIT_ERROR, "Phase names are lowercase letters, digits and underscores, e.g. phase_2.")
     key = read_key(root, environ)
     url = read_url(root, environ)
-    status, body = _post(url, key, phase, opener or urllib.request.urlopen)
+    status, body = _post(url, key, phase, opener or _OPENER.open)
+    if not isinstance(body, dict):
+        body = {}
     result = body.get("result")
     if status == 200 and result == "delivered":
         if body.get("phase_key") != phase:
             raise Refusal(EXIT_ERROR, "The service answered for a different phase; nothing was saved.")
         out_dir = os.path.join(root, PHASES_DIR, phase)
+        for d in (os.path.join(root, ".aios"), os.path.join(root, PHASES_DIR), out_dir):
+            if os.path.islink(d):
+                raise Refusal(EXIT_ERROR, "%s is a symlink; refusing to save the phase there." % os.path.relpath(d, root))
         os.makedirs(out_dir, exist_ok=True)
-        with open(os.path.join(out_dir, "payload.json"), "w", encoding="utf-8") as fh:
+        final = os.path.join(out_dir, "payload.json")
+        tmp = final + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump({"phase_key": phase, "version": body.get("version"), "payload": body.get("payload")},
                       fh, indent=2, sort_keys=True)
+        os.replace(tmp, final)  # atomic: a half-written payload is never left in place
         return 0, "Phase %s unlocked. Its setup is saved in %s (kept on this machine, git-ignored)." % (
             phase, os.path.join(PHASES_DIR, phase, "payload.json"))
     if result == "locked":

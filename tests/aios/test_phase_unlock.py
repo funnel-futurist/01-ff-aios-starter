@@ -122,6 +122,29 @@ class PhaseUnlock(unittest.TestCase):
             pu.unlock(self.root, "phase_1", self.env, down)
         self.assertIn("Could not reach", cm.exception.message)
 
+    def test_server_unavailable_and_non_object_answers_are_clear(self):
+        code, msg = pu.unlock(self.root, "phase_1", self.env, opener_returning(503, {"result": "unavailable"}))
+        self.assertEqual(code, pu.EXIT_REFUSED)
+        self.assertIn("temporarily unavailable", msg)
+        with self.assertRaises(Refusal):
+            pu.unlock(self.root, "phase_1", self.env, opener_returning(200, ["not", "an", "object"]))
+
+    def test_redirects_are_never_followed(self):
+        import urllib.request
+        handler = pu._NoRedirect()
+        req = urllib.request.Request(URL, headers={"x-license-key": KEY})
+        self.assertIsNone(handler.redirect_request(req, None, 302, "Found", {}, "http://elsewhere.test/"))
+
+    def test_symlinked_phases_folder_is_refused(self):
+        os.makedirs(os.path.join(self.root, ".aios"))
+        elsewhere = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(elsewhere, ignore_errors=True))
+        os.symlink(elsewhere, os.path.join(self.root, ".aios", "phases"))
+        body = {"result": "delivered", "phase_key": "phase_1", "payload": {}}
+        with self.assertRaises(Refusal):
+            pu.unlock(self.root, "phase_1", self.env, opener_returning(200, body))
+        self.assertEqual(os.listdir(elsewhere), [])
+
     def test_gitignore_keeps_key_and_phases_local(self):
         repo = os.path.dirname(os.path.dirname(harness.AIOS_DIR))
         text = open(os.path.join(repo, ".gitignore")).read()
