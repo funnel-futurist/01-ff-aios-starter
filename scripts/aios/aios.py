@@ -37,7 +37,7 @@ import sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from aioslib import governance, install as install_mod, orgconfig, release as release_mod  # noqa: E402
+from aioslib import governance, install as install_mod, orgconfig, packages, release as release_mod  # noqa: E402
 from aioslib import adapters, boundary, notice, protected, roles, sanitize, util, workspace  # noqa: E402
 from aioslib import layout as layout_mod  # noqa: E402
 from aioslib import delegation as delegation_mod  # noqa: E402
@@ -132,7 +132,34 @@ def cmd_release_check_tag(args):
     return EXIT_OK
 
 
+def cmd_install_package(args):
+    """`install --package life-os-release-1 --rev <commit>`: the bounded compatible package contract (packages.py)."""
+    repo = os.path.abspath(args.repo)
+    packages.require_compatible(args.package)
+    if args.release or args.config or args.delegation or args.aios_releases:
+        raise Refusal(util.EXIT_PACKAGE, "--release, --config, --delegation and --aios-releases are for %s; "
+                      "%s is read from --repo at --rev" % (packages.STARTER, args.package))
+    if not args.rev:
+        raise Refusal(util.EXIT_PACKAGE, "%s installs from a commit: pass --rev <commit>" % args.package)
+    # Read and checked whole at the pin, its policy included, before the target is touched.
+    manifest, _policy, _prefix = packages.lifeos_r1(repo, args.rev)
+    target = os.path.abspath(args.target)
+    if not os.path.isdir(target):
+        os.makedirs(target)
+    record, _creds = install_mod.install(target, manifest, repo, None)
+    _say("installed %s into %s" % (record["release"]["release_id"], target))
+    _say("  pinned:   %s" % record["release"]["git_rev"])
+    _say("  managed:  %d files, verified by readback" % len(record["managed"]))
+    _say("  seeded:   %d files (yours from now on)" % len(record["seeded"]))
+    _say("  policy:   %s protects no seed and opens no managed file" % packages.LIFEOS_R1_POLICY)
+    return EXIT_OK
+
+
 def cmd_install(args):
+    if args.package and args.package != packages.STARTER:
+        return cmd_install_package(args)
+    if not args.release or not args.config:
+        raise Refusal(util.EXIT_PACKAGE, "install needs --release and --config")
     repo = os.path.abspath(args.repo)
     manifest = util.read_json(args.release)
     config = util.read_json(args.config)
@@ -843,9 +870,12 @@ def build_parser():
     rn.set_defaults(func=cmd_release_notice)
 
     ins = sub.add_parser("install", help="install an approved release into a clean workspace")
-    ins.add_argument("--release", required=True)
+    ins.add_argument("--release", help="the release manifest (%s; required for it)" % packages.STARTER)
     ins.add_argument("--target", required=True)
-    ins.add_argument("--config", required=True)
+    ins.add_argument("--config", help="the organization config (%s; required for it)" % packages.STARTER)
+    ins.add_argument("--package", default=packages.STARTER,
+                     help="one of %s (default %s)" % (", ".join(packages.COMPATIBLE), packages.STARTER))
+    ins.add_argument("--rev", help="the commit to install a non-Starter package from (never the working copy)")
     ins.add_argument("--repo", default=_repo_root())
     ins.add_argument("--aios-releases", dest="aios_releases")
     ins.add_argument("--delegation", help="install as a founder's named delegate: the grant_id in the "
