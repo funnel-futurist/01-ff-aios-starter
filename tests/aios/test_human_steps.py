@@ -15,6 +15,7 @@ import harness
 ROOT = harness.REPO_ROOT
 CARDS_DIR = os.path.join(ROOT, "docs", "human_steps")
 CARDS = [
+    "gate_a_board_with_github.md",
     "turn_on_github_2fa.md",
     "remove_an_org_member.md",
     "create_a_supabase_token.md",
