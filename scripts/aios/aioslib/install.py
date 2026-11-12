@@ -28,7 +28,7 @@ import shutil
 import stat
 import time
 
-from . import governance, hosting, layout as layout_mod, orgconfig, release as release_mod, roles, util
+from . import governance, hosting, layout as layout_mod, orgconfig, packages, release as release_mod, roles, util
 from .util import (EXIT_GOVERNANCE, EXIT_PACKAGE, EXIT_STATE, EXIT_VERIFY, Refusal, sha256_bytes,
                    sha256_file)
 
@@ -105,8 +105,9 @@ def _record_shape_problems(record):
     # Every installer since 2.6.0 wrote these two exactly (independent review, 3.1 round 50).
     if record.get("schema") != INSTALL_SCHEMA:
         problems.append("'schema' isn't %s" % INSTALL_SCHEMA)
-    if record.get("package") != release_mod.PACKAGE:
-        problems.append("'package' isn't %s" % release_mod.PACKAGE)
+    # The bounded compatible package contract (packages.py): exactly these, nothing else.
+    if record.get("package") not in packages.COMPATIBLE:
+        problems.append("'package' isn't one of %s" % ", ".join(packages.COMPATIBLE))
     if "adopted" in record and not isinstance(record["adopted"], bool):
         problems.append("'adopted' isn't true or false")
     # Absent, or text: an explicit null is neither, and no installer writes one (3.1 round 51).
@@ -649,6 +650,8 @@ def _pinned_release(record, source_repo):
     rev, release_id, version = rel.get("git_rev"), rel.get("release_id"), rel.get("version")
     if not rev or not util.rev_exists(source_repo, rev):
         return ["cannot cross-check: commit %s is not in %s" % ((rev or "?")[:12], source_repo)], None
+    if record.get("package") == packages.LIFEOS_R1:
+        return _pinned_lifeos(record, source_repo, rev)
     problems = []
     if release_id != "starter-%s" % version:
         problems.append("the record's release %r and version %r disagree" % (release_id, version))
@@ -677,6 +680,30 @@ def _pinned_release(record, source_repo):
     if "layout" in record and isinstance(source, dict) and record["layout"] != _installed_layout(record, source_repo):
         problems.append("the install record says folder layout %r, but %s is on layout %s"
                         % (record["layout"], release_id, _installed_layout(record, source_repo)))
+    return problems, shipped
+
+
+def _pinned_lifeos(record, source_repo, rev):
+    """_pinned_release for a life-os-release-1 record: the package at its pin, read and checked by
+    packages.lifeos_r1, is what it shipped."""
+    try:
+        manifest, _policy, _prefix = packages.lifeos_r1(source_repo, rev)
+    except Refusal as exc:
+        return ["cannot read what %s ships: %s" % (packages.LIFEOS_R1, exc.message)], None
+    problems = []
+    if manifest["created_from"]["git_rev"] != rev or (record.get("release") or {}).get("release_id") != manifest["release_id"]:
+        problems.append("the record's release doesn't name its pin %s" % rev[:12])
+    shipped = {f["path"]: (f["class"], f["mode"], f["sha256"]) for f in manifest["files"]}
+    for entry in record.get("managed") or []:
+        path = entry.get("path") if isinstance(entry, dict) else None
+        info = shipped.get(path)
+        if not info or info[0] != "managed":
+            problems.append("%s isn't a managed file of the pinned release" % (path,))
+        elif info[2] != entry.get("sha256"):
+            problems.append("install record for %s does not match the pinned release (record %s, release %s)"
+                            % (path, str(entry.get("sha256"))[:12], str(info[2])[:12]))
+        elif "exec" in entry and bool(entry["exec"]) != (info[1] == "100755"):
+            problems.append("executable permission of %s does not match the pinned release" % path)
     return problems, shipped
 
 
@@ -1027,9 +1054,18 @@ def _prune_parents(target, paths, keep=None):
 # ─── install ────────────────────────────────────────────────────────────────
 
 def install(target, manifest, source_repo, config, aios_lookup=None, render_governance=True):
-    """Install an approved, pinned release into a clean target. Verified by readback."""
-    release_mod.require_consumable(manifest, source_repo, aios_lookup)
-    orgconfig.require_valid(config)
+    """Install an approved, pinned release into a clean target. Verified by readback.
+
+    A `life-os-release-1` manifest (packages.py) is read again here from its pin and checked whole before
+    anything is written; that package brings no organization config, CODEOWNERS or credentials."""
+    lifeos = manifest.get("package") == packages.LIFEOS_R1
+    prefix = ""
+    if lifeos:
+        manifest, _policy, prefix = packages.lifeos_r1(source_repo, (manifest.get("created_from") or {}).get("git_rev"))
+        render_governance = False
+    else:
+        release_mod.require_consumable(manifest, source_repo, aios_lookup)
+        orgconfig.require_valid(config)
 
     if os.path.lexists(install_record_path(target)):
         raise Refusal(EXIT_STATE, "this workspace already has an install record; use upgrade",
@@ -1048,7 +1084,7 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
             sorted(occupied)[:20],
         )
 
-    creds = orgconfig.resolve(manifest.get("credentials"), config, target)
+    creds = [] if lifeos else orgconfig.resolve(manifest.get("credentials"), config, target)
     orgconfig.require_resolved(creds)
 
     managed, seeded, rendered = [], [], []
@@ -1078,7 +1114,7 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
                           theirs + ["move it aside and install again, or install without "
                                     "code_owners in the config and keep yours"])
     config_path = orgconfig.default_config_path(target)
-    if os.path.lexists(config_path):
+    if not lifeos and os.path.lexists(config_path):
         same = False
         if os.path.isfile(config_path) and not os.path.islink(config_path):
             try:
@@ -1091,7 +1127,8 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
     written = [p for p, e in files.items() if e["class"] == "managed"
                or not os.path.lexists(os.path.join(target, p))]
     written += [".github/CODEOWNERS"] if owners_text is not None else []
-    written += [os.path.relpath(config_path, target), os.path.relpath(install_record_path(target), target)]
+    written += [] if lifeos else [os.path.relpath(config_path, target)]
+    written += [os.path.relpath(install_record_path(target), target)]
     # And the installer's own folders, where its temporary copies and its state note go (3.1 round 58).
     linked = _linked_paths(target, written + _INSTALLER_PATHS)
     if linked:
@@ -1099,6 +1136,10 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
                       "repository (a submodule)", linked[:20])
     for path, mode, data in util.read_tree(source_repo,
                                            manifest["created_from"]["git_rev"]):
+        if prefix:
+            if not path.startswith(prefix):
+                continue
+            path = path[len(prefix):]
         entry = files.get(path)
         if entry is None:
             continue
@@ -1124,7 +1165,8 @@ def install(target, manifest, source_repo, config, aios_lookup=None, render_gove
                               owners_text.encode("utf-8"), "100644")
         rendered.append({"path": ".github/CODEOWNERS", "sha256": sha})
 
-    util.write_json(orgconfig.default_config_path(target), config)
+    if not lifeos:
+        util.write_json(orgconfig.default_config_path(target), config)
 
     record = {
         "schema": INSTALL_SCHEMA,
@@ -1579,6 +1621,9 @@ def _seed_keys(record, manifest, source_repo=None, target=None):
 def _upgrade_preflight(target, manifest, source_repo, aios_lookup=None):
     """Every check an upgrade makes before it writes anything. The dry run makes the same ones."""
     record = load_record(target)
+    if record.get("package") != release_mod.PACKAGE:
+        raise Refusal(EXIT_PACKAGE, "this workspace holds package %s; upgrading it isn't supported yet, and "
+                                    "nothing was changed" % record.get("package"))
     if load_journal(target):
         raise Refusal(EXIT_STATE, "a previous operation did not finish; run rollback first",
                       [journal_path(target)])

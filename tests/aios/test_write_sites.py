@@ -321,6 +321,7 @@ WRITES = {
     'aios:cmd_adapters_render_skills': {'util.write_file': 1},
     'aios:cmd_governance_render': {'open:w': 1, 'util.ensure_parent': 1},
     'aios:cmd_install': {'os.makedirs': 1},
+    'aios:cmd_install_package': {'os.makedirs': 1},
     'aios:cmd_protected_fingerprint': {'util.write_json': 1},
     'aios:cmd_release_build': {'util.write_json': 1},
     'hosting:_get': {'open:?': 1},
@@ -387,6 +388,9 @@ TABLE = {
     "aios:cmd_governance_render": ("allowlist", "writes the rendered CODEOWNERS to the path given with --out"),
     "aios:cmd_install": ("allowlist", "makes the workspace folder itself when it doesn't exist; install() then checks "
                                       "every path under it before its first write"),
+    "aios:cmd_install_package": ("allowlist", "the life-os-release-1 path of install: makes the workspace folder "
+                                              "itself when it doesn't exist; install() then checks every path "
+                                              "under it before its first write"),
     "aios:cmd_protected_fingerprint": ("allowlist", _RELEASE),
     "aios:cmd_release_build": ("allowlist", _RELEASE),
     "hosting:_get": ("allowlist", "an HTTP request through urllib's opener (_OPENER.open(req)), not a file; counted "
