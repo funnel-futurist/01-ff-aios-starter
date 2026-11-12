@@ -81,9 +81,19 @@ If a protected path exposes the board, stop the rollout and have the engineer re
 If sign-in fails, check the exact callback address, environment selection and username spelling.
 Record a specific failed check for the engineer instead of sharing secret values.
 
-## Source check
+## It worked when
 
-GitHub's OAuth App creation page was read on 2026-11-12.
+Every protected path requires sign-in and only allowed accounts reach the board.
+The engineer records the deployed checks as passing.
+
+## Send back
+
+Send the tested revision, date, paths and outcomes to the reviewer.
+Exclude credential and cookie values.
+
+## Video and checks
+
+**Steps checked against:** [GitHub OAuth App creation](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app), read 2026-11-12.
 It confirms the settings route, homepage field, callback field and optional device flow.
 The board-specific variable names, cookie lifetime and failure responses come from the reviewed board implementation.
 The GitHub page does not establish that a hosting service runs this board's middleware.
