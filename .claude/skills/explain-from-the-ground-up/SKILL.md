@@ -9,6 +9,16 @@ description: Explain an unfamiliar topic or decision through background context,
 
 Help the reader understand why a topic exists and how its parts fit together before asking them to judge a recommendation. Speak to an intelligent person who may not know this domain's vocabulary. Simplicity must preserve the real distinction being explained.
 
+## The FF writing standard (adopted 2026-11-12)
+
+Every explanation, lesson and setup guide follows these rules.
+- Explain the basics behind the basics, for a normal person.
+- Use short, simple sentences.
+- Put each sentence on its own line.
+- Define every technical term in parentheses the first time it appears.
+  Example: "OAuth App (a small registration that lets a website use Sign in with GitHub)".
+- Check existing lessons against this standard when you touch them.
+
 ## Start before the confusing part
 
 Identify the reader's missing prerequisite. Usually explain the larger goal, the system that serves it, the current problem, and only then the proposed change. Go back another layer when the reader still cannot see why the system or problem exists. Do not merely repeat the same explanation with shorter words.
@@ -39,7 +49,8 @@ Do not push for an answer while the reader is still trying to understand the que
 
 ## Presentation
 
-Use connected, conversational paragraphs and short lists only where they help. A compact comparison table or simple diagram can clarify several relationships. Adjust depth to the reader's questions rather than forcing every answer into a fixed template or three layers.
+Write one short sentence per line, as the FF writing standard above says.
+Group related lines into short blocks with a plain heading, and use lists only where they help. A compact comparison table or simple diagram can clarify several relationships. Adjust depth to the reader's questions rather than forcing every answer into a fixed template or three layers.
 
 When asked for an even simpler explanation, move further back in the causal chain, reduce the number of concepts introduced at once, and add a concrete example. Do not become childish, patronizing or vague. Finish with the practical meaning for the reader, rather than another pile of terminology.
 
@@ -80,9 +91,13 @@ Example: "/explain-from-the-ground-up Why does anything need a second reviewer b
   - **Example:** The answer says what the choice changes in practice and what happens next within the existing authority, then answers any follow-up questions.
   - **Counter-example:** Requiring a founder or operator to repeat the explanation before continuing already-authorized work, or ending on another pile of terminology.
 
+- [ ] **D-7 - Meets the FF writing standard.**
+  - **Example:** One short sentence per line, and "repository (a project folder that remembers every change)" the first time "repository" appears.
+  - **Counter-example:** A long paragraph that uses "PR", "branch" or "OAuth" without saying what they are.
+
 ## QC gate
 
-Check D-1 to D-6 before you finish. When the reader asks for more background, go one layer further back (D-1) instead of adding terms. In normal founder/operator conversation, finish with the practical meaning and next action, answer follow-up questions, and continue otherwise authorized work without requiring a repeat-back.
+Check D-1 to D-7 before you finish. When the reader asks for more background, go one layer further back (D-1) instead of adding terms. In normal founder/operator conversation, finish with the practical meaning and next action, answer follow-up questions, and continue otherwise authorized work without requiring a repeat-back.
 
 Use teach-back only in an explicitly requested learning or coaching exercise, or an adopted competency assessment. Preserve that exercise's or assessment's required checks. A written demonstration does not establish that a real reader understood it.
 
