@@ -3,16 +3,18 @@ name: explain-from-the-ground-up
 description: Explain an unfamiliar topic or decision through background context, plain definitions, concrete examples and one mapped metaphor, so the reader understands the question before judging an answer. Use when a learner or operator asks why something exists, needs the context behind the context, or wants a simpler explanation before deciding. NOT for making or approving the decision (a decision-testing skill such as grill_me does that, if your workspace has one) and NOT for carrying out a change.
 ---
 
-<!-- Provenance: adapted from the explain-from-the-ground-up skill, sha256 513476f46caf85a12a1c344e058bb0c94f89572a12f6e6206241c954620bef4c (46 lines). Changed from that source: the trigger is generic; the sections "How to start it", "Boundaries", "Definition of done" and "QC gate" are added; on 2026-11-12 the FF writing standard and check D-7 were added and the whole text was rewritten to follow that standard (one sentence per line). The rules themselves are unchanged. -->
+<!-- Provenance: adapted from the explain-from-the-ground-up skill, sha256 513476f46caf85a12a1c344e058bb0c94f89572a12f6e6206241c954620bef4c (46 lines). Changed from that source: the trigger is generic; the sections "How to start it", "Boundaries", "Definition of done" and "QC gate" are added; on 2026-11-12 two rules were added (the FF writing standard and check D-7), the Presentation rule changed from connected paragraphs to one sentence per line, and the whole text was rewritten to follow that standard. The other rules keep their meaning. -->
 
 # Explain from the ground up
 
-Help the reader understand why a topic exists before asking them to judge anything.
+A skill is a set of written instructions that an AI assistant follows.
+This one helps the reader understand why a topic exists before asking them to judge anything.
 Speak to an intelligent person who may not know this field's words.
 Keep it simple, but keep the real difference you are explaining.
 
 ## The FF writing standard (adopted 2026-11-12)
 
+FF is Funnel Futurist, the team that wrote this skill.
 Every explanation, lesson and setup guide follows these rules.
 - Explain the basics behind the basics, for a normal person.
 - Use short, simple sentences.
@@ -56,7 +58,7 @@ When two parts have similar names, say what each one actually stores or does.
 
 Use one small, concrete example all the way through.
 Show what a person would see before and after the change.
-Use real counts and labels when you state facts.
+When you state a fact, such as a count or a label, give its source.
 Mark any made-up teaching example as made up.
 
 ## Use a useful metaphor
@@ -106,10 +108,10 @@ End with what it means for the reader in practice, not with more terms.
 
 ## How to start it
 
-- **Claude Code:** type `/explain-from-the-ground-up` and then the topic or decision.
+- **Claude Code (Anthropic's AI coding assistant):** type `/explain-from-the-ground-up` and then the topic or decision.
   Or ask in plain words, and Claude matches the request to this skill by its description.
   `/` lists every skill in this workspace.
-- **Codex or another AI tool:** this skill does not register itself there.
+- **Codex (OpenAI's AI coding assistant) or another AI tool:** this skill does not register itself there.
   Open `.claude/skills/explain-from-the-ground-up/SKILL.md`, give it to the assistant, and ask it to follow it.
 - **No skill at all (the fallback):** ask in plain words.
   "Explain the background, purpose and consequences before asking me to approve.
@@ -124,8 +126,8 @@ Example: "/explain-from-the-ground-up Why does anything need a second reviewer b
 
 | Ask | Skill |
 |---|---|
-| "Pressure-test this decision before I make it" | A decision-testing skill such as `grill_me`, if your workspace has one. This skill explains the question. It does not test or decide it. |
-| "Make this change", or "approve it for me" | Not this skill. An explanation never approves anything for you. The person who owns the decision decides, after the explanation. |
+| "Pressure-test this decision before I make it" | A decision-testing skill (one that questions a plan to find its weak spots), such as `grill_me`, if your workspace has one. This skill only explains the question. |
+| "Make this change", or "approve it for me" | Not this skill. The decision owner decides, after the explanation. |
 | "Carry out the change" | The skill or person that owns that change. Explain first, then hand it to the owner. |
 
 ## Definition of done
@@ -137,19 +139,29 @@ Example: "/explain-from-the-ground-up Why does anything need a second reviewer b
   - **Example:** "A review rule (a setting that says who must approve a change before it is published)" comes before any line that relies on it.
   - **Counter-example:** Defining "review rule" as a "branch protection ruleset", a term the reader has not met.
 - [ ] **D-3 - One metaphor, mapped part by part, with its limit.**
-  - **Example:** A visitor badge opens only the doors written on it. The badge is the access, and the doors are the permissions. The picture stops where a badge says nothing about what the visitor does inside.
+  - **Example:** A visitor badge opens only the doors written on it.
+    The badge is the access, and the doors are the permissions.
+    The picture stops where a badge says nothing about what the visitor does inside.
   - **Counter-example:** A filing cabinet, then a kitchen, with no mapping and no limit.
+    The reader then assumes a folder label is a lock.
 - [ ] **D-4 - Separate what is known, what is planned and what is unknown, and mark made-up examples.**
-  - **Example:** "The record shows the setting is on. It does not say why." A made-up customer is labelled made up.
+  - **Example:** "The record shows the setting is on.
+    It does not say why."
+    A made-up customer is labelled made up.
   - **Counter-example:** Inventing a comforting reason for a setting from its folder name.
 - [ ] **D-5 - Compare the choices, including doing nothing.**
   - **Example:** Each option says what it changes, who gains or loses, and what happens if nothing changes.
   - **Counter-example:** One recommendation presented as if it were already approved.
 - [ ] **D-6 - Finish with the practical meaning and the next action.**
-  - **Example:** The answer says what the choice changes in practice and what happens next, then answers follow-up questions.
-  - **Counter-example:** Asking a founder to repeat the explanation back before already-approved work continues.
+  - **Example:** The answer says what the choice changes in practice.
+    It says what happens next, within the authority that already exists.
+    Then it answers follow-up questions.
+  - **Counter-example:** Ending on another pile of terms.
+    Or asking a founder to repeat the explanation back before already-approved work continues.
 - [ ] **D-7 - Meets the FF writing standard.**
-  - **Example:** The basics come first, for a normal person. One short sentence per line. "Repository (a project folder that remembers every change)" the first time "repository" appears.
+  - **Example:** The basics come first, for a normal person.
+    One short sentence per line.
+    "Repository (a project folder that remembers every change)" the first time "repository" appears.
   - **Counter-example:** A long paragraph that uses "PR", "branch" or "OAuth" without saying what they are.
 
 ## QC gate
