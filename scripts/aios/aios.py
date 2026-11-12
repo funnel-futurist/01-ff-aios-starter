@@ -41,6 +41,7 @@ from aioslib import governance, install as install_mod, orgconfig, release as re
 from aioslib import adapters, boundary, notice, protected, roles, sanitize, util, workspace  # noqa: E402
 from aioslib import layout as layout_mod  # noqa: E402
 from aioslib import delegation as delegation_mod  # noqa: E402
+from aioslib import phase_unlock as phase_unlock_mod  # noqa: E402
 from aioslib.util import (EXIT_ERROR, EXIT_GOVERNANCE, EXIT_OK, EXIT_SANITIZE, Refusal)  # noqa: E402
 
 
@@ -1010,7 +1011,20 @@ def build_parser():
     wst.add_argument("--parent", required=True)
     wst.set_defaults(func=cmd_workspace_status)
 
+    ph = sub.add_parser("phase", help="phase setup unlocked by your license key")
+    phsub = ph.add_subparsers(dest="phase_command")
+    phu = phsub.add_parser("unlock", help="download one unlocked phase's setup to this machine")
+    phu.add_argument("phase", help="e.g. phase_2")
+    phu.add_argument("--target", default=".", help="the AIOS workspace root (default: here)")
+    phu.set_defaults(func=cmd_phase_unlock)
+
     return p
+
+
+def cmd_phase_unlock(args):
+    code, message = phase_unlock_mod.unlock(os.path.abspath(args.target), args.phase)
+    print(message)
+    return code
 
 
 def main(argv=None):

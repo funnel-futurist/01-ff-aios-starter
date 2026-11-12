@@ -29,3 +29,7 @@ node_modules/
 
 # Personal operator label — local only (the .example.json IS committed)
 .aios/local-operator.json
+
+# Phase unlock (DW-705): the license key and delivered phase setup stay on this machine
+.aios/license_key
+.aios/phases/
