@@ -4,6 +4,7 @@ One card for each thing a person has to do by hand. When Claude needs you to act
 
 | Card | For |
 |---|---|
+| [gate_a_board_with_github.md](gate_a_board_with_github.md) | Draft guide to an owner-approved GitHub sign-in gate for a private board |
 | [run_a_terminal_command_from_claude.md](run_a_terminal_command_from_claude.md) | Running a command Claude gives you |
 | [turn_on_github_2fa.md](turn_on_github_2fa.md) | Two-factor sign-in on GitHub |
 | [configure_github_agent_app.md](configure_github_agent_app.md) | Selected-repository App permissions, installation acceptance and fresh-token readback |
