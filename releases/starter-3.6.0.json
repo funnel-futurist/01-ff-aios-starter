@@ -13,14 +13,14 @@
     "aios_release": null
   },
   "counts": {
-    "files": 194,
-    "managed": 125,
+    "files": 195,
+    "managed": 126,
     "seed": 69,
     "skills": 25
   },
   "created_from": {
     "branch": "main",
-    "git_rev": "dba34ffb42b4c5abf87fc5586488f14dc9111326"
+    "git_rev": "3fdd782b422598d774c67518c0bd908138d91972"
   },
   "credentials": [
     {
@@ -996,7 +996,7 @@
       "class": "managed",
       "mode": "100755",
       "path": "scripts/aios/aios.py",
-      "sha256": "c20f404b0d03551ec682c7b025d274d342951f36ab0b1b3bc10048250db7c03a"
+      "sha256": "0d893bbf0a189535c141a0e85c0bda0769be4efa26545ea9b049ac6050461b53"
     },
     {
       "class": "managed",
@@ -1038,7 +1038,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "scripts/aios/aioslib/install.py",
-      "sha256": "3b19f5316100231d4890a109d10589bedbd1a9edcd5f7b7e5889beae24e9e317"
+      "sha256": "07ff28dc5c5858a13b31952e3eb71e11d4d890db41b1141553d2a1c781b47dcb"
     },
     {
       "class": "managed",
@@ -1057,6 +1057,12 @@
       "mode": "100644",
       "path": "scripts/aios/aioslib/orgconfig.py",
       "sha256": "6aaa2989aa227aed23737a567133cf0f3fdb8aec69135c19860255df5abf9d97"
+    },
+    {
+      "class": "managed",
+      "mode": "100644",
+      "path": "scripts/aios/aioslib/packages.py",
+      "sha256": "8a6117c296aaf92f7f064feba692205db2acbd5416601828062d72f543a92692"
     },
     {
       "class": "managed",

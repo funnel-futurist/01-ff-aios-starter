@@ -1,9 +1,9 @@
-# Starter 3.6.0 draft: explain-from-the-ground-up writing standard, delegated install and phase unlock
+# Starter 3.6.0 draft: explain-from-the-ground-up writing standard, delegated install, phase unlock and a second compatible package
 
 This is a draft release record.
 A draft (a release record nobody has approved yet) cannot be installed.
 It has no published tag (a fixed Git name for one exact commit).
-The payload (the exact set of files this release ships) is pinned to commit `dba34ffb42b4c5abf87fc5586488f14dc9111326`.
+The payload (the exact set of files this release ships) is pinned to commit `3fdd782b422598d774c67518c0bd908138d91972`.
 The founder approves the exact payload later.
 This record does not approve itself.
 
@@ -19,11 +19,11 @@ It wrote `status: draft` and blank approval fields.
 
 ## What the package holds
 
-The manifest selects 194 files.
-Managed files (files the installer owns and replaces on upgrade): 125.
+The manifest selects 195 files.
+Managed files (files the installer owns and replaces on upgrade): 126.
 Seed files (starter files written once, then owned by the workspace): 69.
 Canonical skills: 25.
-Compared with 3.5.0, it adds 9 files, changes 19 files (12 managed, 7 seed) and removes none.
+Compared with 3.5.0, it adds 10 files (6 managed, 4 seed), changes 20 files (13 managed, 7 seed) and removes none.
 The folder layout, `min_upgrade_from: 2.6.0`, credential references and null AIOS-release link are unchanged.
 
 ## What changed since 3.5.0
@@ -40,10 +40,11 @@ The folder layout, `min_upgrade_from: 2.6.0`, credential references and null AIO
 - #80: `aios.py phase unlock` adds the buyer side of license-key phase gating (opening a paid phase with a key).
 - #81: a setup guide for signing in to the board with GitHub, plus its evidence sections.
 - #83: adds the Bowtie placement map, which names its path without linking a private repo.
+- #85: the installer also accepts one second package, `life-os-release-1`, read only from a pinned commit.
 
 ## What the installer and upgrade do
 
-A fresh install writes the 125 managed files and the 69 seed files.
+A fresh install writes the 126 managed files and the 69 seed files.
 An upgrade replaces changed managed files and adds the new ones.
 It leaves client-owned files alone, including `CLAUDE.md` customizations, foundations and local settings.
 If a managed file was edited by hand, the installer refuses and changes nothing.
