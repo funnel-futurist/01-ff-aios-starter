@@ -2,7 +2,7 @@
 
 **Status: proposed.** This page says which folder in your AIOS holds the records for each Bowtie stage. The Bowtie is FF's eleven-stage customer lifecycle: four stages to win a customer, three to deliver, four to compound. This page moves no files and runs nothing.
 
-The canonical stage list, with owners and course modules, is FF's [Bowtie map](https://github.com/funnel-futurist/ff-evergreen-intelligence/blob/main/00_system/maps/bowtie.md) (Evergreen `00_system/maps/bowtie.md`). Use its stage names in headings, file names and metric tags.
+The canonical stage list, with owners and course modules, is FF's Bowtie map (`00_system/maps/bowtie.md` in FF's methods library, reached through your FF access). Use its stage names in headings, file names and metric tags.
 
 ## Stage folders
 
