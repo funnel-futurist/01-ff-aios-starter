@@ -23,7 +23,7 @@ The manifest selects 194 files.
 Managed files (files the installer owns and replaces on upgrade): 125.
 Seed files (starter files written once, then owned by the workspace): 69.
 Canonical skills: 25.
-Compared with 3.5.0, it adds 9 files, changes 19 managed files and removes none.
+Compared with 3.5.0, it adds 9 files, changes 19 files (12 managed, 7 seed) and removes none.
 The folder layout, `min_upgrade_from: 2.6.0`, credential references and null AIOS-release link are unchanged.
 
 ## What changed since 3.5.0
@@ -39,7 +39,7 @@ The folder layout, `min_upgrade_from: 2.6.0`, credential references and null AIO
 - #79: Evergreen docs add five-brain routing, operator journeys and setup alignment.
 - #80: `aios.py phase unlock` adds the buyer side of license-key phase gating (opening a paid phase with a key).
 - #81: a setup guide for signing in to the board with GitHub, plus its evidence sections.
-- #83: the Bowtie placement map names its path without linking a private repo.
+- #83: adds the Bowtie placement map, which names its path without linking a private repo.
 
 ## What the installer and upgrade do
 
