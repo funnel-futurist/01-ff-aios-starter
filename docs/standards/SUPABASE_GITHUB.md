@@ -36,7 +36,7 @@ Supabase, then the project, then Settings, Integrations, GitHub.
 | Setting | Value | Why |
 |---|---|---|
 | GitHub repository | the app's repo | |
-| Working directory | `supabase` | |
+| Working directory | `.` (the repo root, the folder that contains `supabase/`) | Supabase adds `supabase/` itself. Setting `supabase` makes it look in `supabase/supabase` and skip every PR. |
 | Deploy to production | **OFF** | Live database changes stay a human-approved step. |
 | Production branch name | blank | Only used when deploy is on. |
 | Automatic branching | **ON** | Every PR gets a preview database. |
