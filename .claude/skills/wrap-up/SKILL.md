@@ -7,7 +7,7 @@ description: The safe end-of-session closeout + handoff ritual. Use when finishi
 
 Calm, plain-English, one step at a time. Protect the operator's work **and** the team's time.
 
-If you are explicitly assigned as programme lead or coordinator, read the [coordination closeout rule](../start-my-day/references/reconciliation.md#assignment-closeout-and-programme-coordination) before reporting the authorised portfolio exhausted, even for one repository. Other workers close and hand back only their assigned work.
+If you are explicitly assigned as programme lead or coordinator, read the [coordination closeout rule](../start-my-day/references/reconciliation.md#assignment-closeout-and-programme-coordination) before reporting the authorised portfolio exhausted, even for one repository. Other workers close and hand back only their assigned work. The coordinator applies [completion to the next eligible action](../start-my-day/references/reconciliation.md#completion-to-the-next-eligible-action) in the same pass: preserve the durable return and producer turn IDs, reuse the existing dispatch on replay, verify the receiving start, and leave a recovery checkpoint when it cannot be confirmed. A sent handoff alone is not closeout of that coordination step.
 
 ## Step 0 - Read the situation
 ```bash
