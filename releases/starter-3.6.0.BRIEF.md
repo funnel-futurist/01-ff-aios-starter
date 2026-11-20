@@ -1,11 +1,11 @@
-# Starter 3.6.0 draft: explain-from-the-ground-up writing standard, delegated install, phase unlock and a second compatible package
+# Starter 3.6.0: explain-from-the-ground-up writing standard, delegated install, phase unlock and a second compatible package
 
-This is a draft release record.
-A draft (a release record nobody has approved yet) cannot be installed.
-It has no published tag (a fixed Git name for one exact commit).
+This is the approved release record (`status: approved`).
+It was a draft (a release record nobody had approved yet) until this approval commit, the "carrier".
+It has no published tag yet (a fixed Git name for one exact commit); the tag follows the carrier's merge.
 The payload (the exact set of files this release ships) is pinned to commit `2683816b1fa23cdf57d4d85356b27781b5e91e86`.
-The founder approves the exact payload later.
-This record does not approve itself.
+Phoenix (`phoenix-ship-it`) approved the exact payload and record natively on Starter PR #89 (review at 2026-11-20T11:24:47Z, head `3fcacf81`, merged as `09623ac7`).
+Phoenix's native approval of the carrier PR is the founder's approval act for these fields; this record does not approve itself.
 
 ## Identity and version
 
@@ -15,7 +15,7 @@ A minor bump (the middle number) means new managed capability that existing work
 This release adds new commands and files, and it changes no folder layout.
 So it is the next unused minor after published 3.5.0.
 The repo's own generator built the manifest (the machine-readable list of files and their hashes).
-It wrote `status: draft` and blank approval fields.
+It wrote `status: draft` and blank approval fields; the carrier then set `status: approved` and `approval.approved_by`, `approval.approved_at` and `approval.basis`.
 
 ## What the package holds
 
@@ -74,7 +74,7 @@ Run the suite: `python3 -m unittest discover -s tests/aios -t tests/aios`.
 
 ## Next gates
 
-The founder approves the exact payload and record.
+Done: the founder approved the exact payload and record (#89), and the carrier records it.
 The full protected-text scan of payload `2683816b` is done: disposition CLEAR (03a #244, comment 7036570936).
 It checked 15157 protected blobs, left 0 unscanned, and found 132 rule findings, all classified with 0 unresolved.
 An independent sanitized-evidence review passed.
@@ -82,7 +82,7 @@ Sanitized evidence SHA-256 `00fa27346fc69e09a059e72bc76ca66139f709888bf1599835d3
 The approval commit (the "carrier") changes only this record and brief.
 Before tagging, confirm that with `git diff --name-only 2683816b <carrier>`.
 The approved record is then reviewed, merged and tagged in separate steps.
-This draft authorizes no tag, push, default change, installation or trust change.
+This record authorizes the tag steps below only after the carrier is reviewed and merged. It authorizes no default change, installation or trust change.
 
 ## Exact release commands (for after approval and merge only)
 
