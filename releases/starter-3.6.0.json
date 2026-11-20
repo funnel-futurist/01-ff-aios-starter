@@ -1,7 +1,8 @@
 {
   "approval": {
-    "approved_at": null,
-    "approved_by": null
+    "approved_at": "2026-11-20T11:24:47Z",
+    "approved_by": "phoenix-ship-it",
+    "basis": "Phoenix (phoenix-ship-it) natively approved Starter PR #89 at head 3fcacf81e49e3f4429262b439afcf2bdd0f34688 (review 5991922984, submitted 2026-11-20T11:24:47Z), which carried this exact record and the unchanged 196-file payload pinned to 2683816b1fa23cdf57d4d85356b27781b5e91e86; #89 merged as 09623ac7. approved_at is that review time. Phoenix's native GitHub approval of the approval-carrier PR that writes these fields is the founder's approval act for this record; required checks and the tag remain separate steps."
   },
   "compatibility": {
     "breaking": [
@@ -1375,6 +1376,6 @@
     "workspace_health",
     "wrap-up"
   ],
-  "status": "draft",
+  "status": "approved",
   "version": "3.6.0"
 }
