@@ -13,14 +13,14 @@
     "aios_release": null
   },
   "counts": {
-    "files": 195,
-    "managed": 126,
+    "files": 196,
+    "managed": 127,
     "seed": 69,
     "skills": 25
   },
   "created_from": {
     "branch": "main",
-    "git_rev": "3fdd782b422598d774c67518c0bd908138d91972"
+    "git_rev": "2683816b1fa23cdf57d4d85356b27781b5e91e86"
   },
   "credentials": [
     {
@@ -324,7 +324,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/start-my-day/references/reconciliation.md",
-      "sha256": "fbf061e2038aac19df7bda60ad03c88c5d5b9490040d46cf8b5ba8f2e41b79bc"
+      "sha256": "6fa062943ab5c7431d580b4b94574b0418d8a63cf9b69d55f0709637970d6b32"
     },
     {
       "class": "managed",
@@ -354,7 +354,7 @@
       "class": "managed",
       "mode": "100644",
       "path": ".claude/skills/wrap-up/SKILL.md",
-      "sha256": "60b402227a59c474d56ddaea9d1e40eb14ba9c2865b6359c761719eeda63c980"
+      "sha256": "3ae727fafefb39ed3270c55447d2db5c67750a0bd3a48b86ac1afe143a827324"
     },
     {
       "class": "managed",
@@ -594,7 +594,7 @@
       "class": "seed",
       "mode": "100644",
       "path": "02_Team_Ops/routines/daily_handoff.md",
-      "sha256": "e8ce90285248134d7b86c9fbbe711a0b85a337cd9c5b648ba5efd8da8be71cbc"
+      "sha256": "4227170e12e9e5d4d6f8d28e8b41f49318c528a076cea899f18e85b4aa85c9b3"
     },
     {
       "class": "seed",
@@ -852,7 +852,7 @@
       "class": "managed",
       "mode": "100644",
       "path": "docs/INSTALL_AND_UPGRADE.md",
-      "sha256": "86aa67c91e94839788a8a344a69a45ed9936734529d136505f68dfe5e10d6943"
+      "sha256": "c886717cf3d4fb462a1134718754e77d6e2e4ac46236500b3417eee2888b774f"
     },
     {
       "class": "managed",
@@ -985,6 +985,12 @@
       "mode": "100644",
       "path": "docs/keys_lesson_outline.md",
       "sha256": "5741d97bb5c7ce2d259c56419bcf9c3b613006f56a2ac4553df9250db22a995d"
+    },
+    {
+      "class": "managed",
+      "mode": "100644",
+      "path": "docs/standards/SUPABASE_GITHUB.md",
+      "sha256": "f7b227918d5102f2d625c47b16a4493fa24252bf2cc49b05a02a35f9b25445da"
     },
     {
       "class": "seed",

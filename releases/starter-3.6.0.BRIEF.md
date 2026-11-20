@@ -3,7 +3,7 @@
 This is a draft release record.
 A draft (a release record nobody has approved yet) cannot be installed.
 It has no published tag (a fixed Git name for one exact commit).
-The payload (the exact set of files this release ships) is pinned to commit `3fdd782b422598d774c67518c0bd908138d91972`.
+The payload (the exact set of files this release ships) is pinned to commit `2683816b1fa23cdf57d4d85356b27781b5e91e86`.
 The founder approves the exact payload later.
 This record does not approve itself.
 
@@ -19,11 +19,11 @@ It wrote `status: draft` and blank approval fields.
 
 ## What the package holds
 
-The manifest selects 195 files.
-Managed files (files the installer owns and replaces on upgrade): 126.
+The manifest selects 196 files.
+Managed files (files the installer owns and replaces on upgrade): 127.
 Seed files (starter files written once, then owned by the workspace): 69.
 Canonical skills: 25.
-Compared with 3.5.0, it adds 10 files (6 managed, 4 seed), changes 20 files (13 managed, 7 seed) and removes none.
+Compared with 3.5.0, it adds 11 files (7 managed, 4 seed), changes 23 files (15 managed, 8 seed) and removes none.
 The folder layout, `min_upgrade_from: 2.6.0`, credential references and null AIOS-release link are unchanged.
 
 ## What changed since 3.5.0
@@ -41,15 +41,25 @@ The folder layout, `min_upgrade_from: 2.6.0`, credential references and null AIO
 - #81: a setup guide for signing in to the board with GitHub, plus its evidence sections.
 - #83: adds the Bowtie placement map, which names its path without linking a private repo.
 - #85: the installer also accepts one second package, `life-os-release-1`, read only from a pinned commit.
+- #86: adds the Supabase and GitHub standard (`docs/standards/SUPABASE_GITHUB.md`), the Starter copy of the FF standard.
+- #87: `start-my-day`, `wrap-up` and the daily handoff routine now require verified continuation and safe replay recovery.
+- #88: corrects the install and upgrade guide (`docs/INSTALL_AND_UPGRADE.md`), reviewed in 03a #259.
 
 ## What the installer and upgrade do
 
-A fresh install writes the 126 managed files and the 69 seed files.
+A fresh install writes the 127 managed files and the 69 seed files.
 An upgrade replaces changed managed files and adds the new ones.
 It leaves client-owned files alone, including `CLAUDE.md` customizations, foundations and local settings.
 If a managed file was edited by hand, the installer refuses and changes nothing.
 Reconcile the edit first; do not force the upgrade.
 Rollback restores the earlier release's managed files.
+
+For a client on 3.5.0, the upgrade path is the one in `docs/INSTALL_AND_UPGRADE.md`.
+Check the workspace is clean, then run the installer's upgrade against tag `starter-3.6.0`.
+Then run `python3 scripts/aios/aios.py release verify releases/starter-3.6.0.json` in the workspace.
+To roll back to 3.5.0, run the same upgrade against tag `starter-3.5.0`.
+3.6.0 changes no folder layout, so rollback moves no files between folders.
+The 11 added files are left in place on rollback; they are inert without 3.6.0's callers, and you may remove them by hand.
 
 ## How to verify
 
@@ -62,6 +72,21 @@ Run the suite: `python3 -m unittest discover -s tests/aios -t tests/aios`.
 ## Next gates
 
 The founder approves the exact payload and record.
-The full protected-text scan runs on the final tree before approval.
+The full protected-text scan of payload `2683816b` is done: disposition CLEAR (03a #244, comment 7036570936).
+It checked 15157 protected blobs, left 0 unscanned, and found 132 rule findings, all classified with 0 unresolved.
+An independent sanitized-evidence review passed.
+Sanitized evidence SHA-256 `00fa27346fc69e09a059e72bc76ca66139f709888bf1599835d344259df0f71c`.
+The approval commit (the "carrier") changes only this record and brief.
+Before tagging, confirm that with `git diff --name-only 2683816b <carrier>`.
 The approved record is then reviewed, merged and tagged in separate steps.
 This draft authorizes no tag, push, default change, installation or trust change.
+
+## Exact release commands (for after approval and merge only)
+
+1. The founder fills `approval.approved_by`, `approval.approved_at` and `status: approved` in `releases/starter-3.6.0.json`. This is a human act.
+2. The approval PR is reviewed and merged to `main`. Call the merged commit `<carrier>`.
+3. `git diff --name-only 2683816b1fa23cdf57d4d85356b27781b5e91e86 <carrier>` must list only `releases/starter-3.6.0.json` and `releases/starter-3.6.0.BRIEF.md`.
+4. `python3 scripts/aios/aios.py release verify releases/starter-3.6.0.json` at `<carrier>` must say installable.
+5. `git tag -a starter-3.6.0 <carrier> -m "Approved Starter 3.6.0 release"`
+6. `python3 scripts/aios/aios.py release check-tag --release-id starter-3.6.0 starter-3.6.0` must pass.
+7. Push the tag with the FF Agents App identity: `git push origin refs/tags/starter-3.6.0`.
