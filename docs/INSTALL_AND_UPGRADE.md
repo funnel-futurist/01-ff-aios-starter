@@ -173,8 +173,9 @@ must match:
   repository, and `instance check` and `governance check` fail when it doesn't match the
   workspace's `origin` remote;
 - each `github` is that person's GitHub login: what `gh api user --jq .login` prints for them;
-- the person running `install` is in `people` with the role `founder` (or `co_founder`). Anyone
-  else is refused with nothing written. A refusal that says to add them to `.aios/config.json`
+- by default, the person running `install` is in `people` with the role `founder` (or `co_founder`).
+  Other actors need the separately approved delegated-install path below; 3.5.0 has no such path.
+  A refusal that says to add them to `.aios/config.json`
   means this file at install time: add them here and run `install` again.
 
 **Credentials are references, never values.** `env:NAME` reads an environment variable;
@@ -184,6 +185,99 @@ the key. A config carrying an actual key is refused.
 A missing **required** credential fails the install loudly and writes nothing. A missing
 **optional** one installs and says so on every `start` and `verify`. Neither one leaves you
 with a workspace that looks fine and quietly does half its job.
+
+### Delegated install: 3.6.0 draft, not an approved client install path
+
+The delegation code is merged source, but the 3.6.0 release is still **DRAFT**.
+
+Do not install
+that draft or borrow its installer into an approved 3.5.0 checkout.
+
+A later release must pass
+the [exact-release checks](#getting-an-exact-release) and its applicable approval gates first.
+
+Changing this packaged guide also needs a new reviewed payload pin and release checks; it does
+not change the frozen 3.6.0 manifest.
+
+**Approved 3.5.0 fallback:** the client's own founder or co-founder runs the normal install
+under their own GitHub identity.
+
+Use `starter-3.5.0`, approved-record commit
+`2071550e22b02d2b688f92e72c001260329f607a`, and its pinned payload
+`fe8d115a6bd716f5165b224b96fce770e5ad31e6`, following the install steps above.
+
+A helper can
+prepare reviewed, nonsecret inputs and guidance.
+
+Never share the client's login or label an
+FF/helper account as the client founder to pass the role guard.
+
+The release's approval does
+not itself authorize a new client repository, account operation or installation.
+
+For a later approved release that includes delegation, the client's install-authorized founder
+or co-founder approves a grant in the trusted client org config's `install_delegations` list.
+
+Use a current, reviewed config revision and retain the client's approval evidence.
+
+A local
+config file does not authenticate consent or fetch current revocation state by itself.
+
+The [grant checker](../scripts/aios/aioslib/delegation.py) requires:
+
+- One unique `grant_id` matching `dg-[a-z0-9-]{4,64}`; `delegate` is the actual GitHub login
+  returned by `gh api user`, not an assumed model or helper identity. `granted_by` is a
+  different client person whose role permits installation. There is no identity override.
+- `scope` is exactly `install`. `target_repository` matches the config's `repository`;
+  `release_id` and the 40-hex `git_rev` match the selected manifest's release ID and payload
+  commit. Separately verify the client-owned checkout and its actual `origin`.
+- `granted_at` and `expires_at` use UTC `YYYY-MM-DDTHH:MM:SSZ`; expiry is after the grant
+  time and at most 30 days later. The grant must be currently valid with no `revoked_at`
+  value. Refresh the trusted grant before use.
+
+The syntax below is a **non-runnable placeholder**, not a grant or permission to create a
+target.
+
+Replace every capitalized placeholder only from the approved client handoff, after
+checking out and verifying that later approved release.
+
+Do not run it against draft 3.6.0.
+
+```text
+python3 scripts/aios/aios.py install \
+  --release releases/APPROVED-RELEASE.json \
+  --target ../CLIENT-CLEAN-CHECKOUT \
+  --config ../CLIENT-REVIEWED-ORG.json \
+  --repo . \
+  --delegation dg-CLIENT-GRANT
+```
+
+A grant is **reusable until expiry or revocation**, not consumed after one use.
+
+It grants no
+repository access, hosting/database authority, credential access or Evergreen license.
+
+Those permissions and rights remain separate; keep secrets out of the config and retain
+only credential references.
+
+Save the actual actor, grant/config revision, target, release,
+command outcome and file-verification readback in the client's existing install receipt.
+
+The CLI prints the delegate/grant, but the install record alone does not retain that evidence.
+
+Name the client's recovery owner and before-state before installation.
+
+Delegation does not
+authorize `upgrade`, `adopt` or `rollback`.
+
+A first fresh install has no previous release to
+roll back to; upgrade/adoption recovery is not proof of fresh-install undo.
+
+On interruption,
+stop and hand the observed state to that owner.
+
+Do not delete a partial target, widen the
+grant or impersonate the founder to recover it.
 
 ### Optional FF Intelligence capability
 
