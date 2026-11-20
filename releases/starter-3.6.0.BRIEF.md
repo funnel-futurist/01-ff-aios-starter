@@ -67,7 +67,7 @@ Rollback removes the 7 managed files 3.6.0 added, and the 4 added seed files if 
 ## How to verify
 
 Run `python3 scripts/aios/aios.py release verify releases/starter-3.6.0.json`.
-It should report the payload intact and the record still a draft.
+It should report `installable (pinned, intact, approved)`.
 Run `python3 00-standards/check.py origin/main`.
 Run `python3 scripts/aios/aios.py protected check-allowlist`.
 Run the suite: `python3 -m unittest discover -s tests/aios -t tests/aios`.
@@ -86,7 +86,7 @@ This record authorizes the tag steps below only after the carrier is reviewed an
 
 ## Exact release commands (for after approval and merge only)
 
-1. The founder fills `approval.approved_by`, `approval.approved_at` and `status: approved` in `releases/starter-3.6.0.json`. This is a human act.
+1. Done in the carrier: `approval.approved_by`, `approval.approved_at`, `approval.basis` and `status: approved` are set in `releases/starter-3.6.0.json`. Phoenix's native approval of the carrier PR is the founder's act.
 2. The approval PR is reviewed and merged to `main`. Call the merged commit `<carrier>`.
 3. `git diff --name-only 2683816b1fa23cdf57d4d85356b27781b5e91e86 <carrier>` must list only `releases/starter-3.6.0.json` and `releases/starter-3.6.0.BRIEF.md`.
 4. `python3 scripts/aios/aios.py release verify releases/starter-3.6.0.json` at `<carrier>` must say installable.
