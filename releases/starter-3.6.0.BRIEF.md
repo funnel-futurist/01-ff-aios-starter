@@ -54,12 +54,15 @@ If a managed file was edited by hand, the installer refuses and changes nothing.
 Reconcile the edit first; do not force the upgrade.
 Rollback restores the earlier release's managed files.
 
-For a client on 3.5.0, the upgrade path is the one in `docs/INSTALL_AND_UPGRADE.md`.
-Check the workspace is clean, then run the installer's upgrade against tag `starter-3.6.0`.
-Then run `python3 scripts/aios/aios.py release verify releases/starter-3.6.0.json` in the workspace.
-To roll back to 3.5.0, run the same upgrade against tag `starter-3.5.0`.
+For a client on 3.5.0, follow `docs/INSTALL_AND_UPGRADE.md`, run from the Starter clone:
+`git fetch --tags origin`, then `python3 scripts/aios/aios.py release check-tag starter-3.6.0 --release-id starter-3.6.0`.
+Only once that passes, `git checkout starter-3.6.0`.
+Then `python3 scripts/aios/aios.py upgrade --release releases/starter-3.6.0.json --target ../my-workspace --dry-run` (writes nothing).
+Then the same command without `--dry-run`.
+Afterwards, check the workspace with `python3 scripts/aios/aios.py verify --target .` (a workspace holds no release records).
+To go back to 3.5.0, run `python3 scripts/aios/aios.py rollback --target .` in the workspace.
+Rollback removes the 7 managed files 3.6.0 added, and the 4 added seed files if you have not edited them.
 3.6.0 changes no folder layout, so rollback moves no files between folders.
-The 11 added files are left in place on rollback; they are inert without 3.6.0's callers, and you may remove them by hand.
 
 ## How to verify
 
