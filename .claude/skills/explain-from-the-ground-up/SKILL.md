@@ -3,7 +3,7 @@ name: explain-from-the-ground-up
 description: Explain an unfamiliar topic or decision through background context, plain definitions, concrete examples and one mapped metaphor, so the reader understands the question before judging an answer. Use when a learner or operator asks why something exists, needs the context behind the context, or wants a simpler explanation before deciding. NOT for making or approving the decision (a decision-testing skill such as grill_me does that, if your workspace has one) and NOT for carrying out a change.
 ---
 
-<!-- Provenance: adapted from the explain-from-the-ground-up skill, sha256 513476f46caf85a12a1c344e058bb0c94f89572a12f6e6206241c954620bef4c (46 lines). Changed from that source: the trigger is generic; the sections "How to start it", "Boundaries", "Definition of done" and "QC gate" are added; on 2026-11-12 two rules were added (the FF writing standard and check D-7), the Presentation rule changed from connected paragraphs to one sentence per line, and the whole text was rewritten to follow that standard. The other rules keep their meaning. -->
+<!-- Provenance: adapted from the explain-from-the-ground-up skill, sha256 513476f46caf85a12a1c344e058bb0c94f89572a12f6e6206241c954620bef4c (46 lines). Changed from that source: the trigger is generic; the sections "How to start it", "Boundaries", "Definition of done" and "QC gate" are added; on 2026-11-12 two rules were added (the FF writing standard and check D-7), the Presentation rule changed from connected paragraphs to one sentence per line, and the whole text was rewritten to follow that standard. On 2026-11-21 (an upstream update) these were added: approve, decline or do-nothing consequences and "what continues" for decision requests, a repeat check in D-1, a D-5 counter-example, and a section on using this skill inside a review routine. In the Starter copy (synced 2026-11-21) that section is Starter-specific: it claims no check or monitoring is installed, and the FF-internal proposed gold standard is left out. The other rules keep their meaning. -->
 
 # Explain from the ground up
 
@@ -34,8 +34,7 @@ Usually that means four steps, in this order:
 - the problem with it today;
 - only then, the proposed change.
 
-If the reader still cannot see why the system or problem exists, go back one more step.
-Do not just repeat the same explanation with shorter words.
+If the reader still cannot see why the system or problem exists, go back one more step (see the D-1 repeat check).
 
 Give enough background to answer these questions.
 - What are we trying to do?
@@ -81,6 +80,12 @@ When you compare choices, say for each one:
 - why someone would pick it;
 - what the reader gains or loses;
 - what happens if nothing changes.
+
+When you ask a person to decide or act, also say:
+- what happens if they approve, decline or do nothing;
+- what work continues without them.
+
+One line each is enough for a small decision.
 
 Keep the quick fix apart from the bigger design question.
 Explain the recommendation's assumptions and evidence.
@@ -134,7 +139,10 @@ Example: "/explain-from-the-ground-up Why does anything need a second reviewer b
 
 - [ ] **D-1 - Start from the reader's missing background.**
   - **Example:** The first lines say what the team is trying to do and what exists today, before the proposed change.
-  - **Counter-example:** Opening with the recommendation, or repeating the same explanation in shorter words.
+  - **Counter-example:** Opening with the recommendation.
+  - **Repeat check:** after the reader says they don't understand, compare the new answer with the previous one.
+    If it adds no earlier background step and only swaps in shorter or different technical words, it fails D-1.
+    Example of the failure: "a ruleset blocks it" becomes "branch protection prevents the merge".
 - [ ] **D-2 - Define every term in plain words before it explains another term.**
   - **Example:** "A review rule (a setting that says who must approve a change before it is published)" comes before any line that relies on it.
   - **Counter-example:** Defining "review rule" as a "branch protection ruleset", a term the reader has not met.
@@ -152,6 +160,7 @@ Example: "/explain-from-the-ground-up Why does anything need a second reviewer b
 - [ ] **D-5 - Compare the choices, including doing nothing.**
   - **Example:** Each option says what it changes, who gains or loses, and what happens if nothing changes.
   - **Counter-example:** One recommendation presented as if it were already approved.
+    Or a request for approval that never says what happens if the reader declines or does nothing.
 - [ ] **D-6 - Finish with the practical meaning and the next action.**
   - **Example:** The answer says what the choice changes in practice.
     It says what happens next, within the authority that already exists.
@@ -180,3 +189,16 @@ Keep that exercise's or test's own checks.
 A written demonstration does not prove that a real reader understood it.
 
 No approved gold standard yet.
+
+## Using this skill inside a review routine
+
+A company can make this skill the fix for a writing-quality check.
+One example is rule WD-08 (Clarity & Craft) of the Continuity Watchdog (an optional set of checks that keeps AI work moving and correct).
+Copying this skill into a workspace does not install the Watchdog, any check or any monitoring there.
+This file cannot tell you whether such a check runs in this workspace.
+Look in this company's own setup records for that.
+
+If your company has a human-writing standard (rules for how prose should read), use it together with this skill.
+That standard controls how the prose reads and flows.
+This skill makes sure the reader understands the subject and the decision.
+Neither replaces the document's own structure, such as a template or a pull request (a proposed change waiting for review) description.
