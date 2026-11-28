@@ -12,6 +12,40 @@ git, Python 3, Node.js and the GitHub CLI, signed in with `gh auth login`. See G
 - **Name:** use one private company-owned repository in the company's own account or organization. `<company>-os` is an example, not a required name. Keep an existing repository's registered name; this setup does not authorize a rename or transfer. Record any deployed site's actual repository and build path.
 - **Registry row:** fill in `estate.yaml`. If a provider runs a registry for you, send them the file. They add the row before anything new is created.
 
+### Company defaults and job inputs
+
+**Start with the first output this company needs**
+
+Open the approved method for that output and read its required questions.  
+The method tells you what it needs, and the company workspace supplies the answers its operator may use.
+
+**Company defaults**
+
+A company default is an answer the company reuses across jobs, such as its approved brand color or the link to its current logo.  
+Read the existing company source first and confirm its owner, revision and permitted use.
+
+Follow [the company foundation workspaces](00_AIOS/company/) and the existing Creation workspace for brand assets.  
+Where the approved answer already exists, point the setup to that source.
+
+If a required default is missing, ask the responsible person one question and record the answer in its established owning workspace through its normal review path.  
+When the answer belongs in the [existing intake](.claude/skills/intake/SKILL.md), keep its six-section format and write permissions.
+
+**Job inputs**
+
+A job input applies to this particular request, such as this campaign’s audience, requested format or delivery date.  
+Record it with the existing project or job and check again on the next assignment.
+
+A one-off exception needs its scope and owner.  
+Making it a new company default requires an explicit decision by the person who owns that default.
+
+**Verify the setup**
+
+Have the operator run one approved example using a company default and a job input.  
+Check that the output identifies both sources and that the next job can supply a different job input without changing the default.
+
+If the default is missing or its source is inaccessible, report the exact question and source to its owner.  
+An operator can continue independent preparation while the affected output waits for the answer or access.
+
 ## 3. Access to grant (all at once)
 | Who or what | Gets | How |
 |---|---|---|
