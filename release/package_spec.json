@@ -48,6 +48,10 @@
     {
       "path": "CLAUDE.md",
       "line": "@00_AIOS/routing.md"
+    },
+    {
+      "path": "CLAUDE.md",
+      "line": "@docs/output-routing.md"
     }
   ],
   "layout": {

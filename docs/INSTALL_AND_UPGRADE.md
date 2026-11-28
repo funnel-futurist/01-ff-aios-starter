@@ -761,3 +761,11 @@ off, set `AIOS_NO_RELEASE_NOTICE=1` in your environment.
 
 `0` ok · `2` package (unapproved, unpinned, drifted) · `3` role · `4` credential ·
 `5` state (dirty or partial) · `6` verification failed · `7` sanitization · `8` governance.
+
+## Output routing in the next approved release
+
+`docs/output-routing.md` is managed and refreshed by the existing release mechanism. The package spec adds `@docs/output-routing.md` once to the client-owned `CLAUDE.md`, following the existing seed-line and rollback contract. Codex's managed `AGENTS.md` already instructs the worker to read that file and its imports; Claude uses its native import path. An instruction path is not proof either host ran.
+
+`00_AIOS/routing.md` and production output READMEs remain seeds. A new install gets their release bytes; an upgrade preserves existing client edits and adds only missing, never-before-seeded paths. Deleted client seeds are not resurrected. The imported managed guide links the two new output instructions without changing existing company indexes. If an existing category index lacks those links, report that exact company-owned route gap for its normal review; do not overwrite it. A deleted seed is not recreated.
+
+No existing approved release record or tag is changed. Build and review a new pinned draft with the existing release tool, obtain its normal approval, then use the existing guarded upgrade. A local fixture test is not an approved client upgrade or shared-method entitlement.

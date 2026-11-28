@@ -62,3 +62,5 @@ Add your own (see `docs/UNSTUCK_PROTOCOL.md` and the skills folder for how). Nev
 
 @.aios/operator_core/OPERATOR_CORE.md
 @00_AIOS/routing.md
+
+@docs/output-routing.md

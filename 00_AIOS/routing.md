@@ -2,6 +2,10 @@
 
 This private repository is one company's instance. First identify the business outcome and its owning folder. Then read the required shared method, if any, from the verified Evergreen source. Five brains do not require five company repositories.
 
+## Follow the request to its output
+
+Read the [managed output-routing instructions](../docs/output-routing.md), then the [production output index](../01_Creation/README.md) for a report or clarity review. Keep company defaults here and follow the existing output owner for other domains.
+
 ## Choose the company home
 
 | A request about... | Authoritative company home |
